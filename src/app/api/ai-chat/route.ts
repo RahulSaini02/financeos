@@ -72,14 +72,14 @@ export async function POST(request: NextRequest) {
     const spendByCategory: Record<string, number> = {}
     for (const t of transactions) {
       if (t.cr_dr === 'debit') {
-        const cat = (t.category as { name: string } | null)?.name ?? 'Uncategorized'
+        const cat = (t.category as unknown as { name: string } | null)?.name ?? 'Uncategorized'
         spendByCategory[cat] = (spendByCategory[cat] ?? 0) + (t.amount_usd ?? 0)
       }
     }
     const topCategories = Object.entries(spendByCategory).sort((a, b) => b[1] - a[1]).slice(0, 5)
 
     const budgetsWithActuals = rawBudgets.map(b => {
-      const catName = (b.category as { name: string } | null)?.name ?? 'Unknown'
+      const catName = (b.category as unknown as { name: string } | null)?.name ?? 'Unknown'
       return { category: catName, budget: b.amount_usd }
     })
 
