@@ -1,8 +1,9 @@
 // Convenience hooks for common data patterns
-import { supabase } from './supabase'
+import { createClient } from './supabase'
 import type { Transaction, Account, Budget, Category } from './types'
 
 export async function getDashboardSummary(userId: string) {
+  const supabase = createClient()
   const [accounts, recentTxns, budgets, insights] = await Promise.all([
     supabase.from('accounts').select('*').eq('user_id', userId),
     supabase.from('transactions')
@@ -31,6 +32,7 @@ export async function getTransactions(userId: string, filters?: {
   limit?: number
   offset?: number
 }) {
+  const supabase = createClient()
   let query = supabase
     .from('transactions')
     .select('*, account:accounts(*), category:categories(*)')
@@ -49,14 +51,17 @@ export async function getTransactions(userId: string, filters?: {
 }
 
 export async function getAccounts(userId: string) {
+  const supabase = createClient()
   return supabase.from('accounts').select('*').eq('user_id', userId).eq('is_active', true).order('name')
 }
 
 export async function getCategories(userId: string) {
+  const supabase = createClient()
   return supabase.from('categories').select('*').eq('user_id', userId).order('name')
 }
 
 export async function getBudgets(userId: string, month?: string) {
+  const supabase = createClient()
   const date = month ?? new Date().toISOString().split('T')[0].slice(0, 7) + '-01'
   return supabase
     .from('budgets')
