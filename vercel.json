@@ -1,0 +1,20 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/networth-snapshot",
+      "schedule": "0 23 28-31 * *"
+    },
+    {
+      "path": "/api/cron/generate-recurring",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/promote-imports",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/budget-alerts",
+      "schedule": "0 18 * * *"
+    }
+  ]
+}
