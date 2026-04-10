@@ -21,8 +21,10 @@ import {
   Trash2,
   CalendarDays,
   BadgeCheck,
+  Landmark,
 } from "lucide-react";
 import { GridPageSkeleton } from "@/components/ui/skeleton";
+import type { Account } from "@/lib/types";
 
 // ── Form ──────────────────────────────────────────────────────────────────────
 
@@ -36,6 +38,7 @@ interface EmployerForm {
   hr_contact: string;
   my_start_date: string;
   grade: string;
+  default_account_id: string;
   notes: string;
 }
 
@@ -49,6 +52,7 @@ const emptyForm: EmployerForm = {
   hr_contact: "",
   my_start_date: "",
   grade: "",
+  default_account_id: "",
   notes: "",
 };
 
@@ -97,6 +101,7 @@ export default function EmployersPage() {
   const { success, error: toastError } = useToast();
 
   const [employers, setEmployers] = useState<Employer[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -111,13 +116,13 @@ export default function EmployersPage() {
     if (!user) return;
     setLoading(true);
     setError(null);
-    const { data, error: err } = await supabase
-      .from("employers")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("name");
+    const [{ data, error: err }, { data: acctData }] = await Promise.all([
+      supabase.from("employers").select("*").eq("user_id", user.id).order("name"),
+      supabase.from("accounts").select("*").eq("user_id", user.id).eq("is_active", true).in("type", ["checking", "savings"]).order("name"),
+    ]);
     if (err) setError(err.message);
     else setEmployers(data ?? []);
+    setAccounts(acctData ?? []);
     setLoading(false);
   }, [user, supabase]);
 
@@ -142,6 +147,7 @@ export default function EmployersPage() {
       hr_contact: emp.hr_contact ?? "",
       my_start_date: emp.my_start_date ?? "",
       grade: emp.grade ?? "",
+      default_account_id: emp.default_account_id ?? "",
       notes: emp.notes ?? "",
     });
     setSaveError(null);
@@ -176,6 +182,7 @@ export default function EmployersPage() {
       hr_contact: form.hr_contact.trim() || null,
       my_start_date: form.my_start_date || null,
       grade: form.grade.trim() || null,
+      default_account_id: form.default_account_id || null,
       notes: form.notes.trim() || null,
     };
 
@@ -305,6 +312,11 @@ export default function EmployersPage() {
                 : null}
               />
               <DetailRow icon={BadgeCheck} label="Grade / Level" value={emp.grade} />
+              <DetailRow
+                icon={Landmark}
+                label="Default Deposit Account"
+                value={accounts.find((a) => a.id === emp.default_account_id)?.name ?? null}
+              />
               {emp.notes && (
                 <div className="col-span-2">
                   <p className="text-[0.65rem] text-[var(--color-text-muted)] uppercase tracking-wide mb-0.5">Notes</p>
@@ -375,6 +387,23 @@ export default function EmployersPage() {
                 <div>
                   <label className={labelClass}>My Start Date</label>
                   <input type="date" className={inputClass} value={form.my_start_date} onChange={field("my_start_date")} />
+                </div>
+
+                <div className="col-span-2">
+                  <label className={labelClass}>Default Deposit Account</label>
+                  <select
+                    value={form.default_account_id}
+                    onChange={(e) => setForm((prev) => ({ ...prev, default_account_id: e.target.value }))}
+                    className={inputClass}
+                  >
+                    <option value="">— None —</option>
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-[var(--color-text-muted)] mt-1">
+                    Auto-fills the deposit account when logging a paycheck for this employer.
+                  </p>
                 </div>
 
                 <div className="col-span-2">
