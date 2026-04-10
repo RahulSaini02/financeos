@@ -70,19 +70,32 @@ export async function GET(request: NextRequest) {
     const { start, end, label } = dateRange(period)
     const prev = previousDateRange(period)
 
-    // Fetch transactions for the period + categories + budgets + previous period
+    // ── Debug: log query payload ──────────────────────────────────────────────
+    console.log('[AI Review] Query payload:', {
+      user_id: user.id,
+      period,
+      start,
+      end,
+      prev_start: prev.start,
+      prev_end: prev.end,
+    })
+
+    // Fetch confirmed transactions only (user-scoped, excluding internal transfers)
     const [txRes, budgetRes, accountsRes, prevTxRes] = await Promise.all([
       supabase
         .from('transactions')
         .select('description, amount_usd, cr_dr, date, category:categories(name, type)')
         .eq('user_id', user.id)
+        .eq('import_status', 'confirmed')
+        .eq('is_internal_transfer', false)
         .gte('date', start)
         .lte('date', end)
         .order('date', { ascending: false }),
       supabase
         .from('budgets')
         .select('amount_usd, category:categories(name)')
-        .eq('user_id', user.id),
+        .eq('user_id', user.id)
+        .eq('month', start.substring(0, 7) + '-01'),
       supabase
         .from('accounts')
         .select('name, kind, current_balance')
@@ -92,9 +105,20 @@ export async function GET(request: NextRequest) {
         .from('transactions')
         .select('amount_usd, cr_dr')
         .eq('user_id', user.id)
+        .eq('import_status', 'confirmed')
+        .eq('is_internal_transfer', false)
         .gte('date', prev.start)
         .lte('date', prev.end),
     ])
+
+    // ── Debug: log raw DB responses ──────────────────────────────────────────
+    console.log('[AI Review] DB response:', {
+      transactions_count: txRes.data?.length ?? 0,
+      transactions_error: txRes.error?.message,
+      budgets_count: budgetRes.data?.length ?? 0,
+      accounts_count: accountsRes.data?.length ?? 0,
+      prev_transactions_count: prevTxRes.data?.length ?? 0,
+    })
 
     const transactions = txRes.data ?? []
     const budgets = budgetRes.data ?? []
@@ -144,13 +168,14 @@ export async function GET(request: NextRequest) {
       return `- ${catName}: spent ${fmt(spent)} / ${fmt(b.amount_usd)} budget (${pct}%)`
     }).join('\n')
 
-    const context = `
+    const aiInput = `
 ## Period: ${label}
 - Total Income: ${fmt(income)}
 - Total Expenses: ${fmt(expenses)}
 - Net Cash Flow: ${fmt(income - expenses)}
 - Net Worth: ${fmt(netWorth)}
-- Transactions: ${transactions.length}
+- Transactions: ${transactions.length} (confirmed, excluding internal transfers)
+- Previous period avg daily spend: ${fmt(previousAvgDaily)}
 
 ## Spending by Category
 ${topCategories.map(c => `- ${c.name}: ${fmt(c.amount)} (${c.count} txns)`).join('\n') || '- No spending data'}
@@ -164,6 +189,10 @@ ${Object.entries(dailySpend).sort((a, b) => a[0].localeCompare(b[0])).map(([d, a
 ## Top Individual Transactions
 ${transactions.filter(t => t.cr_dr === 'debit').sort((a, b) => Math.abs(b.amount_usd) - Math.abs(a.amount_usd)).slice(0, 5).map(t => `- ${t.description}: ${fmt(Math.abs(t.amount_usd))} on ${t.date}`).join('\n') || '- None'}
 `.trim()
+
+    // ── Debug: log final AI input ─────────────────────────────────────────────
+    console.log('[AI Review] Final AI input length:', aiInput.length)
+    console.log('[AI Review] AI input preview:', aiInput.substring(0, 500))
 
     // Generate AI analysis
     let analysis = ''
@@ -180,15 +209,16 @@ ${transactions.filter(t => t.cr_dr === 'debit').sort((a, b) => Math.abs(b.amount
 5. **Outlook** — brief forward-looking comment
 
 Be specific with numbers. Keep it practical and concise (under 400 words total).`,
-        messages: [{ role: 'user', content: `Analyze my finances for ${label}:\n\n${context}` }],
+        messages: [{ role: 'user', content: `Analyze my finances for ${label}:\n\n${aiInput}` }],
       })
       analysis = msg.content[0].type === 'text' ? msg.content[0].text : ''
 
       // Save as insight
       await supabase.from('ai_insights').insert({
         user_id: user.id,
-        type: period === 'week' ? 'weekly' : 'monthly',
+        type: 'monthly',
         content: analysis,
+        month: start.substring(0, 7) + '-01',
         is_read: false,
       }).then(() => {})
     } else {

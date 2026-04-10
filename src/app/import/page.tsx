@@ -17,6 +17,7 @@ import {
 import { TablePageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 // Joined type from Supabase select
 type PendingImportWithJoins = PendingImport & {
@@ -217,7 +218,19 @@ export default function ImportPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Import Review</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Import Review</h1>
+            <InfoTooltip
+              title="Import Review"
+              description="Review and confirm transactions automatically imported from email or webhooks."
+              howTo="Confirm transactions to add them to your ledger. Edit the category, account, or amount before confirming. Reject imports that are incorrect."
+              keyActions={[
+                "Confirm imports to add them to transactions",
+                "Reject or flag imports that look incorrect",
+                "Edit category and account before confirming",
+              ]}
+            />
+          </div>
           <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">
             <span className="text-[var(--color-accent)]">{stats.pending} pending</span>
             {" · "}

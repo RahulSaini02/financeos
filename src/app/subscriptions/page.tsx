@@ -21,6 +21,7 @@ import {
   PackageOpen,
 } from "lucide-react";
 import { GridPageSkeleton } from "@/components/ui/skeleton";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 type FilterTab = "all" | BillingStatus;
 
@@ -340,7 +341,7 @@ export default function SubscriptionsPage() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
+  const [activeFilter, setActiveFilter] = useState<FilterTab>("active");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSub, setEditingSub] = useState<Subscription | null>(null);
 
@@ -431,9 +432,22 @@ export default function SubscriptionsPage() {
     <div className="p-4 md:p-6 space-y-5 md:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl md:text-2xl font-semibold tracking-tight">
-            Subscriptions & Bills
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl md:text-2xl font-semibold tracking-tight">
+              Subscriptions & Bills
+            </h1>
+            <InfoTooltip
+              title="Subscriptions & Bills"
+              description="Track all your recurring subscriptions and bills. Defaults to showing active subscriptions."
+              howTo="Use the filter tabs to switch between Active, Inactive, or All subscriptions. Add new ones with the + button."
+              keyActions={[
+                "Add a new subscription or recurring bill",
+                "Toggle between active / inactive / all views",
+                "See total monthly and annual cost",
+                "Track upcoming renewal dates",
+              ]}
+            />
+          </div>
           <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">
             Track your recurring subscriptions and bills
           </p>

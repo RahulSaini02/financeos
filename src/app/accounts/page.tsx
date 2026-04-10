@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { AccountsPageSkeleton } from "@/components/ui/skeleton";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { formatCurrency, cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/components/auth-provider";
@@ -552,7 +553,19 @@ export default function AccountsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Accounts</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Accounts</h1>
+            <InfoTooltip
+              title="Accounts"
+              description="Manage all your financial accounts — checking, savings, credit cards, loans, and investments."
+              howTo="Add accounts with the + button. Balances update automatically as you log transactions."
+              keyActions={[
+                "Add a new bank or investment account",
+                "View balance history and account type",
+                "Deactivate accounts you no longer use",
+              ]}
+            />
+          </div>
           <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">
             Manage your bank accounts and track your net worth
           </p>

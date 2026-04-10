@@ -22,6 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { TablePageSkeleton } from "@/components/ui/skeleton";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 interface TransactionFilters {
   accountId?: string;
@@ -283,7 +284,20 @@ function TransactionsContent () {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Transactions</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Transactions</h1>
+            <InfoTooltip
+              title="Transactions"
+              description="View and manage all your financial transactions across accounts."
+              howTo="Use filters to narrow by account, category, or date range. Search by description. Click a transaction to edit or delete it."
+              keyActions={[
+                "Add a transaction manually with the + button",
+                "Filter by account, category or date",
+                "Search transactions by description",
+                "Flag unusual transactions for review",
+              ]}
+            />
+          </div>
           <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">
             {filtered.length} transactions ·{" "}
             <span className="text-[var(--color-income)]">+{formatCurrency( totalIncome )}</span>{" "}

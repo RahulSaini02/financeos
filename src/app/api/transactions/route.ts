@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { randomUUID } from 'crypto'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -99,10 +100,129 @@ export async function POST(request: NextRequest) {
       notes,
       original_currency,
       loan_id,
+      // Inter-account transfer fields
+      target_account_id,
     } = body
 
     const final_amount = cr_dr === 'credit' ? amount_usd : -amount_usd
     const amount_original = amount_usd
+
+    // ── Inter-account transfer detection ─────────────────────────────────────
+    // If target_account_id is provided, this is an internal transfer.
+    // Create paired transactions atomically.
+    if (target_account_id && target_account_id !== account_id) {
+      const transferGroupId = randomUUID()
+
+      // Find or create the "Transfer" category for this user
+      let transferCategoryId: string | null = null
+      const { data: transferCat } = await supabase
+        .from('categories')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('name', 'Transfer')
+        .single()
+      transferCategoryId = transferCat?.id ?? null
+
+      // Transaction A: debit from source account
+      const { data: txnA, error: errA } = await supabase
+        .from('transactions')
+        .insert({
+          user_id: user.id,
+          account_id,
+          category_id: transferCategoryId,
+          description: description || `Transfer to account`,
+          amount_usd: -amount_usd,
+          amount_original,
+          original_currency: original_currency ?? null,
+          cr_dr: 'debit',
+          date,
+          notes: notes ?? null,
+          source: 'manual',
+          import_status: 'confirmed',
+          flagged: false,
+          is_recurring: false,
+          ai_categorized: false,
+          is_internal_transfer: true,
+          transfer_group_id: transferGroupId,
+        })
+        .select()
+        .single()
+
+      if (errA || !txnA) {
+        console.error('Transfer txnA insert error:', errA)
+        return NextResponse.json({ error: 'Failed to create transfer (source)' }, { status: 500 })
+      }
+
+      // Transaction B: credit into target account
+      const { data: txnB, error: errB } = await supabase
+        .from('transactions')
+        .insert({
+          user_id: user.id,
+          account_id: target_account_id,
+          category_id: transferCategoryId,
+          description: description || `Transfer from account`,
+          amount_usd,
+          amount_original,
+          original_currency: original_currency ?? null,
+          cr_dr: 'credit',
+          date,
+          notes: notes ?? null,
+          source: 'manual',
+          import_status: 'confirmed',
+          flagged: false,
+          is_recurring: false,
+          ai_categorized: false,
+          is_internal_transfer: true,
+          transfer_group_id: transferGroupId,
+          linked_transaction_id: txnA.id,
+        })
+        .select()
+        .single()
+
+      if (errB || !txnB) {
+        // Rollback txnA — account balances haven't been touched yet, so just delete the record
+        const { error: rollbackErr } = await supabase.from('transactions').delete().eq('id', txnA.id)
+        if (rollbackErr) console.error('Transfer rollback failed for txnA:', rollbackErr)
+        console.error('Transfer txnB insert error:', errB)
+        return NextResponse.json({ error: 'Failed to create transfer (target)' }, { status: 500 })
+      }
+
+      // Cross-link txnA → txnB (txnB already has linked_transaction_id = txnA.id)
+      const { error: linkErr } = await supabase
+        .from('transactions')
+        .update({ linked_transaction_id: txnB.id })
+        .eq('id', txnA.id)
+      if (linkErr) {
+        console.error('Failed to set reverse link on txnA:', linkErr)
+        // Non-fatal: both transactions exist, just the reverse link is missing
+      }
+
+      // Sync both account balances (read-modify-write; best-effort, non-atomic)
+      await Promise.all([
+        (async () => {
+          const { data: acct } = await supabase
+            .from('accounts').select('current_balance').eq('id', account_id).eq('user_id', user.id).single()
+          if (acct) {
+            await supabase.from('accounts')
+              .update({ current_balance: (acct.current_balance ?? 0) - amount_usd })
+              .eq('id', account_id).eq('user_id', user.id)
+          }
+        })(),
+        (async () => {
+          const { data: acct } = await supabase
+            .from('accounts').select('current_balance').eq('id', target_account_id).eq('user_id', user.id).single()
+          if (acct) {
+            await supabase.from('accounts')
+              .update({ current_balance: (acct.current_balance ?? 0) + amount_usd })
+              .eq('id', target_account_id).eq('user_id', user.id)
+          }
+        })(),
+      ])
+
+      return NextResponse.json({ ...txnA, linked_transaction: txnB }, { status: 201 })
+    }
+
+    // ── Standard transaction flow ─────────────────────────────────────────────
 
     // ── Smart auto-categorization (if no category provided) ──────────────────
     let resolvedCategoryId = category_id ?? null
@@ -160,6 +280,7 @@ export async function POST(request: NextRequest) {
         is_recurring: false,
         ai_categorized: aiCategorized,
         ai_confidence: aiConfidence,
+        is_internal_transfer: false,
       })
       .select()
       .single()

@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardTitle, CardValue } from "@/components/ui/card";
 import { GridPageSkeleton } from "@/components/ui/skeleton";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 import {
@@ -338,7 +339,19 @@ export default function BudgetsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Budgets</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Budgets</h1>
+            <InfoTooltip
+              title="Budgets"
+              description="Set monthly spending limits per category and track how much you've spent vs your budget."
+              howTo="Navigate months with the arrows. Click + to set a budget for any category. Budgets turn red when overspent."
+              keyActions={[
+                "Set a monthly budget for each spending category",
+                "View actual spend vs budget in real-time",
+                "Navigate to past months to review history",
+              ]}
+            />
+          </div>
           <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">
             Track and manage your monthly spending limits
           </p>

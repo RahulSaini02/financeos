@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/components/auth-provider";
 import type { Investment, SavingsGoal } from "@/lib/types";
 import { GridPageSkeleton } from "@/components/ui/skeleton";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import {
   TrendingUp,
   TrendingDown,
@@ -126,7 +127,19 @@ export default function InvestmentsPage() {
     <div className="p-4 md:p-6 space-y-5 md:space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Investments</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Investments</h1>
+          <InfoTooltip
+            title="Investments"
+            description="Track your investment portfolio and savings goals in one place."
+            howTo="Add investments by clicking + Investment. Update current values to track performance. Link savings goals to accounts."
+            keyActions={[
+              "Add stocks, ETFs, retirement accounts, or crypto",
+              "Track gain/loss per holding",
+              "Manage savings goals with target amounts",
+            ]}
+          />
+        </div>
         <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">
           Portfolio performance and savings goals
         </p>

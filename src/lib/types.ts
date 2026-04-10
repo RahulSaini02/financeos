@@ -85,6 +85,10 @@ export interface Transaction {
   flagged_reason: string | null
   ai_categorized: boolean
   ai_confidence: number | null
+  loan_id: string | null
+  transfer_group_id: string | null
+  linked_transaction_id: string | null
+  is_internal_transfer: boolean
   created_at: string
   updated_at: string
   account?: Account
@@ -120,6 +124,7 @@ export interface Employer {
   hr_contact: string | null
   my_start_date: string | null
   grade: string | null
+  default_account_id: string | null
   notes: string | null
   created_at: string
   updated_at: string
@@ -141,6 +146,7 @@ export interface Paycheck {
   net_pay: number
   is_current_month: boolean
   notes: string | null
+  transaction_id: string | null
   created_at: string
   employer_record?: Employer
 }

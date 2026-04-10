@@ -68,21 +68,25 @@ export async function POST(request: NextRequest) {
     if (from_account_id) {
       try {
         const signedAmt = -Math.abs(emi_paid) // debit = negative
-        await supabase.from('transactions').insert({
+        const { error: txnInsertErr } = await supabase.from('transactions').insert({
           user_id: user.id,
           account_id: from_account_id,
-          loan_id: loan_id, // link transaction to loan for history + balance sync
+          loan_id: loan_id,
           description: `Loan Payment — ${loan.name}`,
           amount_usd: signedAmt,
           amount_original: Math.abs(emi_paid),
           cr_dr: 'debit',
           date: payment_date,
-          source: 'auto',
+          source: 'manual',
           import_status: 'confirmed',
           flagged: false,
           is_recurring: false,
           ai_categorized: false,
+          is_internal_transfer: false,
         })
+        if (txnInsertErr) {
+          console.error('Loan payment transaction insert error:', txnInsertErr)
+        }
 
         // Reduce the paying account's balance
         const { data: acct } = await supabase

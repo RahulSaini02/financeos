@@ -19,7 +19,10 @@ import {
   Calculator,
   Plus,
   X,
+  ExternalLink,
 } from "lucide-react";
+import Link from "next/link";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -155,7 +158,19 @@ export default function LoansPage() {
     <div className="p-4 md:p-6 space-y-5 md:space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Loans & Debt</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Loans & Debt</h1>
+          <InfoTooltip
+            title="Loans & Debt"
+            description="Track all your loans, monitor payoff progress, and simulate extra payments to save on interest."
+            howTo="Click 'Details' on any loan for the full payment history. Use the extra payment simulator to see how much you can save."
+            keyActions={[
+              "Log a loan payment with 'Log Payment'",
+              "View detailed history on the loan detail page",
+              "Simulate extra payments to see interest savings",
+            ]}
+          />
+        </div>
         <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">
           Track payoff progress and simulate extra payments
         </p>
@@ -288,6 +303,12 @@ export default function LoansPage() {
                   >
                     <Plus className="h-3.5 w-3.5" /> Log Payment
                   </button>
+                  <Link
+                    href={`/loans/${loan.id}`}
+                    className="flex items-center justify-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" /> Details
+                  </Link>
                   <button
                     className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
                     onClick={() => setExpandedId(isExpanded ? null : loan.id)}

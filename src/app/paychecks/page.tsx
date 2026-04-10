@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/components/auth-provider";
-import type { Paycheck, Employer } from "@/lib/types";
+import type { Paycheck, Employer, Account } from "@/lib/types";
 import {
   ChevronLeft,
   ChevronRight,
@@ -27,6 +27,7 @@ interface PaycheckFormData {
   date: string;
   employer: string;
   employer_id: string;
+  account_id: string;
   gross_pay: string;
   federal_tax: string;
   state_tax: string;
@@ -42,6 +43,7 @@ const emptyForm: PaycheckFormData = {
   date: "",
   employer: "",
   employer_id: "",
+  account_id: "",
   gross_pay: "",
   federal_tax: "",
   state_tax: "",
@@ -113,6 +115,7 @@ export default function PaychecksPage() {
 
   // Employer management
   const [employers, setEmployers] = useState<Employer[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [addingEmployer, setAddingEmployer] = useState(false);
   const [newEmployerInput, setNewEmployerInput] = useState("");
 
@@ -120,6 +123,7 @@ export default function PaychecksPage() {
     if (!user) return;
     fetchPaychecks();
     fetchEmployers();
+    fetchAccounts();
   }, [user]);
 
   async function fetchEmployers() {
@@ -129,6 +133,17 @@ export default function PaychecksPage() {
       .eq("user_id", user!.id)
       .order("name");
     setEmployers(data ?? []);
+  }
+
+  async function fetchAccounts() {
+    const { data } = await supabase
+      .from("accounts")
+      .select("*")
+      .eq("user_id", user!.id)
+      .eq("is_active", true)
+      .in("type", ["checking", "savings"])
+      .order("name");
+    setAccounts(data ?? []);
   }
 
   async function fetchPaychecks() {
@@ -178,7 +193,13 @@ export default function PaychecksPage() {
     }
     const emp = employers.find((e) => e.id === employerId);
     if (emp) {
-      setForm((prev) => ({ ...prev, employer: emp.name, employer_id: emp.id }));
+      setForm((prev) => ({
+        ...prev,
+        employer: emp.name,
+        employer_id: emp.id,
+        // Auto-fill account from employer default if available
+        account_id: emp.default_account_id ?? prev.account_id,
+      }));
     } else {
       setForm((prev) => ({ ...prev, employer: "", employer_id: "" }));
     }
@@ -218,9 +239,10 @@ export default function PaychecksPage() {
     setSaving(true);
     setSaveError(null);
 
+    const netPay = parseFloat(form.net_pay) || 0;
     const payload = {
       user_id: user!.id,
-      account_id: "",
+      account_id: form.account_id || "",
       employer: form.employer || "Unknown",
       employer_id: form.employer_id || null,
       date: form.date,
@@ -230,18 +252,61 @@ export default function PaychecksPage() {
       sdi: parseFloat(form.sdi) || 0,
       other_deductions: parseFloat(form.other_deductions) || 0,
       retirement_401k: parseFloat(form.retirement_401k) || 0,
-      net_pay: parseFloat(form.net_pay) || 0,
+      net_pay: netPay,
       is_current_month: form.is_current_month,
       notes: form.notes || null,
     };
 
-    const { error: err } = await supabase.from("paychecks").insert(payload);
-    if (err) {
-      setSaveError(err.message);
-    } else {
-      closeModal();
-      await fetchPaychecks();
+    const { data: paycheck, error: err } = await supabase
+      .from("paychecks")
+      .insert(payload)
+      .select()
+      .single();
+
+    if (err || !paycheck) {
+      setSaveError(err?.message ?? "Failed to save paycheck");
+      setSaving(false);
+      return;
     }
+
+    // Auto-create income transaction if account is selected
+    if (form.account_id && netPay > 0) {
+      const txnRes = await fetch("/api/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: form.account_id,
+          description: `Paycheck — ${form.employer || "Employer"}`,
+          amount_usd: netPay,
+          cr_dr: "credit",
+          date: form.date,
+          notes: `Auto-generated from paycheck. Gross: $${form.gross_pay}`,
+        }),
+      });
+
+      if (txnRes.ok) {
+        const txn = await txnRes.json();
+        // Link transaction back to paycheck (non-fatal if this fails)
+        await supabase
+          .from("paychecks")
+          .update({ transaction_id: txn.id })
+          .eq("id", paycheck.id);
+      } else {
+        let errMsg = "Income transaction could not be created";
+        try {
+          const body = await txnRes.json();
+          if (body?.error) errMsg = `Paycheck saved, but transaction failed: ${body.error}`;
+        } catch { /* ignore */ }
+        setSaveError(errMsg);
+        setSaving(false);
+        // Paycheck was saved successfully — close modal but show the error
+        await fetchPaychecks();
+        return;
+      }
+    }
+
+    closeModal();
+    await fetchPaychecks();
     setSaving(false);
   }
 
@@ -543,6 +608,30 @@ export default function PaychecksPage() {
                       </div>
                     );
                   })()}
+                </div>
+
+                {/* Deposit Account */}
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
+                    Deposit Account
+                  </label>
+                  <select
+                    value={form.account_id}
+                    onChange={(e) => setForm((prev) => ({ ...prev, account_id: e.target.value }))}
+                    className={inputClass}
+                  >
+                    <option value="">— Select account (optional) —</option>
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                  {form.account_id && (
+                    <p className="text-[10px] text-[var(--color-text-muted)] mt-1">
+                      An income transaction will be auto-created in this account.
+                    </p>
+                  )}
                 </div>
 
                 {/* Pay Date */}

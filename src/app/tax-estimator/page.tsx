@@ -9,6 +9,7 @@ import { useAuth } from "@/components/auth-provider";
 import type { Paycheck } from "@/lib/types";
 import { Loader2, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { GridPageSkeleton } from "@/components/ui/skeleton";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 const FEDERAL_BRACKETS_SINGLE = [
   { min: 0, max: 11925, rate: 0.10 },
@@ -233,7 +234,19 @@ export default function TaxEstimatorPage() {
   return (
     <div className="space-y-6 p-6 max-w-5xl mx-auto">
       <div>
-        <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">Tax Estimator</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">Tax Estimator</h1>
+          <InfoTooltip
+            title="Tax Estimator"
+            description="Estimate your federal and state tax liability based on your YTD paycheck data."
+            howTo="Values are pre-filled from your paychecks. Adjust income or deductions to run different scenarios."
+            keyActions={[
+              "Review estimated federal and state tax",
+              "See effective tax rate and refund/owed estimate",
+              "Adjust inputs for different tax scenarios",
+            ]}
+          />
+        </div>
         <p className="text-sm text-[var(--color-text-muted)] mt-0.5">
           2026 US Federal &amp; California State Tax — pre-filled from your YTD paycheck data
         </p>
