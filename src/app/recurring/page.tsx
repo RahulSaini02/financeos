@@ -24,13 +24,20 @@ import {
   ToggleRight,
 } from "lucide-react";
 import { GridPageSkeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/ui/page-header";
+import { HelpModal } from "@/components/ui/help-modal";
+import { EmptyState } from "@/components/ui/empty-state";
+import { StatusBadge } from "@/components/ui/status-badge";
 
-type FrequencyOption = "daily" | "weekly" | "monthly" | "yearly";
+type FrequencyOption = "daily" | "weekly" | "biweekly" | "monthly" | "quarterly" | "annually" | "yearly";
 
 const FREQUENCY_OPTIONS: { value: FrequencyOption; label: string }[] = [
   { value: "daily", label: "Daily" },
   { value: "weekly", label: "Weekly" },
+  { value: "biweekly", label: "Bi-weekly" },
   { value: "monthly", label: "Monthly" },
+  { value: "quarterly", label: "Quarterly" },
+  { value: "annually", label: "Annually" },
   { value: "yearly", label: "Yearly" },
 ];
 
@@ -64,17 +71,7 @@ interface CategoryOption {
 }
 
 function statusBadge(isActive: boolean) {
-  return isActive ? (
-    <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-success)]/15 px-2 py-0.5 text-xs font-medium text-[var(--color-success)]">
-      <CheckCircle2 className="h-3 w-3" />
-      Active
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-text-muted)]/15 px-2 py-0.5 text-xs font-medium text-[var(--color-text-muted)]">
-      <PauseCircle className="h-3 w-3" />
-      Paused
-    </span>
-  );
+  return <StatusBadge label={isActive ? "Active" : "Paused"} variant={isActive ? "success" : "muted"} />;
 }
 
 function getFrequencyLabel(freq: FrequencyOption, dayOfMonth: number | null): string {
@@ -83,10 +80,17 @@ function getFrequencyLabel(freq: FrequencyOption, dayOfMonth: number | null): st
       return "Every day";
     case "weekly":
       return "Every week";
+    case "biweekly":
+      return "Every 2 weeks";
     case "monthly":
       return dayOfMonth ? `Monthly on the ${dayOfMonth}${getDaySuffix(dayOfMonth)}` : "Monthly";
+    case "quarterly":
+      return "Every 3 months";
+    case "annually":
     case "yearly":
       return "Every year";
+    default:
+      return freq;
   }
 }
 
@@ -99,6 +103,7 @@ interface RecurringRuleFormData {
   next_due: string;
   is_active: boolean;
   account_id: string;
+  target_account_id: string;
   category_id: string;
   notes: string;
 }
@@ -112,6 +117,7 @@ const emptyForm: RecurringRuleFormData = {
   next_due: "",
   is_active: true,
   account_id: "",
+  target_account_id: "",
   category_id: "",
   notes: "",
 };
@@ -142,6 +148,7 @@ function RecurringRuleModal({
         next_due: editingRule.next_due,
         is_active: editingRule.is_active,
         account_id: editingRule.account_id,
+        target_account_id: editingRule.target_account_id ?? "",
         category_id: editingRule.category_id ?? "",
         notes: editingRule.notes ?? "",
       };
@@ -166,6 +173,7 @@ function RecurringRuleModal({
       next_due: form.next_due,
       is_active: form.is_active,
       account_id: form.account_id || null,
+      target_account_id: form.target_account_id || null,
       category_id: form.category_id || null,
       notes: form.notes.trim() || null,
     };
@@ -333,7 +341,7 @@ function RecurringRuleModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-                Account
+                From Account
               </label>
               <select
                 value={form.account_id}
@@ -375,6 +383,33 @@ function RecurringRuleModal({
                 ))}
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
+              Transfer To (optional — for recurring inter-account transfers)
+            </label>
+            <select
+              value={form.target_account_id}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, target_account_id: e.target.value }))
+              }
+              className={inputClass}
+            >
+              <option value="">— Not a transfer —</option>
+              {accounts
+                .filter((a) => a.id !== form.account_id)
+                .map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+            </select>
+            {form.target_account_id && (
+              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                A paired debit + credit will be created on each due date.
+              </p>
+            )}
           </div>
 
           <div className="flex items-center justify-between py-2">
@@ -488,6 +523,7 @@ export default function RecurringRulesPage() {
   const [rules, setRules] = useState<RecurringRule[]>([]);
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [autoRenewSubs, setAutoRenewSubs] = useState<{ id: string; name: string; billing_cost: number; billing_cycle_months: number; next_billing_date: string | null; account_id: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<"all" | "active" | "inactive">("all");
@@ -541,6 +577,15 @@ export default function RecurringRulesPage() {
       fetchRules();
       fetchAccounts();
       fetchCategories();
+      // Fetch active auto-renew subscriptions to show alongside rules
+      supabase
+        .from("subscriptions")
+        .select("id, name, billing_cost, billing_cycle_months, next_billing_date, account_id")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .eq("auto_renew", true)
+        .order("next_billing_date")
+        .then(({ data }) => setAutoRenewSubs(data ?? []));
     }
   }, [user]);
 
@@ -609,20 +654,41 @@ export default function RecurringRulesPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-5 md:space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl md:text-2xl font-semibold tracking-tight">
-            Recurring Rules
-          </h1>
-          <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">
-            Automate recurring transactions and bills
-          </p>
-        </div>
+      <PageHeader
+        title="Recurring Rules"
+        subtitle="Automate recurring transactions and bills"
+        tooltip={
+          <HelpModal
+            title="Recurring Rules"
+            description="Automate repeated transactions like rent, subscriptions, or salary deposits. Set a rule once and FinanceOS generates the transaction on the due date."
+            sections={[
+              {
+                heading: "How to use",
+                items: [
+                  "Create a rule for any transaction that repeats on a fixed schedule",
+                  "Choose frequency: daily, weekly, monthly, or yearly",
+                  "Set the next due date and the system will generate future transactions automatically",
+                  "Deactivate a rule to pause it without deleting it",
+                ],
+              },
+              {
+                heading: "Key actions",
+                items: [
+                  "Add Rule — define a recurring income or expense",
+                  "Edit — change the amount, frequency, or next due date",
+                  "Toggle active — pause or resume a rule",
+                  "Delete — remove a rule permanently",
+                ],
+              },
+            ]}
+          />
+        }
+      >
         <Button onClick={openAdd} size="md">
           <Plus className="h-4 w-4 mr-1.5" />
           Add Rule
         </Button>
-      </div>
+      </PageHeader>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Card>
@@ -685,17 +751,15 @@ export default function RecurringRulesPage() {
           <span className="text-sm">{error}</span>
         </div>
       ) : filteredRules.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <PackageOpen className="h-10 w-10 text-[var(--color-text-muted)] mb-3" />
-          <p className="text-sm font-medium text-[var(--color-text-secondary)]">
-            No recurring rules found
-          </p>
-          <p className="text-xs text-[var(--color-text-muted)] mt-1">
-            {activeFilter === "all"
+        <EmptyState
+          icon={<PackageOpen className="h-8 w-8" />}
+          title="No recurring rules found"
+          description={
+            activeFilter === "all"
               ? "Add your first recurring rule to automate transactions."
-              : `No ${activeFilter} recurring rules.`}
-          </p>
-        </div>
+              : `No ${activeFilter} recurring rules.`
+          }
+        />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredRules.map((rule) => {
@@ -788,6 +852,49 @@ export default function RecurringRulesPage() {
               </Card>
             );
           })}
+        </div>
+      )}
+
+      {/* Auto-renew Subscriptions section */}
+      {autoRenewSubs.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-[var(--color-text-secondary)]">
+              Auto-renew Subscriptions
+            </h2>
+            <a
+              href="/subscriptions"
+              className="text-xs text-[var(--color-accent)] hover:underline"
+            >
+              Manage subscriptions →
+            </a>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {autoRenewSubs.map((sub) => (
+              <Card key={sub.id} className="flex flex-col gap-2 border-dashed opacity-90">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--color-warning)]/10 text-[var(--color-warning)]">
+                    <Repeat className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">{sub.name}</p>
+                    <p className="text-xs text-[var(--color-text-muted)]">
+                      {formatCurrency(sub.billing_cost)} / {sub.billing_cycle_months === 1 ? "month" : `${sub.billing_cycle_months} months`}
+                    </p>
+                  </div>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--color-warning)]/10 text-[var(--color-warning)] font-medium whitespace-nowrap">
+                    Auto-pay
+                  </span>
+                </div>
+                {sub.next_billing_date && (
+                  <p className="text-xs text-[var(--color-text-muted)] flex items-center gap-1">
+                    <Calendar className="h-3 w-3" />
+                    Next: {formatDate(sub.next_billing_date)}
+                  </p>
+                )}
+              </Card>
+            ))}
+          </div>
         </div>
       )}
 

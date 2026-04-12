@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { AccountsPageSkeleton } from "@/components/ui/skeleton";
-import { InfoTooltip } from "@/components/ui/info-tooltip";
+import { HelpModal } from "@/components/ui/help-modal";
 import { formatCurrency, cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/components/auth-provider";
@@ -27,6 +27,11 @@ import {
   Loader2,
   ChevronDown,
 } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Modal } from "@/components/ui/modal";
+import { FormField, FormInput, FormSelect } from "@/components/ui/form-field";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type SortOption = "name_asc" | "name_desc" | "balance_high" | "balance_low" | "currency";
 
@@ -182,15 +187,17 @@ export default function AccountsPage() {
     .filter((a) => a.kind === "asset")
     .reduce((sum, a) => sum + a.current_balance, 0);
 
-  const totalLiabilities = activeAccounts
+  // Negate the raw sum so totalLiabilities is positive when you owe money
+  // (liabilities are stored as negative values in the DB)
+  const totalLiabilities = -activeAccounts
     .filter((a) => a.kind === "liability")
-    .reduce((sum, a) => sum + Math.abs(a.current_balance), 0);
+    .reduce((sum, a) => sum + a.current_balance, 0);
 
   const totalInvestments = activeAccounts
     .filter((a) => a.kind === "investment")
     .reduce((sum, a) => sum + a.current_balance, 0);
 
-  const netWorth = totalAssets - totalLiabilities;
+  const netWorth = totalAssets + totalInvestments - totalLiabilities;
 
   const kindLabels: Record<AccountKind, string> = {
     asset: "Assets",
@@ -318,7 +325,8 @@ export default function AccountsPage() {
       institution: account.institution ?? "",
       last_four: account.last_four || "",
       currency: account.currency,
-      current_balance: account.current_balance.toString(),
+      // Liabilities stored as negative; show as positive in the form (handleSubmit re-negates)
+      current_balance: Math.abs(account.current_balance).toString(),
       is_india_account: account.is_india_account,
       is_active: account.is_active,
     });
@@ -476,7 +484,7 @@ export default function AccountsPage() {
   };
 
   const getAccountColor = (balance: number, kind: AccountKind) => {
-    if (kind === "liability") return "text-[var(--color-danger)]";
+    if (kind === "liability") return balance >= 0 ? "text-[var(--color-income)]" : "text-[var(--color-danger)]";
     return balance >= 0 ? "text-[var(--color-income)]" : "text-[var(--color-danger)]";
   };
 
@@ -503,24 +511,6 @@ export default function AccountsPage() {
     </div>
   );
 
-  // Empty state component
-  const EmptyState = () => (
-    <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
-      <div className="h-16 w-16 rounded-2xl bg-[var(--color-bg-tertiary)] flex items-center justify-center mb-4">
-        <PackageOpen className="h-8 w-8 text-[var(--color-text-muted)]" />
-      </div>
-      <h3 className="text-lg font-semibold text-[var(--color-text-primary)] mb-2">
-        No accounts yet
-      </h3>
-      <p className="text-sm text-[var(--color-text-secondary)] max-w-xs mb-6">
-        Get started by adding your first account to track your net worth and manage your finances.
-      </p>
-      <Button onClick={openAddModal} size="lg">
-        <Plus className="h-4 w-4 mr-2" />
-        Add Your First Account
-      </Button>
-    </div>
-  );
 
   // Error display component
   const ErrorDisplay = ({ message }: { message: string }) => (
@@ -551,86 +541,94 @@ export default function AccountsPage() {
   return (
     <div className="p-4 md:p-6 space-y-5 md:space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Accounts</h1>
-            <InfoTooltip
-              title="Accounts"
-              description="Manage all your financial accounts — checking, savings, credit cards, loans, and investments."
-              howTo="Add accounts with the + button. Balances update automatically as you log transactions."
-              keyActions={[
-                "Add a new bank or investment account",
-                "View balance history and account type",
-                "Deactivate accounts you no longer use",
-              ]}
-            />
-          </div>
-          <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">
-            Manage your bank accounts and track your net worth
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Sort Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
-              className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors"
-            >
-              <SortIcon option={sortOption} />
-              <span className="hidden sm:inline">{sortLabels[sortOption]}</span>
-              <ChevronDown className="h-3 w-3 ml-1" />
-            </button>
-            {isSortDropdownOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setIsSortDropdownOpen(false)}
-                />
-                <div className="absolute right-0 mt-2 w-56 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-xl z-50 py-2">
-                  <div className="px-3 py-1.5 text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wide">
-                    Sort by
-                  </div>
-                  {(Object.keys(sortLabels) as SortOption[]).map((option) => {
-                    const isActive = sortOption === option;
-                    return (
-                      <button
-                        key={option}
-                        onClick={() => { setSortOption(option); setIsSortDropdownOpen(false); }}
-                        className={cn(
-                          "flex items-center gap-2 px-3 py-2 text-sm w-full text-left transition-colors",
-                          isActive
-                            ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
-                            : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
-                        )}
-                      >
-                        <SortIcon option={option} />
-                        {sortLabels[option]}
-                        {isActive && <span className="ml-auto text-xs">✓</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </div>
+      <PageHeader
+        title="Accounts"
+        subtitle="Manage your bank accounts and track your net worth"
+        tooltip={
+          <HelpModal
+            title="Accounts"
+            description="Manage all your financial accounts — checking, savings, credit cards, loans, and investments. FinanceOS tracks balances and uses accounts to link transactions."
+            sections={[
+              {
+                heading: "How to use",
+                items: [
+                  "Add each bank account, credit card, or investment account you own",
+                  "Keep balances updated so your net worth stays accurate",
+                  "Mark accounts as inactive instead of deleting them to preserve history",
+                  "Link transactions to the correct account when adding them",
+                ],
+              },
+              {
+                heading: "Key actions",
+                items: [
+                  "Add Account — create a new checking, savings, credit card, loan, or investment account",
+                  "Edit — update the name, balance, or institution",
+                  "Toggle active/inactive — hide accounts you no longer use without losing data",
+                ],
+              },
+            ]}
+          />
+        }
+      >
+        {/* Sort Dropdown */}
+        <div className="relative">
           <button
-            onClick={() => setShowInactive((v) => !v)}
-            className={cn(
-              "flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border transition-colors",
-              showInactive
-                ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
-                : "border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"
-            )}
+            onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
+            className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors"
           >
-            {showInactive ? "Hide inactive" : "Show inactive"}
+            <SortIcon option={sortOption} />
+            <span className="hidden sm:inline">{sortLabels[sortOption]}</span>
+            <ChevronDown className="h-3 w-3 ml-1" />
           </button>
-          <Button onClick={openAddModal}>
-            <Plus className="h-3.5 w-3.5 mr-1.5" />
-            Add Account
-          </Button>
+          {isSortDropdownOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setIsSortDropdownOpen(false)}
+              />
+              <div className="absolute right-0 mt-2 w-56 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-xl z-50 py-2">
+                <div className="px-3 py-1.5 text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wide">
+                  Sort by
+                </div>
+                {(Object.keys(sortLabels) as SortOption[]).map((option) => {
+                  const isActive = sortOption === option;
+                  return (
+                    <button
+                      key={option}
+                      onClick={() => { setSortOption(option); setIsSortDropdownOpen(false); }}
+                      className={cn(
+                        "flex items-center gap-2 px-3 py-2 text-sm w-full text-left transition-colors",
+                        isActive
+                          ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
+                          : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
+                      )}
+                    >
+                      <SortIcon option={option} />
+                      {sortLabels[option]}
+                      {isActive && <span className="ml-auto text-xs">✓</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
-      </div>
+        <button
+          onClick={() => setShowInactive((v) => !v)}
+          className={cn(
+            "flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border transition-colors",
+            showInactive
+              ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
+              : "border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"
+          )}
+        >
+          {showInactive ? "Hide inactive" : "Show inactive"}
+        </button>
+        <Button onClick={openAddModal}>
+          <Plus className="h-3.5 w-3.5 mr-1.5" />
+          Add Account
+        </Button>
+      </PageHeader>
 
       {/* Error display */}
       {error && (
@@ -641,29 +639,29 @@ export default function AccountsPage() {
 
       {/* Net Worth Card */}
       <Card className="border-[var(--color-accent)] bg-gradient-to-r from-[var(--color-accent)]/10 to-transparent">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle>Net Worth</CardTitle>
             <CardValue className={cn("mt-2 text-3xl", getAccountColor(netWorth, "asset"))}>
               {formatCurrency(netWorth)}
             </CardValue>
           </div>
-          <div className="flex gap-8 text-right">
+          <div className="grid grid-cols-3 gap-4 sm:flex sm:gap-8 sm:text-right">
             <div>
               <p className="text-xs text-[var(--color-text-muted)] uppercase tracking-wide">Assets</p>
-              <p className="text-lg font-semibold text-[var(--color-income)] mt-1">
+              <p className="text-base sm:text-lg font-semibold text-[var(--color-income)] mt-1">
                 {formatCurrency(totalAssets)}
               </p>
             </div>
             <div>
               <p className="text-xs text-[var(--color-text-muted)] uppercase tracking-wide">Liabilities</p>
-              <p className="text-lg font-semibold text-[var(--color-danger)] mt-1">
+              <p className="text-base sm:text-lg font-semibold text-[var(--color-danger)] mt-1">
                 {formatCurrency(totalLiabilities)}
               </p>
             </div>
             <div>
               <p className="text-xs text-[var(--color-text-muted)] uppercase tracking-wide">Investments</p>
-              <p className="text-lg font-semibold text-[var(--color-income)] mt-1">
+              <p className="text-base sm:text-lg font-semibold text-[var(--color-income)] mt-1">
                 {formatCurrency(totalInvestments)}
               </p>
             </div>
@@ -679,7 +677,12 @@ export default function AccountsPage() {
           <SkeletonAccount />
         </div>
       ) : accounts.length === 0 ? (
-        <EmptyState />
+        <EmptyState
+          icon={<PackageOpen className="h-8 w-8" />}
+          title="No accounts yet"
+          description="Get started by adding your first account to track your net worth and manage your finances."
+          action={{ label: "Add Your First Account", onClick: openAddModal }}
+        />
       ) : (
         sortedKindOrder.map((kind) => (
           <div key={kind} className="space-y-4">

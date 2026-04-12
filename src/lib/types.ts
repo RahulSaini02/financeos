@@ -53,7 +53,6 @@ export interface Category {
   id: string
   user_id: string
   name: string
-  parent_name: string | null
   type: TransactionType
   icon: string | null
   monthly_budget: number | null
@@ -99,11 +98,12 @@ export interface RecurringRule {
   id: string
   user_id: string
   account_id: string
+  target_account_id: string | null
   category_id: string | null
   description: string
   amount_usd: number
   cr_dr: CrDr
-  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annually' | 'yearly'
   day_of_month: number | null
   next_due: string
   last_generated: string | null
@@ -143,8 +143,9 @@ export interface Paycheck {
   sdi: number
   other_deductions: number
   retirement_401k: number
+  employer_401k_match: number
+  employee_401k_pct: number
   net_pay: number
-  is_current_month: boolean
   notes: string | null
   transaction_id: string | null
   created_at: string
@@ -221,6 +222,7 @@ export interface Subscription {
   id: string
   user_id: string
   category_id: string | null
+  account_id: string | null
   name: string
   billing_cost: number
   billing_cycle_months: number

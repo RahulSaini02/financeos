@@ -1,5 +1,5 @@
 // FinanceOS Service Worker — Offline-first with background sync
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const STATIC_CACHE = `financeos-static-${CACHE_VERSION}`;
 const API_CACHE = `financeos-api-${CACHE_VERSION}`;
 const SYNC_TAG = 'financeos-sync';
@@ -73,11 +73,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets — cache-first
-  if (
-    url.pathname.match(/\.(js|css|woff2?|png|jpg|svg|ico)$/) ||
-    url.pathname.startsWith('/_next/static/')
-  ) {
+  // Next.js JS/CSS chunks — network-first so recompiled chunks are never stale
+  if (url.pathname.startsWith('/_next/static/chunks/') || url.pathname.startsWith('/_next/static/css/')) {
+    event.respondWith(networkFirstWithCache(request, STATIC_CACHE));
+    return;
+  }
+
+  // Truly immutable assets (fonts, images, icons) — cache-first
+  if (url.pathname.match(/\.(woff2?|png|jpg|jpeg|svg|ico)$/)) {
     event.respondWith(cacheFirstWithNetwork(request, STATIC_CACHE));
     return;
   }

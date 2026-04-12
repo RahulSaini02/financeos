@@ -10,6 +10,9 @@ import {
   ArrowDownRight,
   Minus,
 } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { HelpModal } from "@/components/ui/help-modal";
 import {
   BarChart,
   Bar,
@@ -315,6 +318,61 @@ function MonthlyAreaChart({
   );
 }
 
+function InsightCards({ analysis }: { analysis: string }) {
+  // Parse sections from markdown-style headers in the analysis
+  const sections = [
+    { key: "Alerts", icon: "⚠️", color: "var(--color-danger)", bg: "var(--color-danger)" },
+    { key: "Budget Deviations", icon: "📊", color: "var(--color-warning)", bg: "var(--color-warning)" },
+    { key: "Spending Insights", icon: "💡", color: "var(--color-accent)", bg: "var(--color-accent)" },
+    { key: "Suggestions", icon: "✅", color: "var(--color-success)", bg: "var(--color-success)" },
+  ];
+
+  const parsed: { key: string; icon: string; color: string; bg: string; items: string[] }[] = [];
+
+  for (const sec of sections) {
+    const regex = new RegExp(`##\\s*${sec.key}[\\s\\S]*?(?=##|$)`, "i");
+    const match = analysis.match(regex);
+    if (match) {
+      const block = match[0];
+      const items = block
+        .split("\n")
+        .filter((l) => l.match(/^[-•*]\s|^\d+\.\s/))
+        .map((l) => l.replace(/^[-•*\d.]\s+/, "").trim())
+        .filter(Boolean)
+        .slice(0, 3);
+      if (items.length > 0) {
+        parsed.push({ ...sec, items });
+      }
+    }
+  }
+
+  if (parsed.length === 0) return null;
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      {parsed.map((sec) => (
+        <div
+          key={sec.key}
+          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4"
+          style={{ borderLeftWidth: 3, borderLeftColor: `color-mix(in srgb, ${sec.color} 60%, transparent)` }}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-base">{sec.icon}</span>
+            <span className="text-xs font-semibold text-[var(--color-text-primary)]">{sec.key}</span>
+          </div>
+          <ul className="space-y-1">
+            {sec.items.map((item, i) => (
+              <li key={i} className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function AiReviewPage() {
   const [period, setPeriod] = useState<"week" | "month">("month");
   const [data, setData] = useState<ReviewData | null>(null);
@@ -347,42 +405,60 @@ export default function AiReviewPage() {
     <div className="p-4 md:p-6 space-y-5 max-w-5xl mx-auto">
 
       {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold text-[var(--color-text-primary)] flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-[var(--color-accent)]" />
-            AI Financial Review
-          </h1>
-          <p className="text-sm text-[var(--color-text-muted)] mt-0.5">
-            {loading && !data ? "Loading…" : data?.label ?? ""}
-          </p>
+      <PageHeader
+        title="AI Financial Review"
+        subtitle={loading && !data ? "Loading…" : data?.label ?? ""}
+        tooltip={
+          <HelpModal
+            title="AI Financial Review"
+            description="Get a structured AI-powered review of your finances for the current week or month. Includes spending charts, top categories, budget deviations, anomaly alerts, and actionable suggestions."
+            sections={[
+              {
+                heading: "How to use",
+                items: [
+                  "Toggle between 'This Week' and 'This Month' to focus the analysis",
+                  "Review the daily spending chart to spot unusual days",
+                  "Read the AI analysis for personalized insights, alerts, and suggestions",
+                  "Hit Refresh to regenerate the AI analysis with the latest data",
+                ],
+              },
+              {
+                heading: "Key actions",
+                items: [
+                  "Week / Month toggle — change the analysis period",
+                  "Refresh — pull fresh data and regenerate the AI narrative",
+                  "Top Spending chart — see which categories consumed the most",
+                  "AI Analysis — read structured insights, alerts, and suggestions",
+                ],
+              },
+            ]}
+          />
+        }
+      >
+        <div className="flex rounded-lg border border-[var(--color-border)] overflow-hidden text-sm">
+          {(["week", "month"] as const).map((p) => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              className={`px-3 py-1.5 font-medium transition-colors ${
+                period === p
+                  ? "bg-[var(--color-accent)] text-white"
+                  : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"
+              }`}
+            >
+              {p === "week" ? "This Week" : "This Month"}
+            </button>
+          ))}
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-[var(--color-border)] overflow-hidden text-sm">
-            {(["week", "month"] as const).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={`px-3 py-1.5 font-medium transition-colors ${
-                  period === p
-                    ? "bg-[var(--color-accent)] text-white"
-                    : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"
-                }`}
-              >
-                {p === "week" ? "This Week" : "This Month"}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={load}
-            disabled={loading}
-            className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-            Refresh
-          </button>
-        </div>
-      </div>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+          Refresh
+        </button>
+      </PageHeader>
 
       {/* ── Error ──────────────────────────────────────────────── */}
       {error && (
@@ -453,6 +529,9 @@ export default function AiReviewPage() {
               <p className="text-xl font-bold text-[var(--color-text-primary)]">{fmt(data.summary.netWorth)}</p>
             </div>
           </div>
+
+          {/* ── Insights at a Glance ──────────────────────────── */}
+          {data.analysis && <InsightCards analysis={data.analysis} />}
 
           {/* ── Daily spending chart — full width ─────────────── */}
           <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5">

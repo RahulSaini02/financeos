@@ -22,6 +22,11 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { GridPageSkeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/ui/page-header";
+import { HelpModal } from "@/components/ui/help-modal";
+import { EmptyState } from "@/components/ui/empty-state";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type FilterTab = "all" | GoalStatus;
 
@@ -499,20 +504,40 @@ export default function SavingsGoalsPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-5 md:space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl md:text-2xl font-semibold tracking-tight">
-            Savings Goals
-          </h1>
-          <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">
-            Track progress towards your financial goals
-          </p>
-        </div>
+      <PageHeader
+        title="Savings Goals"
+        subtitle="Track progress towards your financial goals"
+        tooltip={
+          <HelpModal
+            title="Savings Goals"
+            description="Set and track savings goals — emergency fund, vacation, down payment, or any target you are working toward. See progress, monthly contributions, and estimated completion."
+            sections={[
+              {
+                heading: "How to use",
+                items: [
+                  "Create a goal with a target amount and monthly contribution",
+                  "Link a savings account so the balance auto-syncs",
+                  "The progress bar shows how close you are to reaching the goal",
+                  "Pause a goal if you need to temporarily stop contributing",
+                ],
+              },
+              {
+                heading: "Key actions",
+                items: [
+                  "Add Goal — define a new savings target",
+                  "Edit — update the target, contribution amount, or status",
+                  "Pause / Complete — change the goal status as circumstances change",
+                ],
+              },
+            ]}
+          />
+        }
+      >
         <Button onClick={openAdd} size="md">
           <Plus className="h-4 w-4 mr-1.5" />
           Add Goal
         </Button>
-      </div>
+      </PageHeader>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Card>
@@ -588,17 +613,15 @@ export default function SavingsGoalsPage() {
           <span className="text-sm">{error}</span>
         </div>
       ) : filteredGoals.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <PackageOpen className="h-10 w-10 text-[var(--color-text-muted)] mb-3" />
-          <p className="text-sm font-medium text-[var(--color-text-secondary)]">
-            No savings goals found
-          </p>
-          <p className="text-xs text-[var(--color-text-muted)] mt-1">
-            {activeFilter === "all"
+        <EmptyState
+          icon={<PackageOpen className="h-8 w-8" />}
+          title="No savings goals found"
+          description={
+            activeFilter === "all"
               ? "Add your first savings goal to get started."
-              : `No ${activeFilter} savings goals.`}
-          </p>
-        </div>
+              : `No ${activeFilter} savings goals.`
+          }
+        />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {sortedGoals.map((goal) => {

@@ -70,7 +70,9 @@ export async function GET(request: NextRequest) {
           category_id: imp.suggested_category_id ?? null,
           description: imp.parsed_merchant ?? 'Unknown',
           amount_usd: -(imp.parsed_amount ?? 0),
+          final_amount: -(imp.parsed_amount ?? 0),
           amount_original: imp.parsed_amount ?? 0,
+          original_currency: 'USD',
           cr_dr: 'debit',
           date: imp.parsed_date ?? new Date().toISOString().split('T')[0],
           notes: imp.ai_notes ?? null,
@@ -78,6 +80,8 @@ export async function GET(request: NextRequest) {
           import_status: 'confirmed',
           flagged: false,
           is_recurring: false,
+          ai_categorized: false,
+          is_internal_transfer: false,
         })
         .select('id')
         .single()

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/components/auth-provider";
@@ -10,7 +10,6 @@ import {
   Search,
   Filter,
   Plus,
-  X,
   AlertTriangle,
   Edit2,
   Trash2,
@@ -18,24 +17,107 @@ import {
   ArrowDownRight,
   Loader2,
   ArrowLeft,
+  Download,
+  ArrowRightLeft,
+  ChevronLeft,
+  ChevronRight,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { TablePageSkeleton } from "@/components/ui/skeleton";
-import { InfoTooltip } from "@/components/ui/info-tooltip";
+import { PageHeader } from "@/components/ui/page-header";
+import { HelpModal } from "@/components/ui/help-modal";
+import { EmptyState } from "@/components/ui/empty-state";
+import { TransactionModal } from "@/components/transactions/transaction-modal";
+
+const PAGE_SIZE = 50;
+
+function get6MonthsAgo () {
+  const d = new Date();
+  d.setMonth( d.getMonth() - 6 );
+  return d.toISOString().split( "T" )[0];
+}
 
 interface TransactionFilters {
   accountId?: string;
   categoryId?: string;
   startDate?: string;
   endDate?: string;
-  search?: string;
+  txnType?: "all" | "credit" | "debit" | "transfer";
+}
+
+// ── CSV export: fetches all matching transactions (no page limit) ────────────
+async function exportToCsv ( filters: TransactionFilters, searchQuery: string, windowStart: string | null ) {
+  const params = buildParams( filters, searchQuery, windowStart, 0, 5000 );
+  const res = await fetch( `/api/transactions?${ params }` );
+  if ( !res.ok ) return;
+  const json = await res.json();
+  const rows: Transaction[] = Array.isArray( json ) ? json : json.data ?? [];
+
+  const headers = ["Date", "Description", "Account", "Category", "Type", "Amount", "Flagged", "Notes"];
+  const lines = rows.map( ( t ) => {
+    const account = ( t as Transaction & { account?: { name: string } } ).account?.name ?? "";
+    const category = ( t as Transaction & { category?: { name: string } } ).category?.name ?? "Uncategorized";
+    const type = t.is_internal_transfer ? "Transfer" : t.cr_dr === "credit" ? "Credit" : "Debit";
+    const amount = t.cr_dr === "credit"
+      ? Math.abs( t.final_amount ).toFixed( 2 )
+      : ( -Math.abs( t.final_amount ) ).toFixed( 2 );
+    return [
+      t.date,
+      `"${ t.description.replace( /"/g, '""' ) }"`,
+      `"${ account }"`,
+      `"${ category }"`,
+      type,
+      amount,
+      t.flagged ? "Yes" : "No",
+      `"${ ( t.notes ?? "" ).replace( /"/g, '""' ) }"`,
+    ].join( "," );
+  } );
+
+  const csv = [headers.join( "," ), ...lines].join( "\n" );
+  const blob = new Blob( [csv], { type: "text/csv;charset=utf-8;" } );
+  const url = URL.createObjectURL( blob );
+  const a = document.createElement( "a" );
+  a.href = url;
+  a.download = `transactions-${ new Date().toISOString().split( "T" )[0] }.csv`;
+  a.click();
+  URL.revokeObjectURL( url );
+}
+
+function buildParams (
+  filters: TransactionFilters,
+  search: string,
+  windowStart: string | null,
+  offset: number,
+  limit: number
+): string {
+  const p = new URLSearchParams();
+  p.set( "limit", String( limit ) );
+  p.set( "offset", String( offset ) );
+
+  // Date range: user's explicit filter takes precedence over the window
+  const effectiveStart = filters.startDate ?? windowStart;
+  if ( effectiveStart ) p.set( "startDate", effectiveStart );
+  if ( filters.endDate ) p.set( "endDate", filters.endDate );
+  if ( filters.accountId ) p.set( "accountId", filters.accountId );
+  if ( filters.categoryId ) p.set( "categoryId", filters.categoryId );
+  if ( search ) p.set( "search", search );
+  if ( filters.txnType && filters.txnType !== "all" ) p.set( "txnType", filters.txnType );
+  return p.toString();
 }
 
 function TransactionsContent () {
   const { user } = useAuth();
   const searchParams = useSearchParams();
+
   const [transactions, setTransactions] = useState<Transaction[]>( [] );
+  const [totalCount, setTotalCount] = useState( 0 );
+  const [page, setPage] = useState( 0 );
+
+  // windowStart = the lower date boundary; null = all time
+  const [windowStart, setWindowStart] = useState<string | null>( get6MonthsAgo );
+
   const [accounts, setAccounts] = useState<Account[]>( [] );
   const [categories, setCategories] = useState<Category[]>( [] );
   const [loans, setLoans] = useState<Loan[]>( [] );
@@ -45,91 +127,89 @@ function TransactionsContent () {
     categoryId: searchParams.get( "categoryId" ) ?? undefined,
     startDate: searchParams.get( "startDate" ) ?? undefined,
     endDate: searchParams.get( "endDate" ) ?? undefined,
+    txnType: "all",
   } ) );
   const [searchQuery, setSearchQuery] = useState( "" );
+  const [debouncedSearch, setDebouncedSearch] = useState( "" );
   const [showFilters, setShowFilters] = useState( () =>
     !!( searchParams.get( "categoryId" ) || searchParams.get( "startDate" ) )
   );
   const [showModal, setShowModal] = useState( false );
   const [editingTxn, setEditingTxn] = useState<Transaction | null>( null );
   const [groupBy, setGroupBy] = useState<"date" | "category" | "account" | "none">( "date" );
+  const [exporting, setExporting] = useState( false );
 
+  // Debounce search input
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>( null );
+  useEffect( () => {
+    if ( searchTimer.current ) clearTimeout( searchTimer.current );
+    searchTimer.current = setTimeout( () => setDebouncedSearch( searchQuery ), 350 );
+    return () => { if ( searchTimer.current ) clearTimeout( searchTimer.current ); };
+  }, [searchQuery] );
+
+  // Fetch lookup data once (accounts, categories, loans) + determine window start
   useEffect( () => {
     if ( !user ) return;
-
-    async function fetchData () {
-      setLoading( true );
-      setError( null );
-      const supabase = createClient();
-
-      const [txnRes, accRes, catRes, loanRes] = await Promise.all( [
-        supabase
-          .from( "transactions" )
-          .select( "*, account:accounts(*), category:categories(*), loan:loans(id, name)" )
-          .eq( "user_id", user!.id )
-          .order( "date", { ascending: false } )
-          .limit( 100 ),
-        supabase
-          .from( "accounts" )
-          .select( "*" )
-          .eq( "user_id", user!.id )
-          .eq( "is_active", true )
-          .order( "name" ),
-        supabase
-          .from( "categories" )
-          .select( "*" )
-          .eq( "user_id", user!.id )
-          .order( "name" ),
-        supabase
-          .from( "loans" )
-          .select( "id, name, current_balance" )
-          .eq( "user_id", user!.id )
-          .eq( "is_active", true )
-          .order( "name" ),
-      ] );
-
-      if ( txnRes.error ) {
-        setError( txnRes.error.message );
-        setLoading( false );
-        return;
-      }
-      if ( accRes.error ) {
-        setError( accRes.error.message );
-        setLoading( false );
-        return;
-      }
-      if ( catRes.error ) {
-        setError( catRes.error.message );
-        setLoading( false );
-        return;
-      }
-
-      setTransactions( txnRes.data ?? [] );
+    const supabase = createClient();
+    const sixMonthsAgo = get6MonthsAgo();
+    Promise.all( [
+      supabase.from( "accounts" ).select( "*" ).eq( "user_id", user.id ).eq( "is_active", true ).order( "name" ),
+      supabase.from( "categories" ).select( "*" ).eq( "user_id", user.id ).order( "name" ),
+      supabase.from( "loans" ).select( "id, name, current_balance" ).eq( "user_id", user.id ).order( "name" ),
+      // Find the oldest transaction to decide whether to apply the 6-month window
+      supabase.from( "transactions" ).select( "date" ).eq( "user_id", user.id ).order( "date", { ascending: true } ).limit( 1 ),
+    ] ).then( ( [accRes, catRes, loanRes, minDateRes] ) => {
       setAccounts( accRes.data ?? [] );
       setCategories( catRes.data ?? [] );
       setLoans( ( loanRes.data as Loan[] ) ?? [] );
-      setLoading( false );
-    }
 
-    fetchData();
+      // Only apply the 6-month window if there are transactions older than 6 months
+      const oldest = minDateRes.data?.[0]?.date ?? null;
+      if ( !oldest || oldest >= sixMonthsAgo ) {
+        // All transactions fall within 6 months (or none exist) — show everything
+        setWindowStart( null );
+      }
+      // Otherwise keep the default 6-month window (already set in useState)
+    } );
   }, [user] );
 
-  // Filter transactions
-  const filtered = transactions.filter( ( t ) => {
-    if ( filters.accountId && t.account_id !== filters.accountId ) return false;
-    if ( filters.categoryId && t.category_id !== filters.categoryId ) return false;
-    if ( filters.startDate && t.date < filters.startDate ) return false;
-    if ( filters.endDate && t.date > filters.endDate ) return false;
-    if ( searchQuery && !t.description.toLowerCase().includes( searchQuery.toLowerCase() ) ) return false;
-    return true;
-  } );
+  // Fetch transactions page whenever filters/page/window changes
+  const fetchPage = useCallback( async ( p: number ) => {
+    if ( !user ) return;
+    setLoading( true );
+    setError( null );
+    try {
+      const params = buildParams( filters, debouncedSearch, windowStart, p * PAGE_SIZE, PAGE_SIZE );
+      const res = await fetch( `/api/transactions?${ params }` );
+      if ( !res.ok ) throw new Error( "Failed to load transactions" );
+      const json = await res.json();
+      setTransactions( Array.isArray( json ) ? json : json.data ?? [] );
+      setTotalCount( json.count ?? 0 );
+    } catch ( e ) {
+      setError( e instanceof Error ? e.message : "Failed to load" );
+    } finally {
+      setLoading( false );
+    }
+  }, [user, filters, debouncedSearch, windowStart] );
 
-  // Grouped for display
+  useEffect( () => {
+    setPage( 0 );
+  }, [filters, debouncedSearch, windowStart] );
+
+  useEffect( () => {
+    fetchPage( page );
+  }, [page, fetchPage] );
+
+  const totalPages = Math.max( 1, Math.ceil( totalCount / PAGE_SIZE ) );
+  const isLastPage = page >= totalPages - 1;
+  const isWindowLimited = windowStart !== null && !filters.startDate;
+
+  // ── Grouped for display ──────────────────────────────────────────────────────
   const grouped = ( () => {
-    if ( groupBy === "none" ) return { "All Transactions": filtered };
+    if ( groupBy === "none" ) return { "All Transactions": transactions };
     if ( groupBy === "date" ) {
       const map: Record<string, Transaction[]> = {};
-      filtered.forEach( ( t ) => {
+      transactions.forEach( ( t ) => {
         const key = formatDate( t.date, "long" );
         if ( !map[key] ) map[key] = [];
         map[key].push( t );
@@ -138,7 +218,7 @@ function TransactionsContent () {
     }
     if ( groupBy === "category" ) {
       const map: Record<string, Transaction[]> = {};
-      filtered.forEach( ( t ) => {
+      transactions.forEach( ( t ) => {
         const cat = categories.find( ( c ) => c.id === t.category_id )?.name ?? "Uncategorized";
         if ( !map[cat] ) map[cat] = [];
         map[cat].push( t );
@@ -147,47 +227,31 @@ function TransactionsContent () {
     }
     if ( groupBy === "account" ) {
       const map: Record<string, Transaction[]> = {};
-      filtered.forEach( ( t ) => {
+      transactions.forEach( ( t ) => {
         const acc = accounts.find( ( a ) => a.id === t.account_id )?.name ?? "Unknown";
         if ( !map[acc] ) map[acc] = [];
         map[acc].push( t );
       } );
       return map;
     }
-    return { "All Transactions": filtered };
+    return { "All Transactions": transactions };
   } )();
 
-  function getCategory ( id: string ) {
-    return categories.find( ( c ) => c.id === id );
-  }
-  function getAccount ( id: string ) {
-    return accounts.find( ( a ) => a.id === id );
-  }
-
-  function handleEdit ( txn: Transaction ) {
-    setEditingTxn( txn );
-    setShowModal( true );
-  }
+  function getCategory ( id: string ) { return categories.find( ( c ) => c.id === id ); }
+  function getAccount ( id: string ) { return accounts.find( ( a ) => a.id === id ); }
+  function handleEdit ( txn: Transaction ) { setEditingTxn( txn ); setShowModal( true ); }
+  function handleAdd () { setEditingTxn( null ); setShowModal( true ); }
 
   async function handleDelete ( id: string ) {
     const res = await fetch( `/api/transactions/${ id }`, { method: "DELETE" } );
-    if ( !res.ok ) {
-      console.error( "Failed to delete transaction" );
-      return;
-    }
-    setTransactions( ( prev ) => prev.filter( ( t ) => t.id !== id ) );
+    if ( !res.ok ) return;
+    fetchPage( page );
   }
 
-  function handleAdd () {
-    setEditingTxn( null );
-    setShowModal( true );
-  }
-
-  async function handleSave ( txn: Partial<Transaction> & { loan_id?: string | null } ) {
+  async function handleSave ( txn: Partial<Transaction> & { loan_id?: string | null; target_account_id?: string | null } ) {
     if ( !user ) return;
-
     if ( editingTxn ) {
-      const res = await fetch( `/api/transactions/${ editingTxn.id }`, {
+      await fetch( `/api/transactions/${ editingTxn.id }`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify( {
@@ -201,14 +265,8 @@ function TransactionsContent () {
           loan_id: txn.loan_id ?? null,
         } ),
       } );
-      if ( !res.ok ) {
-        console.error( "Failed to update transaction" );
-        return;
-      }
-      const data = await res.json();
-      setTransactions( ( prev ) => prev.map( ( t ) => t.id === editingTxn.id ? data : t ) );
     } else {
-      const res = await fetch( "/api/transactions", {
+      await fetch( "/api/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify( {
@@ -220,26 +278,39 @@ function TransactionsContent () {
           date: txn.date,
           notes: txn.notes ?? null,
           loan_id: txn.loan_id ?? null,
+          target_account_id: txn.target_account_id ?? null,
         } ),
       } );
-      if ( !res.ok ) {
-        console.error( "Failed to create transaction" );
-        return;
-      }
-      const data = await res.json();
-      setTransactions( ( prev ) => [data, ...prev] );
     }
     setShowModal( false );
+    fetchPage( page );
   }
 
-  const totalIncome = filtered.filter( ( t ) => t.cr_dr === "credit" ).reduce( ( s, t ) => s + t.final_amount, 0 );
-  const totalExpenses = filtered.filter( ( t ) => t.cr_dr === "debit" ).reduce( ( s, t ) => s + Math.abs( t.final_amount ), 0 );
-
-  if ( loading ) {
-    return (
-      <TablePageSkeleton rows={10} />
-    );
+  function handleLoadOlder () {
+    setWindowStart( null );
   }
+
+  function handleFilterChange ( next: TransactionFilters ) {
+    setFilters( next );
+  }
+
+  const activeFilterCount = [
+    filters.accountId,
+    filters.categoryId,
+    filters.startDate,
+    filters.endDate,
+    filters.txnType && filters.txnType !== "all" ? filters.txnType : undefined,
+  ].filter( Boolean ).length;
+
+  const drillDownCategory = filters.categoryId && filters.categoryId !== "__uncategorized__"
+    ? categories.find( ( c ) => c.id === filters.categoryId ) ?? null
+    : null;
+
+  // Summary of current page amounts (non-transfer)
+  const pageIncome = transactions.filter( t => t.cr_dr === "credit" && !t.is_internal_transfer ).reduce( ( s, t ) => s + Math.abs( t.final_amount ), 0 );
+  const pageExpenses = transactions.filter( t => t.cr_dr === "debit" && !t.is_internal_transfer ).reduce( ( s, t ) => s + Math.abs( t.final_amount ), 0 );
+
+  if ( loading && transactions.length === 0 ) return <TablePageSkeleton rows={10} />;
 
   if ( error ) {
     return (
@@ -250,19 +321,13 @@ function TransactionsContent () {
     );
   }
 
-  const drillDownCategory = filters.categoryId
-    ? categories.find( ( c ) => c.id === filters.categoryId )
-    : null;
-
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-5">
+
       {/* Drill-down breadcrumb */}
       {drillDownCategory && filters.startDate && (
         <div className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-          <a
-            href="/budgets"
-            className="flex items-center gap-1.5 hover:text-[var(--color-text-primary)] transition-colors"
-          >
+          <a href="/budgets" className="flex items-center gap-1.5 hover:text-[var(--color-text-primary)] transition-colors">
             <ArrowLeft className="h-3.5 w-3.5" />
             Budgets
           </a>
@@ -270,73 +335,126 @@ function TransactionsContent () {
           <span className="font-medium text-[var(--color-text-primary)]">
             {drillDownCategory.icon} {drillDownCategory.name}
           </span>
-          {filters.startDate && (
-            <>
-              <span className="text-[var(--color-text-muted)]">·</span>
-              <span>
-                {new Date( filters.startDate ).toLocaleDateString( "en-US", { month: "long", year: "numeric" } )}
-              </span>
-            </>
-          )}
+          <span className="text-[var(--color-text-muted)]">·</span>
+          <span>
+            {new Date( filters.startDate + "T00:00:00" ).toLocaleDateString( "en-US", { month: "long", year: "numeric" } )}
+          </span>
         </div>
       )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Transactions</h1>
-            <InfoTooltip
-              title="Transactions"
-              description="View and manage all your financial transactions across accounts."
-              howTo="Use filters to narrow by account, category, or date range. Search by description. Click a transaction to edit or delete it."
-              keyActions={[
-                "Add a transaction manually with the + button",
-                "Filter by account, category or date",
-                "Search transactions by description",
-                "Flag unusual transactions for review",
-              ]}
-            />
-          </div>
-          <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">
-            {filtered.length} transactions ·{" "}
-            <span className="text-[var(--color-income)]">+{formatCurrency( totalIncome )}</span>{" "}
-            · <span className="text-[var(--color-expense)]">-{formatCurrency( totalExpenses )}</span>
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setShowFilters( !showFilters )}>
-            <Filter className="h-3.5 w-3.5 mr-1.5" />
-            <span className="hidden sm:inline">Filters</span>
-            {Object.keys( filters ).length > 0 && ` (${ Object.keys( filters ).length })`}
-          </Button>
-          <select
-            className="h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 text-xs text-[var(--color-text-secondary)]"
-            value={groupBy}
-            onChange={( e ) => setGroupBy( e.target.value as typeof groupBy )}
-          >
-            <option value="date">Group by Date</option>
-            <option value="category">Group by Category</option>
-            <option value="account">Group by Account</option>
-            <option value="none">No grouping</option>
-          </select>
-          <Button size="sm" onClick={handleAdd}>
-            <Plus className="h-3.5 w-3.5 mr-1.5" />
-            <span className="inline">Add Transaction</span>
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Transactions"
+        subtitle={
+          loading
+            ? "Loading…"
+            : `${ totalCount } total · +${ formatCurrency( pageIncome ) } · -${ formatCurrency( pageExpenses ) } this page`
+        }
+        tooltip={
+          <HelpModal
+            title="Transactions"
+            description="Record, review, and manage every income and expense. Defaults to the last 6 months — use 'Load older' to go further back."
+            sections={[
+              {
+                heading: "How to use",
+                items: [
+                  "Defaults to the last 6 months with 50 transactions per page",
+                  "Use Previous / Next to page through results",
+                  "Click 'Load older transactions' to fetch history beyond 6 months",
+                  "Use the Type filter to show only credits, debits, or transfers",
+                  "Export CSV downloads all matching transactions (not just this page)",
+                ],
+              },
+              {
+                heading: "Key actions",
+                items: [
+                  "Add — record a new credit or debit entry",
+                  "Export CSV — download all filtered transactions",
+                  "Filter — narrow by type, account, category, or date range",
+                  "Edit / Delete — correct mistakes or remove duplicates",
+                ],
+              },
+            ]}
+          />
+        }
+      >
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={exporting}
+          onClick={async () => {
+            setExporting( true );
+            await exportToCsv( filters, debouncedSearch, windowStart );
+            setExporting( false );
+          }}
+        >
+          {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Download className="h-3.5 w-3.5 mr-1.5" />}
+          <span className="hidden sm:inline">Export</span>
+        </Button>
+        <Button variant="secondary" size="sm" onClick={() => setShowFilters( !showFilters )}>
+          <Filter className="h-3.5 w-3.5 mr-1.5" />
+          <span className="hidden sm:inline">Filters</span>
+          {activeFilterCount > 0 && ` (${ activeFilterCount })`}
+        </Button>
+        <select
+          className="h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 text-xs text-[var(--color-text-secondary)]"
+          value={groupBy}
+          onChange={( e ) => setGroupBy( e.target.value as typeof groupBy )}
+        >
+          <option value="date">Group by Date</option>
+          <option value="category">Group by Category</option>
+          <option value="account">Group by Account</option>
+          <option value="none">No grouping</option>
+        </select>
+        <Button size="sm" onClick={handleAdd}>
+          <Plus className="h-3.5 w-3.5 mr-1.5" />
+          <span className="inline">Add</span>
+        </Button>
+      </PageHeader>
 
-      {/* Filters */}
+      {/* 6-month window banner */}
+      {isWindowLimited && (
+        <div className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-2.5">
+          <div className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+            <History className="h-4 w-4 text-[var(--color-accent)] shrink-0" />
+            Showing transactions from{" "}
+            <span className="font-medium text-[var(--color-text-primary)]">
+              {new Date( windowStart + "T00:00:00" ).toLocaleDateString( "en-US", { month: "short", day: "numeric", year: "numeric" } )}
+            </span>
+            {" "}to today
+          </div>
+          <button
+            onClick={handleLoadOlder}
+            className="text-xs font-medium text-[var(--color-accent)] hover:underline shrink-0 ml-4"
+          >
+            Load all history
+          </button>
+        </div>
+      )}
+
+      {/* Filters panel */}
       {showFilters && (
         <Card className="p-4">
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+            <div>
+              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Type</label>
+              <select
+                className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                value={filters.txnType ?? "all"}
+                onChange={( e ) => handleFilterChange( { ...filters, txnType: e.target.value as TransactionFilters["txnType"] } )}
+              >
+                <option value="all">All Types</option>
+                <option value="credit">Credits Only</option>
+                <option value="debit">Debits Only</option>
+                <option value="transfer">Transfers Only</option>
+              </select>
+            </div>
             <div>
               <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Account</label>
               <select
                 className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
                 value={filters.accountId ?? ""}
-                onChange={( e ) => setFilters( { ...filters, accountId: e.target.value || undefined } )}
+                onChange={( e ) => handleFilterChange( { ...filters, accountId: e.target.value || undefined } )}
               >
                 <option value="">All Accounts</option>
                 {accounts.map( ( a ) => <option key={a.id} value={a.id}>{a.name}</option> )}
@@ -347,9 +465,10 @@ function TransactionsContent () {
               <select
                 className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
                 value={filters.categoryId ?? ""}
-                onChange={( e ) => setFilters( { ...filters, categoryId: e.target.value || undefined } )}
+                onChange={( e ) => handleFilterChange( { ...filters, categoryId: e.target.value || undefined } )}
               >
                 <option value="">All Categories</option>
+                <option value="__uncategorized__">Uncategorized</option>
                 {categories.map( ( c ) => <option key={c.id} value={c.id}>{c.name}</option> )}
               </select>
             </div>
@@ -359,7 +478,7 @@ function TransactionsContent () {
                 type="date"
                 className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
                 value={filters.startDate ?? ""}
-                onChange={( e ) => setFilters( { ...filters, startDate: e.target.value || undefined } )}
+                onChange={( e ) => handleFilterChange( { ...filters, startDate: e.target.value || undefined } )}
               />
             </div>
             <div>
@@ -368,12 +487,12 @@ function TransactionsContent () {
                 type="date"
                 className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
                 value={filters.endDate ?? ""}
-                onChange={( e ) => setFilters( { ...filters, endDate: e.target.value || undefined } )}
+                onChange={( e ) => handleFilterChange( { ...filters, endDate: e.target.value || undefined } )}
               />
             </div>
             <div className="flex items-end">
-              <Button variant="ghost" size="sm" onClick={() => setFilters( {} )}>
-                Clear filters
+              <Button variant="ghost" size="sm" onClick={() => handleFilterChange( { txnType: "all" } )}>
+                Clear
               </Button>
             </div>
           </div>
@@ -385,11 +504,14 @@ function TransactionsContent () {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--color-text-muted)]" />
         <input
           type="text"
-          placeholder="Search transactions..."
+          placeholder="Search transactions…"
           className="w-full h-10 pl-10 pr-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-sm placeholder:text-[var(--color-text-muted)]"
           value={searchQuery}
           onChange={( e ) => setSearchQuery( e.target.value )}
         />
+        {loading && transactions.length > 0 && (
+          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-[var(--color-text-muted)]" />
+        )}
       </div>
 
       {/* Transaction List */}
@@ -406,17 +528,21 @@ function TransactionsContent () {
               {txns.map( ( txn ) => (
                 <div
                   key={txn.id}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--color-bg-tertiary)] transition-colors cursor-pointer"
+                  className="flex items-start gap-3 px-3 py-3 hover:bg-[var(--color-bg-tertiary)] transition-colors cursor-pointer sm:items-center sm:px-4"
                   onClick={() => handleEdit( txn )}
                 >
                   {/* Icon */}
                   <div
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${ txn.cr_dr === "credit"
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg mt-0.5 sm:mt-0 ${ txn.is_internal_transfer
+                      ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
+                      : txn.cr_dr === "credit"
                         ? "bg-[var(--color-income)]/10 text-[var(--color-income)]"
                         : "bg-[var(--color-expense)]/10 text-[var(--color-expense)]"
                       }`}
                   >
-                    {txn.cr_dr === "credit" ? (
+                    {txn.is_internal_transfer ? (
+                      <ArrowRightLeft className="h-4 w-4" />
+                    ) : txn.cr_dr === "credit" ? (
                       <ArrowUpRight className="h-4 w-4" />
                     ) : (
                       <ArrowDownRight className="h-4 w-4" />
@@ -425,10 +551,15 @@ function TransactionsContent () {
 
                   {/* Main */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium truncate">{txn.description}</span>
                       {txn.flagged && (
                         <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-[var(--color-warning)]" />
+                      )}
+                      {txn.is_internal_transfer && (
+                        <span className="text-[0.6rem] font-medium px-1.5 py-0.5 rounded bg-[var(--color-accent)]/10 text-[var(--color-accent)]">
+                          TRANSFER
+                        </span>
                       )}
                       {txn.is_recurring && (
                         <span className="text-[0.6rem] font-medium px-1.5 py-0.5 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)]">
@@ -436,7 +567,7 @@ function TransactionsContent () {
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 mt-0.5">
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       <span className="text-xs text-[var(--color-text-muted)]">
                         {getCategory( txn.category_id ?? "" )?.name ?? "Uncategorized"}
                       </span>
@@ -462,20 +593,24 @@ function TransactionsContent () {
                     {txn.flagged_reason && (
                       <p className="text-xs text-[var(--color-warning)] mt-0.5">{txn.flagged_reason}</p>
                     )}
+                    {/* Date on mobile */}
+                    <p className="text-xs text-[var(--color-text-muted)] mt-0.5 sm:hidden">
+                      {formatDate( txn.date )}
+                    </p>
                   </div>
 
-                  {/* Amount */}
+                  {/* Amount + date */}
                   <div className="text-right shrink-0">
                     <span
                       className={`text-sm font-medium ${ txn.cr_dr === "credit"
-                          ? "text-[var(--color-income)]"
-                          : "text-[var(--color-text-primary)]"
+                        ? "text-[var(--color-income)]"
+                        : "text-[var(--color-text-primary)]"
                         }`}
                     >
                       {txn.cr_dr === "credit" ? "+" : ""}
                       {formatCurrency( txn.final_amount )}
                     </span>
-                    <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                    <p className="text-xs text-[var(--color-text-muted)] mt-0.5 hidden sm:block">
                       {formatDate( txn.date )}
                     </p>
                   </div>
@@ -501,14 +636,53 @@ function TransactionsContent () {
           </div>
         ) )}
 
-        {filtered.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <p className="text-[var(--color-text-muted)]">No transactions found</p>
-            <Button variant="ghost" size="sm" className="mt-2" onClick={handleAdd}>
-              <Plus className="h-3.5 w-3.5 mr-1.5" />
-              Add your first transaction
-            </Button>
+        {transactions.length === 0 && !loading && (
+          <EmptyState
+            icon={<Plus className="h-8 w-8" />}
+            title="No transactions found"
+            action={{ label: "Add your first transaction", onClick: handleAdd }}
+          />
+        )}
+      </div>
+
+      {/* ── Pagination + Load older ────────────────────────────────────────────── */}
+      <div className="flex flex-col items-center gap-3 pt-2">
+        {/* Page controls */}
+        {totalPages > 1 && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage( ( p ) => Math.max( 0, p - 1 ) )}
+              disabled={page === 0 || loading}
+              className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </button>
+            <span className="px-3 py-1.5 text-sm text-[var(--color-text-secondary)]">
+              Page <span className="font-medium text-[var(--color-text-primary)]">{page + 1}</span> of{" "}
+              <span className="font-medium text-[var(--color-text-primary)]">{totalPages}</span>
+            </span>
+            <button
+              onClick={() => setPage( ( p ) => Math.min( totalPages - 1, p + 1 ) )}
+              disabled={isLastPage || loading}
+              className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
+        )}
+
+        {/* Load older button — shown when on last page and window is limited to 6 months */}
+        {isLastPage && isWindowLimited && (
+          <button
+            onClick={handleLoadOlder}
+            className="flex items-center gap-2 rounded-lg border border-dashed border-[var(--color-border)] px-4 py-2.5 text-sm text-[var(--color-text-secondary)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] transition-colors"
+          >
+            <History className="h-4 w-4" />
+            Load transactions before{" "}
+            {new Date( windowStart + "T00:00:00" ).toLocaleDateString( "en-US", { month: "short", day: "numeric", year: "numeric" } )}
+          </button>
         )}
       </div>
 
@@ -538,181 +712,5 @@ export default function TransactionsPage () {
     >
       <TransactionsContent />
     </Suspense>
-  );
-}
-
-function TransactionModal ( {
-  txn,
-  accounts,
-  categories,
-  loans,
-  onSave,
-  onClose,
-}: {
-  txn: Transaction | null;
-  accounts: Account[];
-  categories: Category[];
-  loans: Loan[];
-  onSave: ( t: Partial<Transaction> & { loan_id?: string | null } ) => void;
-  onClose: () => void;
-} ) {
-  const [description, setDescription] = useState( txn?.description ?? "" );
-  const [amount, setAmount] = useState( txn ? Math.abs( txn.amount_usd ).toString() : "" );
-  const [crDr, setCrDr] = useState<"credit" | "debit">( txn?.cr_dr ?? "debit" );
-  const [accountId, setAccountId] = useState( txn?.account_id ?? accounts[0]?.id ?? "" );
-  const [categoryId, setCategoryId] = useState( txn?.category_id ?? "" );
-  const [date, setDate] = useState( txn?.date ?? new Date().toISOString().split( "T" )[0] );
-  const [notes, setNotes] = useState( txn?.notes ?? "" );
-  const [loanId, setLoanId] = useState<string>( ( txn as Transaction & { loan_id?: string } )?.loan_id ?? "" );
-
-  function handleSubmit ( e: React.FormEvent ) {
-    e.preventDefault();
-    if ( !description || !amount ) return;
-    onSave( {
-      description,
-      amount_usd: parseFloat( amount ),
-      cr_dr: crDr,
-      account_id: accountId,
-      category_id: categoryId || null,
-      date,
-      notes: notes || null,
-      loan_id: loanId || null,
-    } );
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <Card className="w-full max-w-md mx-4">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold">{txn ? "Edit Transaction" : "Add Transaction"}</h2>
-          <button onClick={onClose} className="p-1 rounded hover:bg-[var(--color-bg-tertiary)]">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Type toggle */}
-          <div className="flex rounded-lg border border-[var(--color-border)] overflow-hidden">
-            <button
-              type="button"
-              className={`flex-1 py-2 text-sm font-medium ${ crDr === "debit" ? "bg-[var(--color-danger)] text-white" : "bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)]" }`}
-              onClick={() => setCrDr( "debit" )}
-            >
-              Expense
-            </button>
-            <button
-              type="button"
-              className={`flex-1 py-2 text-sm font-medium ${ crDr === "credit" ? "bg-[var(--color-income)] text-white" : "bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)]" }`}
-              onClick={() => setCrDr( "credit" )}
-            >
-              Income
-            </button>
-          </div>
-
-          <div>
-            <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Description</label>
-            <input
-              type="text"
-              className="w-full h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-3 text-sm"
-              placeholder="e.g. Whole Foods Market"
-              value={description}
-              onChange={( e ) => setDescription( e.target.value )}
-              required
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Amount</label>
-              <input
-                type="number"
-                step="0.01"
-                className="w-full h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-3 text-sm"
-                placeholder="0.00"
-                value={amount}
-                onChange={( e ) => setAmount( e.target.value )}
-                required
-              />
-            </div>
-            <div>
-              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Date</label>
-              <input
-                type="date"
-                className="w-full h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-3 text-sm"
-                value={date}
-                onChange={( e ) => setDate( e.target.value )}
-                required
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Account</label>
-            <select
-              className="w-full h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-3 text-sm"
-              value={accountId}
-              onChange={( e ) => setAccountId( e.target.value )}
-            >
-              {accounts.map( ( a ) => <option key={a.id} value={a.id}>{a.name}</option> )}
-            </select>
-          </div>
-
-          <div>
-            <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Category</label>
-            <select
-              className="w-full h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-3 text-sm"
-              value={categoryId}
-              onChange={( e ) => setCategoryId( e.target.value )}
-            >
-              <option value="">Select category</option>
-              {categories.map( ( c ) => <option key={c.id} value={c.id}>{c.name}</option> )}
-            </select>
-          </div>
-
-          {loans.length > 0 && crDr === "debit" && (
-            <div>
-              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Link to Loan (optional)</label>
-              <select
-                className="w-full h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-3 text-sm"
-                value={loanId}
-                onChange={( e ) => setLoanId( e.target.value )}
-              >
-                <option value="">— No loan link —</option>
-                {loans.map( ( l ) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name} (bal: {formatCurrency( l.current_balance )})
-                  </option>
-                ) )}
-              </select>
-              {loanId && (
-                <p className="text-[0.65rem] text-amber-400 mt-1">
-                  This payment will reduce the selected loan balance.
-                </p>
-              )}
-            </div>
-          )}
-
-          <div>
-            <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Notes (optional)</label>
-            <input
-              type="text"
-              className="w-full h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-3 text-sm"
-              placeholder="Add notes..."
-              value={notes}
-              onChange={( e ) => setNotes( e.target.value )}
-            />
-          </div>
-
-          <div className="flex gap-2 pt-2">
-            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" className="flex-1">
-              {txn ? "Save Changes" : "Add Transaction"}
-            </Button>
-          </div>
-        </form>
-      </Card>
-    </div>
   );
 }

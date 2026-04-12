@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { randomUUID } from 'crypto'
 
 /**
  * GET /api/cron/generate-recurring
@@ -51,6 +52,106 @@ export async function GET(request: NextRequest) {
         continue
       }
 
+      // ── Self-transfer rule: create paired debit + credit ────────────────────
+      if (rule.target_account_id && rule.target_account_id !== rule.account_id) {
+        const transferGroupId = randomUUID()
+
+        // Find Transfer category
+        let transferCategoryId: string | null = null
+        const { data: transferCat } = await supabase
+          .from('categories')
+          .select('id')
+          .eq('user_id', rule.user_id)
+          .eq('name', 'Transfer')
+          .single()
+        transferCategoryId = transferCat?.id ?? null
+
+        const { data: txnA, error: errA } = await supabase
+          .from('transactions')
+          .insert({
+            user_id: rule.user_id,
+            account_id: rule.account_id,
+            category_id: transferCategoryId,
+            description: rule.description,
+            amount_usd: -rule.amount_usd,
+            final_amount: -rule.amount_usd,
+            amount_original: rule.amount_usd,
+            original_currency: 'USD',
+            cr_dr: 'debit',
+            date: rule.next_due,
+            notes: rule.notes ?? null,
+            source: 'manual',
+            import_status: 'confirmed',
+            is_recurring: true,
+            recurring_rule_id: rule.id,
+            flagged: false,
+            ai_categorized: false,
+            is_internal_transfer: true,
+            transfer_group_id: transferGroupId,
+          })
+          .select()
+          .single()
+
+        if (errA || !txnA) {
+          results.push({ ruleId: rule.id, created: false, error: errA?.message ?? 'Transfer debit failed' })
+          continue
+        }
+
+        const { data: txnB, error: errB } = await supabase
+          .from('transactions')
+          .insert({
+            user_id: rule.user_id,
+            account_id: rule.target_account_id,
+            category_id: transferCategoryId,
+            description: rule.description,
+            amount_usd: rule.amount_usd,
+            final_amount: rule.amount_usd,
+            amount_original: rule.amount_usd,
+            original_currency: 'USD',
+            cr_dr: 'credit',
+            date: rule.next_due,
+            notes: rule.notes ?? null,
+            source: 'manual',
+            import_status: 'confirmed',
+            is_recurring: true,
+            recurring_rule_id: rule.id,
+            flagged: false,
+            ai_categorized: false,
+            is_internal_transfer: true,
+            transfer_group_id: transferGroupId,
+            linked_transaction_id: txnA.id,
+          })
+          .select()
+          .single()
+
+        if (errB) {
+          await supabase.from('transactions').delete().eq('id', txnA.id)
+          results.push({ ruleId: rule.id, created: false, error: errB.message })
+          continue
+        }
+
+        // Cross-link
+        await supabase.from('transactions').update({ linked_transaction_id: txnB!.id }).eq('id', txnA.id)
+
+        // Update both account balances
+        await Promise.all([
+          (async () => {
+            const { data: acct } = await supabase.from('accounts').select('current_balance').eq('id', rule.account_id).single()
+            if (acct) await supabase.from('accounts').update({ current_balance: (acct.current_balance ?? 0) - rule.amount_usd }).eq('id', rule.account_id)
+          })(),
+          (async () => {
+            const { data: acct } = await supabase.from('accounts').select('current_balance').eq('id', rule.target_account_id).single()
+            if (acct) await supabase.from('accounts').update({ current_balance: (acct.current_balance ?? 0) + rule.amount_usd }).eq('id', rule.target_account_id)
+          })(),
+        ])
+
+        const nextDue = advanceDate(rule.next_due, rule.frequency, rule.day_of_month)
+        await supabase.from('recurring_rules').update({ next_due: nextDue }).eq('id', rule.id)
+        results.push({ ruleId: rule.id, created: true })
+        continue
+      }
+
+      // ── Standard recurring transaction ───────────────────────────────────────
       const finalAmount = rule.cr_dr === 'credit' ? rule.amount_usd : -rule.amount_usd
 
       const { error: insertErr } = await supabase.from('transactions').insert({
@@ -59,15 +160,19 @@ export async function GET(request: NextRequest) {
         category_id: rule.category_id ?? null,
         description: rule.description,
         amount_usd: finalAmount,
+        final_amount: finalAmount,
         amount_original: rule.amount_usd,
+        original_currency: 'USD',
         cr_dr: rule.cr_dr,
         date: rule.next_due,
         notes: rule.notes ?? null,
-        source: 'recurring',
+        source: 'manual',
         import_status: 'confirmed',
         is_recurring: true,
         recurring_rule_id: rule.id,
         flagged: false,
+        ai_categorized: false,
+        is_internal_transfer: false,
       })
 
       if (insertErr) {

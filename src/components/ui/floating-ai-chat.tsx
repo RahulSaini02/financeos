@@ -125,7 +125,7 @@ export function FloatingAiChat() {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-accent)] text-white shadow-lg hover:opacity-90 transition-opacity"
+          className="fixed bottom-20 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-accent)] text-white shadow-lg hover:opacity-90 transition-opacity lg:bottom-6 lg:right-6"
           aria-label="Open AI Chat"
         >
           <BotMessageSquare className="h-6 w-6" />
@@ -134,7 +134,7 @@ export function FloatingAiChat() {
 
       {/* Chat panel */}
       {open && (
-        <div className="fixed bottom-6 right-6 z-50 flex flex-col w-[380px] h-[540px] rounded-2xl shadow-2xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] overflow-hidden">
+        <div className="fixed bottom-20 right-4 z-40 flex flex-col w-[calc(100vw-2rem)] max-w-[380px] h-[480px] sm:h-[540px] rounded-2xl shadow-2xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] overflow-hidden lg:bottom-6 lg:right-6">
           {/* Header */}
           <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-accent)]/10">

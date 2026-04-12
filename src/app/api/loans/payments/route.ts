@@ -64,17 +64,53 @@ export async function POST(request: NextRequest) {
       console.error('Loan balance update error:', updateErr)
     }
 
+    // Sync the loan's linked account balance (loan account in accounts table)
+    // A loan account is a liability — its current_balance mirrors the loan balance (negative)
+    if (loan.account_id) {
+      try {
+        await supabase
+          .from('accounts')
+          .update({ current_balance: -calcClosing })
+          .eq('id', loan.account_id)
+          .eq('user_id', user.id)
+      } catch (syncErr) {
+        console.warn('Loan account balance sync failed (non-fatal):', syncErr)
+      }
+    }
+
     // Auto-create a debit transaction on the "pay from" account
     if (from_account_id) {
       try {
+        // Look up or create the "Loan & Fees" category for this user
+        let loansCategoryId: string | null = null
+        const { data: existingCat } = await supabase
+          .from('categories')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('name', 'Loan & Fees')
+          .single()
+        if (existingCat) {
+          loansCategoryId = existingCat.id
+        } else {
+          const { data: newCat } = await supabase
+            .from('categories')
+            .insert({ user_id: user.id, name: 'Loan & Fees' })
+            .select('id')
+            .single()
+          if (newCat) loansCategoryId = newCat.id
+        }
+
         const signedAmt = -Math.abs(emi_paid) // debit = negative
         const { error: txnInsertErr } = await supabase.from('transactions').insert({
           user_id: user.id,
           account_id: from_account_id,
           loan_id: loan_id,
+          category_id: loansCategoryId,
           description: `Loan Payment — ${loan.name}`,
           amount_usd: signedAmt,
+          final_amount: signedAmt,
           amount_original: Math.abs(emi_paid),
+          original_currency: 'USD',
           cr_dr: 'debit',
           date: payment_date,
           source: 'manual',

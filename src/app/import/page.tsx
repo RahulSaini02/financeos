@@ -17,7 +17,8 @@ import {
 import { TablePageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { InfoTooltip } from "@/components/ui/info-tooltip";
+import { PageHeader } from "@/components/ui/page-header";
+import { HelpModal } from "@/components/ui/help-modal";
 
 // Joined type from Supabase select
 type PendingImportWithJoins = PendingImport & {
@@ -216,60 +217,65 @@ export default function ImportPage() {
       )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Import Review</h1>
-            <InfoTooltip
-              title="Import Review"
-              description="Review and confirm transactions automatically imported from email or webhooks."
-              howTo="Confirm transactions to add them to your ledger. Edit the category, account, or amount before confirming. Reject imports that are incorrect."
-              keyActions={[
-                "Confirm imports to add them to transactions",
-                "Reject or flag imports that look incorrect",
-                "Edit category and account before confirming",
-              ]}
-            />
-          </div>
-          <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">
-            <span className="text-[var(--color-accent)]">{stats.pending} pending</span>
-            {" · "}
-            <span className="text-[var(--color-warning)]">{stats.flagged} flagged</span>
-            {" · "}
-            <span className="text-[var(--color-success)]">{stats.confirmedToday} confirmed today</span>
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={fetchData}>
-            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-            Refresh
+      <PageHeader
+        title="Import Review"
+        subtitle={`${stats.pending} pending · ${stats.flagged} flagged · ${stats.confirmedToday} confirmed today`}
+        tooltip={
+          <HelpModal
+            title="Import"
+            description="Bulk-import transactions from bank CSV exports or other sources. FinanceOS parses the data, suggests categories and accounts using AI, and lets you review before confirming."
+            sections={[
+              {
+                heading: "How to use",
+                items: [
+                  "Export a CSV from your bank's website and upload it here",
+                  "Review AI-suggested categories and accounts for each row",
+                  "Confirm correct entries, edit mismatches, and reject duplicates",
+                  "Confirmed imports become real transactions in your history",
+                ],
+              },
+              {
+                heading: "Key actions",
+                items: [
+                  "Upload CSV — import a bank export file",
+                  "Confirm — approve an import row and create the transaction",
+                  "Edit — adjust the category, account, or amount before confirming",
+                  "Reject — discard a row that should not be imported",
+                ],
+              },
+            ]}
+          />
+        }
+      >
+        <Button variant="ghost" size="sm" onClick={fetchData}>
+          <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+          Refresh
+        </Button>
+        <label className="cursor-pointer">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            className="sr-only"
+            onChange={handleCsvUpload}
+            disabled={csvLoading}
+          />
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={csvLoading}
+            type="button"
+          >
+            {csvLoading ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+            ) : (
+              <Upload className="h-3.5 w-3.5 mr-1.5" />
+            )}
+            Upload CSV
           </Button>
-          <label className="cursor-pointer">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv"
-              className="sr-only"
-              onChange={handleCsvUpload}
-              disabled={csvLoading}
-            />
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={csvLoading}
-              type="button"
-            >
-              {csvLoading ? (
-                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-              ) : (
-                <Upload className="h-3.5 w-3.5 mr-1.5" />
-              )}
-              Upload CSV
-            </Button>
-          </label>
-        </div>
-      </div>
+        </label>
+      </PageHeader>
 
       {/* CSV format hint */}
       <p className="text-xs text-[var(--color-text-muted)]">
@@ -307,7 +313,7 @@ export default function ImportPage() {
 
       {/* Cards */}
       {tabItems.length === 0 ? (
-        <EmptyState tab={activeTab} onUpload={() => fileInputRef.current?.click()} />
+        <ImportEmptyState tab={activeTab} onUpload={() => fileInputRef.current?.click()} />
       ) : (
         <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
           {tabItems.map((item) => (
@@ -491,7 +497,7 @@ function ImportCard({
 
 // ─── Empty State ─────────────────────────────────────────────────────────────
 
-function EmptyState({ tab, onUpload }: { tab: TabKey; onUpload: () => void }) {
+function ImportEmptyState({ tab, onUpload }: { tab: TabKey; onUpload: () => void }) {
   const messages: Record<TabKey, string> = {
     pending: "No pending imports. Upload a CSV to get started.",
     flagged: "No flagged imports. Everything looks clean!",

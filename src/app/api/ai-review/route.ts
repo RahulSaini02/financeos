@@ -200,13 +200,21 @@ ${transactions.filter(t => t.cr_dr === 'debit').sort((a, b) => Math.abs(b.amount
       const msg = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 1200,
-        system: `You are FinanceOS, a personal finance analyst. Analyze the user's financial data for the given period and provide actionable insights. Structure your response with these sections using markdown:
+        system: `You are FinanceOS, a personal finance analyst. Analyze the user's financial data for the given period and provide actionable insights.
 
-1. **Summary** — 2-3 sentence overview of the period
-2. **Spending Highlights** — key patterns, top categories, anomalies (bullet points)
-3. **Budget Health** — which categories are over/under budget, any concerns
-4. **Recommendations** — 3 specific, actionable suggestions based on the data
-5. **Outlook** — brief forward-looking comment
+Structure your response with exactly these four sections using ## headers:
+
+## Spending Insights
+(2-3 bullet points about spending patterns and top categories)
+
+## Budget Deviations
+(bullet points comparing actual vs expected spending — if no budget data available, note it briefly)
+
+## Alerts
+(bullet points for any anomalies, overspending categories, or unusual activity)
+
+## Suggestions
+(2-3 actionable bullet points the user can act on this week/month)
 
 Be specific with numbers. Keep it practical and concise (under 400 words total).`,
         messages: [{ role: 'user', content: `Analyze my finances for ${label}:\n\n${aiInput}` }],

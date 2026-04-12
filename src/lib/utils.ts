@@ -13,7 +13,9 @@ export function formatCurrency(amount: number, currency: 'USD' | 'INR' = 'USD'):
 }
 
 export function formatDate(date: string | Date, format: 'short' | 'long' | 'iso' = 'short'): string {
-  const d = typeof date === 'string' ? new Date(date) : date
+  // Append T00:00:00 so date-only strings are parsed as local time, not UTC midnight
+  // (avoids off-by-one-day display in timezones west of UTC)
+  const d = typeof date === 'string' ? new Date(date.length === 10 ? date + 'T00:00:00' : date) : date
   if (format === 'iso') return d.toISOString().split('T')[0]
   if (format === 'long') return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })

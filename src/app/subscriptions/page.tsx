@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/components/auth-provider";
-import type { Subscription, BillingStatus } from "@/lib/types";
+import type { Subscription, BillingStatus, Account } from "@/lib/types";
 import {
   Plus,
   X,
@@ -21,7 +21,11 @@ import {
   PackageOpen,
 } from "lucide-react";
 import { GridPageSkeleton } from "@/components/ui/skeleton";
-import { InfoTooltip } from "@/components/ui/info-tooltip";
+import { PageHeader } from "@/components/ui/page-header";
+import { HelpModal } from "@/components/ui/help-modal";
+import { EmptyState } from "@/components/ui/empty-state";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type FilterTab = "all" | BillingStatus;
 
@@ -84,6 +88,7 @@ interface SubscriptionFormData {
   next_billing_date: string;
   status: BillingStatus;
   auto_renew: boolean;
+  account_id: string;
   notes: string;
 }
 
@@ -94,15 +99,18 @@ const emptyForm: SubscriptionFormData = {
   next_billing_date: "",
   status: "active",
   auto_renew: true,
+  account_id: "",
   notes: "",
 };
 
 function SubscriptionModal({
   editingSub,
+  accounts,
   onClose,
   onSaved,
 }: {
   editingSub: Subscription | null;
+  accounts: Account[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -117,6 +125,7 @@ function SubscriptionModal({
         next_billing_date: editingSub.next_billing_date ?? "",
         status: editingSub.status,
         auto_renew: editingSub.auto_renew,
+        account_id: editingSub.account_id ?? "",
         notes: editingSub.notes ?? "",
       };
     }
@@ -138,6 +147,7 @@ function SubscriptionModal({
       next_billing_date: form.next_billing_date || null,
       status: form.status,
       auto_renew: form.auto_renew,
+      account_id: form.account_id || null,
       notes: form.notes.trim() || null,
     };
 
@@ -294,6 +304,33 @@ function SubscriptionModal({
             </div>
           </div>
 
+          {form.auto_renew && (
+            <div>
+              <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
+                Charge Account (autopay)
+              </label>
+              <select
+                value={form.account_id}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, account_id: e.target.value }))
+                }
+                className={inputClass}
+              >
+                <option value="">— None (manual only) —</option>
+                {accounts
+                  .filter((a) => a.kind === "asset")
+                  .map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+              </select>
+              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                A debit transaction will be auto-created on the billing date.
+              </p>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
               Notes
@@ -339,6 +376,7 @@ export default function SubscriptionsPage() {
   const supabase = createClient();
 
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterTab>("active");
@@ -349,15 +387,24 @@ export default function SubscriptionsPage() {
     if (!user) return;
     setLoading(true);
     setError(null);
-    const { data, error: err } = await supabase
-      .from("subscriptions")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("next_billing_date");
+    const [{ data, error: err }, { data: acctData }] = await Promise.all([
+      supabase
+        .from("subscriptions")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("next_billing_date"),
+      supabase
+        .from("accounts")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("is_active", true)
+        .order("name"),
+    ]);
     if (err) {
       setError(err.message);
     } else {
       setSubscriptions(data ?? []);
+      setAccounts(acctData ?? []);
     }
     setLoading(false);
   };
@@ -430,33 +477,41 @@ export default function SubscriptionsPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-5 md:space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl md:text-2xl font-semibold tracking-tight">
-              Subscriptions & Bills
-            </h1>
-            <InfoTooltip
-              title="Subscriptions & Bills"
-              description="Track all your recurring subscriptions and bills. Defaults to showing active subscriptions."
-              howTo="Use the filter tabs to switch between Active, Inactive, or All subscriptions. Add new ones with the + button."
-              keyActions={[
-                "Add a new subscription or recurring bill",
-                "Toggle between active / inactive / all views",
-                "See total monthly and annual cost",
-                "Track upcoming renewal dates",
-              ]}
-            />
-          </div>
-          <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">
-            Track your recurring subscriptions and bills
-          </p>
-        </div>
+      <PageHeader
+        title="Subscriptions & Bills"
+        subtitle="Track your recurring subscriptions and bills"
+        tooltip={
+          <HelpModal
+            title="Subscriptions & Bills"
+            description="Track all your subscription services and recurring bills in one place. See upcoming billing dates, total monthly cost, and get alerts before charges hit."
+            sections={[
+              {
+                heading: "How to use",
+                items: [
+                  "Add each subscription with its billing cost and cycle (monthly, yearly, etc.)",
+                  "The dashboard shows bills due within the next 7 days as a reminder",
+                  "Mark subscriptions as inactive when you cancel them to keep records",
+                  "Use the filter tabs to switch between Active, Inactive, and All",
+                ],
+              },
+              {
+                heading: "Key actions",
+                items: [
+                  "Add Subscription — log a new recurring service or bill",
+                  "Edit — update cost, billing date, or status",
+                  "Cancel / Deactivate — mark as inactive instead of deleting",
+                  "Filter — view only active, inactive, or all subscriptions",
+                ],
+              },
+            ]}
+          />
+        }
+      >
         <Button onClick={openAdd} size="md">
           <Plus className="h-4 w-4 mr-1.5" />
           Add Subscription
         </Button>
-      </div>
+      </PageHeader>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Card>
@@ -525,17 +580,15 @@ export default function SubscriptionsPage() {
           <span className="text-sm">{error}</span>
         </div>
       ) : filteredSubscriptions.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <PackageOpen className="h-10 w-10 text-[var(--color-text-muted)] mb-3" />
-          <p className="text-sm font-medium text-[var(--color-text-secondary)]">
-            No subscriptions found
-          </p>
-          <p className="text-xs text-[var(--color-text-muted)] mt-1">
-            {activeFilter === "all"
+        <EmptyState
+          icon={<PackageOpen className="h-8 w-8" />}
+          title="No subscriptions found"
+          description={
+            activeFilter === "all"
               ? "Add your first subscription to get started."
-              : `No ${activeFilter} subscriptions.`}
-          </p>
-        </div>
+              : `No ${activeFilter} subscriptions.`
+          }
+        />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filteredSubscriptions.map((sub) => {
@@ -632,6 +685,7 @@ export default function SubscriptionsPage() {
       {modalOpen && (
         <SubscriptionModal
           editingSub={editingSub}
+          accounts={accounts}
           onClose={() => {
             setModalOpen(false);
             setEditingSub(null);

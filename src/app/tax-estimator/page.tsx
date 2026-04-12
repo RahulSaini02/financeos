@@ -9,7 +9,8 @@ import { useAuth } from "@/components/auth-provider";
 import type { Paycheck } from "@/lib/types";
 import { Loader2, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { GridPageSkeleton } from "@/components/ui/skeleton";
-import { InfoTooltip } from "@/components/ui/info-tooltip";
+import { PageHeader } from "@/components/ui/page-header";
+import { HelpModal } from "@/components/ui/help-modal";
 
 const FEDERAL_BRACKETS_SINGLE = [
   { min: 0, max: 11925, rate: 0.10 },
@@ -76,6 +77,7 @@ interface TaxInputs {
   payFrequency: PayFrequency;
   contribution401kPct: number;
   otherPreTaxDeductions: number;
+  standardDeductionOverride: number | null;
 }
 
 interface TaxResults {
@@ -92,13 +94,14 @@ interface TaxResults {
 }
 
 function calculateTaxes(inputs: TaxInputs): TaxResults {
-  const { annualGross, filingStatus, contribution401kPct, otherPreTaxDeductions } = inputs;
+  const { annualGross, filingStatus, contribution401kPct, otherPreTaxDeductions, standardDeductionOverride } = inputs;
 
   const contribution401k = annualGross * (contribution401kPct / 100);
   const otherPreTax = otherPreTaxDeductions;
 
-  const standardDeduction =
-    filingStatus === "mfj" ? FEDERAL_STANDARD_DEDUCTION_MFJ : FEDERAL_STANDARD_DEDUCTION_SINGLE;
+  const standardDeduction = standardDeductionOverride != null && standardDeductionOverride >= 0
+    ? standardDeductionOverride
+    : filingStatus === "mfj" ? FEDERAL_STANDARD_DEDUCTION_MFJ : FEDERAL_STANDARD_DEDUCTION_SINGLE;
 
   const federalTaxableIncome = Math.max(
     0,
@@ -153,6 +156,7 @@ export default function TaxEstimatorPage() {
     payFrequency: 26,
     contribution401kPct: 0,
     otherPreTaxDeductions: 0,
+    standardDeductionOverride: null,
   });
 
   const [prefilled, setPrefilled] = useState(false);
@@ -174,7 +178,7 @@ export default function TaxEstimatorPage() {
       } else if (data && data.length > 0) {
         setPaychecks(data as Paycheck[]);
         if (!prefilled) {
-          const freq: PayFrequency = 26;
+          const freq: PayFrequency = 24;
           const ytdGross = data.reduce((sum, p) => sum + p.gross_pay, 0);
           const ytdRetirement = data.reduce((sum, p) => sum + p.retirement_401k, 0);
           const count = data.length;
@@ -233,24 +237,35 @@ export default function TaxEstimatorPage() {
 
   return (
     <div className="space-y-6 p-6 max-w-5xl mx-auto">
-      <div>
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">Tax Estimator</h1>
-          <InfoTooltip
+      <PageHeader
+        title="Tax Estimator"
+        subtitle="2026 US Federal &amp; California State Tax — pre-filled from your YTD paycheck data"
+        tooltip={
+          <HelpModal
             title="Tax Estimator"
-            description="Estimate your federal and state tax liability based on your YTD paycheck data."
-            howTo="Values are pre-filled from your paychecks. Adjust income or deductions to run different scenarios."
-            keyActions={[
-              "Review estimated federal and state tax",
-              "See effective tax rate and refund/owed estimate",
-              "Adjust inputs for different tax scenarios",
+            description="Estimate your federal and state income tax liability based on your logged paychecks and income transactions. Useful for planning quarterly payments or year-end surprises."
+            sections={[
+              {
+                heading: "How to use",
+                items: [
+                  "The estimator pulls gross income from your logged paychecks automatically",
+                  "Adjust filing status and deductions to match your situation",
+                  "Use it to check whether your withholding is on track",
+                  "Results are estimates only — consult a tax professional for final figures",
+                ],
+              },
+              {
+                heading: "Key actions",
+                items: [
+                  "Select tax year — switch between years to compare",
+                  "Adjust filing status — single, married filing jointly, etc.",
+                  "Review withholding — see if you are likely to owe or get a refund",
+                ],
+              },
             ]}
           />
-        </div>
-        <p className="text-sm text-[var(--color-text-muted)] mt-0.5">
-          2026 US Federal &amp; California State Tax — pre-filled from your YTD paycheck data
-        </p>
-      </div>
+        }
+      />
 
       {error && (
         <div className="rounded-lg border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]">
@@ -328,6 +343,26 @@ export default function TaxEstimatorPage() {
               min={0}
             />
           </div>
+
+          <div>
+            <label className={labelClass}>
+              Standard Deduction Override{" "}
+              <span className="text-[var(--color-text-muted)] font-normal">
+                (leave 0 to use default: {inputs.filingStatus === "mfj" ? `$${FEDERAL_STANDARD_DEDUCTION_MFJ.toLocaleString()}` : `$${FEDERAL_STANDARD_DEDUCTION_SINGLE.toLocaleString()}`})
+              </span>
+            </label>
+            <input
+              type="number"
+              className={inputClass}
+              value={inputs.standardDeductionOverride ?? 0}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                setField("standardDeductionOverride", val > 0 ? val : null);
+              }}
+              min={0}
+              placeholder="0 = use default"
+            />
+          </div>
         </div>
       </Card>
 
@@ -386,6 +421,7 @@ export default function TaxEstimatorPage() {
                 { label: "Gross Pay", value: results.grossPay, color: "text-[var(--color-text-primary)]" },
                 { label: "401K Contribution", value: -results.contribution401k, color: "text-[var(--color-warning)]" },
                 { label: "Other Pre-tax Deductions", value: -results.otherPreTax, color: "text-[var(--color-text-muted)]" },
+                { label: "Standard Deduction", value: -(inputs.standardDeductionOverride != null && inputs.standardDeductionOverride > 0 ? inputs.standardDeductionOverride : inputs.filingStatus === "mfj" ? FEDERAL_STANDARD_DEDUCTION_MFJ : FEDERAL_STANDARD_DEDUCTION_SINGLE), color: "text-[var(--color-text-muted)]" },
                 { label: "Taxable Income (Federal)", value: results.federalTaxableIncome, color: "text-[var(--color-text-secondary)]" },
                 { label: "Federal Tax", value: -results.federalTax, color: "text-[var(--color-danger)]" },
                 { label: "State Tax (CA)", value: -results.stateTax, color: "text-[var(--color-warning)]" },

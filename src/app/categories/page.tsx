@@ -5,9 +5,13 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { GridPageSkeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/ui/page-header";
+import { HelpModal } from "@/components/ui/help-modal";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Modal } from "@/components/ui/modal";
+import { FormField, FormInput, FormSelect, FormTextarea } from "@/components/ui/form-field";
 import {
   Plus,
-  X,
   Loader2,
   AlertTriangle,
   Pencil,
@@ -41,7 +45,6 @@ interface CategoryForm {
   name: string;
   type: TransactionType;
   icon: string;
-  parent_name: string;
   monthly_budget: string;
   is_recurring: boolean;
   due_day: string;
@@ -53,19 +56,12 @@ const emptyForm: CategoryForm = {
   name: "",
   type: "expense",
   icon: "",
-  parent_name: "",
   monthly_budget: "",
   is_recurring: false,
   due_day: "",
   priority: "",
   notes: "",
 };
-
-const inputClass =
-  "w-full h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] placeholder:text-[var(--color-text-muted)]";
-
-const labelClass =
-  "block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5";
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
@@ -114,7 +110,6 @@ export default function CategoriesPage() {
       name: cat.name,
       type: cat.type,
       icon: cat.icon ?? "",
-      parent_name: cat.parent_name ?? "",
       monthly_budget: cat.monthly_budget != null ? String(cat.monthly_budget) : "",
       is_recurring: cat.is_recurring,
       due_day: cat.due_day != null ? String(cat.due_day) : "",
@@ -146,7 +141,6 @@ export default function CategoriesPage() {
       name: form.name.trim(),
       type: form.type,
       icon: form.icon.trim() || null,
-      parent_name: form.parent_name.trim() || null,
       monthly_budget: form.monthly_budget ? parseFloat(form.monthly_budget) : null,
       is_recurring: form.is_recurring,
       due_day: form.due_day ? parseInt(form.due_day) : null,
@@ -214,18 +208,41 @@ export default function CategoriesPage() {
   return (
     <div className="p-4 md:p-6 space-y-5 md:space-y-6 max-w-5xl mx-auto">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl md:text-2xl font-semibold text-[var(--color-text-primary)]">Categories</h1>
-          <p className="text-sm text-[var(--color-text-muted)] mt-0.5">
-            {categories.length} {categories.length === 1 ? "category" : "categories"} total
-          </p>
-        </div>
+      <PageHeader
+        title="Categories"
+        subtitle={`${categories.length} ${categories.length === 1 ? "category" : "categories"} total`}
+        tooltip={
+          <HelpModal
+            title="Categories"
+            description="Categories label your transactions as expenses, income, or transfers. Well-organized categories make budgets, reports, and AI insights more accurate."
+            sections={[
+              {
+                heading: "How to use",
+                items: [
+                  "Create categories that match your real spending habits (e.g. Groceries, Rent, Salary)",
+                  "Set an icon and type (expense / income / transfer) for each category",
+                  "Mark a category as recurring if it repeats on a schedule, then set a due day",
+                  "Set a monthly budget on the category itself as a quick alternative to the Budgets page",
+                ],
+              },
+              {
+                heading: "Key actions",
+                items: [
+                  "Add Category — create a new label for transactions",
+                  "Edit — update name, icon, type, or budget",
+                  "Delete — remove a category (transactions keep their old label)",
+                  "Filter tabs — show only expense, income, or transfer categories",
+                ],
+              },
+            ]}
+          />
+        }
+      >
         <Button onClick={openAdd}>
           <Plus className="h-4 w-4 mr-1.5" />
           Add Category
         </Button>
-      </div>
+      </PageHeader>
 
       {/* Filter tabs */}
       <div className="flex gap-2">
@@ -251,19 +268,12 @@ export default function CategoriesPage() {
 
       {/* Empty state */}
       {filtered.length === 0 && (
-        <Card>
-          <div className="flex flex-col items-center justify-center py-14 text-center">
-            <Tag className="h-10 w-10 text-[var(--color-text-muted)] mb-3" />
-            <p className="text-[var(--color-text-secondary)] font-medium">No categories yet</p>
-            <p className="text-[var(--color-text-muted)] text-sm mt-1 mb-4">
-              Add categories to organize your transactions and budgets.
-            </p>
-            <Button onClick={openAdd}>
-              <Plus className="h-4 w-4 mr-1.5" />
-              Add Category
-            </Button>
-          </div>
-        </Card>
+        <EmptyState
+          icon={<Tag className="h-8 w-8" />}
+          title="No categories yet"
+          description="Add categories to organize your transactions and budgets."
+          action={{ label: "Add Category", onClick: openAdd }}
+        />
       )}
 
       {/* Category groups */}
@@ -288,11 +298,6 @@ export default function CategoriesPage() {
                         <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">
                           {cat.name}
                         </p>
-                        {cat.parent_name && (
-                          <p className="text-xs text-[var(--color-text-muted)] truncate">
-                            {cat.parent_name}
-                          </p>
-                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-1 ml-2 shrink-0">
@@ -347,145 +352,114 @@ export default function CategoriesPage() {
         ))}
 
       {/* Add / Edit modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg bg-[var(--color-bg-secondary)] rounded-2xl border border-[var(--color-border)] shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
-              <h2 className="text-base font-semibold text-[var(--color-text-primary)]">
-                {editingId ? "Edit Category" : "Add Category"}
-              </h2>
-              <button
-                onClick={closeModal}
-                className="text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
+      <Modal
+        open={showModal}
+        onClose={closeModal}
+        title={editingId ? "Edit Category" : "Add Category"}
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeModal}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving || !form.name.trim()}>
+              {saving && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
+              {editingId ? "Save Changes" : "Add Category"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <FormField label="Name" required>
+                <FormInput
+                  placeholder="e.g. Groceries"
+                  value={form.name}
+                  onChange={field("name")}
+                  autoFocus
+                />
+              </FormField>
             </div>
 
-            <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4">
+            <FormField label="Type">
+              <FormSelect value={form.type} onChange={field("type")}>
+                {TYPE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </FormSelect>
+            </FormField>
 
-                <div className="col-span-2">
-                  <label className={labelClass}>
-                    Name <span className="text-[var(--color-danger)]">*</span>
-                  </label>
-                  <input
-                    className={inputClass}
-                    placeholder="e.g. Groceries"
-                    value={form.name}
-                    onChange={field("name")}
-                    autoFocus
-                  />
-                </div>
+            <FormField label="Icon (emoji)">
+              <FormInput
+                placeholder="🛒"
+                value={form.icon}
+                onChange={field("icon")}
+              />
+            </FormField>
 
-                <div>
-                  <label className={labelClass}>Type</label>
-                  <select className={inputClass} value={form.type} onChange={field("type")}>
-                    {TYPE_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                </div>
+            <FormField label="Priority">
+              <FormSelect value={form.priority} onChange={field("priority")}>
+                {PRIORITY_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </FormSelect>
+            </FormField>
 
-                <div>
-                  <label className={labelClass}>Icon (emoji)</label>
-                  <input
-                    className={inputClass}
-                    placeholder="🛒"
-                    value={form.icon}
-                    onChange={field("icon")}
-                  />
-                </div>
+            <FormField label="Monthly Budget ($)">
+              <FormInput
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={form.monthly_budget}
+                onChange={field("monthly_budget")}
+              />
+            </FormField>
 
-                <div>
-                  <label className={labelClass}>Parent Category</label>
-                  <input
-                    className={inputClass}
-                    placeholder="e.g. Food & Dining"
-                    value={form.parent_name}
-                    onChange={field("parent_name")}
-                  />
-                </div>
+            <FormField label="Due Day (1–31)">
+              <FormInput
+                type="number"
+                min="1"
+                max="31"
+                placeholder="e.g. 15"
+                value={form.due_day}
+                onChange={field("due_day")}
+                disabled={!form.is_recurring}
+              />
+            </FormField>
 
-                <div>
-                  <label className={labelClass}>Priority</label>
-                  <select className={inputClass} value={form.priority} onChange={field("priority")}>
-                    {PRIORITY_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className={labelClass}>Monthly Budget ($)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    className={inputClass}
-                    placeholder="0.00"
-                    value={form.monthly_budget}
-                    onChange={field("monthly_budget")}
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>Due Day (1–31)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="31"
-                    className={inputClass}
-                    placeholder="e.g. 15"
-                    value={form.due_day}
-                    onChange={field("due_day")}
-                    disabled={!form.is_recurring}
-                  />
-                </div>
-
-                <div className="col-span-2 flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    id="is_recurring"
-                    checked={form.is_recurring}
-                    onChange={(e) => setForm((p) => ({ ...p, is_recurring: e.target.checked }))}
-                    className="h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-accent)]"
-                  />
-                  <label htmlFor="is_recurring" className="text-sm text-[var(--color-text-secondary)] cursor-pointer">
-                    Recurring category (bills, subscriptions)
-                  </label>
-                </div>
-
-                <div className="col-span-2">
-                  <label className={labelClass}>Notes</label>
-                  <textarea
-                    rows={2}
-                    placeholder="Any additional notes…"
-                    value={form.notes}
-                    onChange={field("notes")}
-                    className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] resize-none"
-                  />
-                </div>
-              </div>
-
-              {saveError && (
-                <div className="flex items-center gap-2 text-[var(--color-danger)] text-sm bg-[var(--color-danger)]/10 rounded-lg px-3 py-2">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  <span>{saveError}</span>
-                </div>
-              )}
+            <div className="col-span-2 flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="is_recurring"
+                checked={form.is_recurring}
+                onChange={(e) => setForm((p) => ({ ...p, is_recurring: e.target.checked }))}
+                className="h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-accent)]"
+              />
+              <label htmlFor="is_recurring" className="text-sm text-[var(--color-text-secondary)] cursor-pointer">
+                Recurring category (bills, subscriptions)
+              </label>
             </div>
 
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[var(--color-border)]">
-              <Button variant="secondary" onClick={closeModal}>Cancel</Button>
-              <Button onClick={handleSave} disabled={saving || !form.name.trim()}>
-                {saving && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
-                {editingId ? "Save Changes" : "Add Category"}
-              </Button>
+            <div className="col-span-2">
+              <FormField label="Notes">
+                <FormTextarea
+                  rows={2}
+                  placeholder="Any additional notes…"
+                  value={form.notes}
+                  onChange={field("notes")}
+                />
+              </FormField>
             </div>
           </div>
+
+          {saveError && (
+            <div className="flex items-center gap-2 text-[var(--color-danger)] text-sm bg-[var(--color-danger)]/10 rounded-lg px-3 py-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>{saveError}</span>
+            </div>
+          )}
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

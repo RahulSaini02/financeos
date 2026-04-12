@@ -16,6 +16,8 @@ import {
   BrainCircuit,
   Bell,
 } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { HelpModal } from "@/components/ui/help-modal";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -180,13 +182,36 @@ export default function AiChatPage() {
     <div className="p-6 h-full flex flex-col">
       {/* Header */}
       <div className="mb-6">
-        <div className="flex items-center gap-2">
-          <BrainCircuit className="h-6 w-6 text-[var(--color-accent)]" />
-          <h1 className="text-2xl font-semibold tracking-tight">AI Finance Assistant</h1>
-        </div>
-        <p className="text-sm text-[var(--color-text-secondary)] mt-0.5 ml-8">
-          Ask questions about your finances
-        </p>
+        <PageHeader
+          title="AI Finance Assistant"
+          subtitle="Ask questions about your finances"
+          tooltip={
+            <HelpModal
+              title="AI Chat"
+              description="Have a free-form conversation with an AI financial assistant that knows your data. Ask questions, get advice, run hypotheticals, or explore your spending patterns."
+              sections={[
+                {
+                  heading: "How to use",
+                  items: [
+                    "Type any financial question in the chat box and press Enter",
+                    "The AI has access to your transactions, budgets, and account balances",
+                    "Ask things like 'How much did I spend on dining last month?' or 'Am I on track to save $10k this year?'",
+                    "Start a new session with the clear button to reset context",
+                  ],
+                },
+                {
+                  heading: "Example questions",
+                  items: [
+                    "What are my top spending categories this month?",
+                    "How does my spending compare to last month?",
+                    "How long until I pay off my car loan at current payments?",
+                    "What would happen to my savings rate if I cut dining by 20%?",
+                  ],
+                },
+              ]}
+            />
+          }
+        />
       </div>
 
       {/* Body: two panels */}

@@ -18,14 +18,22 @@ export async function GET() {
     const now = new Date()
     const firstDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
+    const todayStr = now.toISOString().split('T')[0]
 
     const sevenDaysFromNow = new Date(now)
     sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
     const sevenDaysStr = sevenDaysFromNow.toISOString().split('T')[0]
 
+    const todayDayOfMonth = now.getDate()
+    const pad = (n: number) => String(n).padStart(2, '0')
+
     const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    const prevMonthFirstDay = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}-01`
+    const prevMonthFirstDay = `${prevMonthDate.getFullYear()}-${pad(prevMonthDate.getMonth() + 1)}-01`
     const prevMonthLastDay = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0]
+
+    // 12-month window for monthly comparison chart
+    const twelveMonthsAgoDate = new Date(now.getFullYear(), now.getMonth() - 11, 1)
+    const twelveMonthsAgoStr = `${twelveMonthsAgoDate.getFullYear()}-${pad(twelveMonthsAgoDate.getMonth() + 1)}-01`
 
     const [
       accountsRes,
@@ -35,6 +43,7 @@ export async function GET() {
       insightRes,
       billsRes,
       prevTransactionsRes,
+      twelveMonthTxnsRes,
     ] = await Promise.all([
       supabase
         .from('accounts')
@@ -71,14 +80,24 @@ export async function GET() {
         .eq('user_id', user.id)
         .eq('status', 'active')
         .not('next_billing_date', 'is', null)
+        .gte('next_billing_date', todayStr)
         .lte('next_billing_date', sevenDaysStr)
         .order('next_billing_date', { ascending: true }),
+      // prev month — still needed for AI monthly summary category breakdown
       supabase
         .from('transactions')
-        .select('amount_usd, cr_dr, category:categories(name)')
+        .select('amount_usd, cr_dr, is_internal_transfer')
         .eq('user_id', user.id)
         .gte('date', prevMonthFirstDay)
         .lte('date', prevMonthLastDay),
+      // single 12-month aggregate for the comparison chart
+      supabase
+        .from('transactions')
+        .select('amount_usd, cr_dr, date')
+        .eq('user_id', user.id)
+        .eq('is_internal_transfer', false)
+        .gte('date', twelveMonthsAgoStr)
+        .lte('date', lastDay),
     ])
 
     const accounts = accountsRes.data ?? []
@@ -87,7 +106,6 @@ export async function GET() {
     const snapshots = networthRes.data ?? []
     let latest_insight = insightRes.data?.[0] ?? null
     const bills = billsRes.data ?? []
-    const prevTransactions = prevTransactionsRes.data ?? []
 
     const total_assets = accounts
       .filter((a) => a.kind === 'asset' || a.kind === 'investment')
@@ -100,12 +118,12 @@ export async function GET() {
     const net_worth = total_assets - total_liabilities
 
     const monthly_income = transactions
-      .filter((t) => t.cr_dr === 'credit')
-      .reduce((sum, t) => sum + (t.amount_usd ?? 0), 0)
+      .filter((t) => t.cr_dr === 'credit' && !t.is_internal_transfer)
+      .reduce((sum, t) => sum + Math.abs(t.amount_usd ?? 0), 0)
 
     const monthly_expenses = transactions
-      .filter((t) => t.cr_dr === 'debit')
-      .reduce((sum, t) => sum + (t.amount_usd ?? 0), 0)
+      .filter((t) => t.cr_dr === 'debit' && !t.is_internal_transfer)
+      .reduce((sum, t) => sum + Math.abs(t.amount_usd ?? 0), 0)
 
     const savings_rate =
       monthly_income > 0
@@ -122,7 +140,7 @@ export async function GET() {
     // ── Category breakdown for pie chart ────────────────────────────────────────
     const catSpend: Record<string, number> = {}
     for (const t of transactions) {
-      if (t.cr_dr === 'debit') {
+      if (t.cr_dr === 'debit' && !t.is_internal_transfer) {
         const catName = (t.category as unknown as { name: string } | null)?.name ?? 'Uncategorized'
         catSpend[catName] = (catSpend[catName] ?? 0) + Math.abs(t.amount_usd ?? 0)
       }
@@ -135,21 +153,38 @@ export async function GET() {
       ...(otherTotal > 0 ? [{ name: 'Other', amount: otherTotal, color: CATEGORY_COLORS[6] }] : []),
     ]
 
-    // ── Month comparison for grouped bar chart ───────────────────────────────────
+    // ── 12-month comparison data for chart ───────────────────────────────────────
+    const prevTransactions = prevTransactionsRes.data ?? []
     const prevIncome = prevTransactions
-      .filter((t) => t.cr_dr === 'credit')
+      .filter((t) => t.cr_dr === 'credit' && !t.is_internal_transfer)
       .reduce((s, t) => s + Math.abs(t.amount_usd ?? 0), 0)
     const prevExpenses = prevTransactions
-      .filter((t) => t.cr_dr === 'debit')
+      .filter((t) => t.cr_dr === 'debit' && !t.is_internal_transfer)
       .reduce((s, t) => s + Math.abs(t.amount_usd ?? 0), 0)
 
-    const monthComparison = {
-      lastMonth: { income: prevIncome, expenses: prevExpenses },
-      thisMonth: { income: monthly_income, expenses: monthly_expenses },
+    // Build a month-keyed map from the single 12-month query
+    const monthMap: Record<string, { income: number; expenses: number }> = {}
+    for (const t of twelveMonthTxnsRes.data ?? []) {
+      const key = (t.date as string).substring(0, 7) // "YYYY-MM"
+      if (!monthMap[key]) monthMap[key] = { income: 0, expenses: 0 }
+      if (t.cr_dr === 'credit') monthMap[key].income += Math.abs(t.amount_usd ?? 0)
+      else monthMap[key].expenses += Math.abs(t.amount_usd ?? 0)
     }
 
+    // Always return 12 months in chronological order, filling zeros for empty months
+    const monthlyData = Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - (11 - i), 1)
+      const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
+      const label = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+      return {
+        month: key,
+        label,
+        income: Math.round((monthMap[key]?.income ?? 0) * 100) / 100,
+        expenses: Math.round((monthMap[key]?.expenses ?? 0) * 100) / 100,
+      }
+    })
+
     // ── Daily Insight — generate one per day if none exists yet ─────────────
-    const todayStr = now.toISOString().split('T')[0]
     const hasInsightToday = latest_insight && latest_insight.created_at.startsWith(todayStr)
 
     if (!hasInsightToday && process.env.ANTHROPIC_API_KEY) {
@@ -203,16 +238,8 @@ Be specific, actionable, and encouraging. Do not use markdown. Do not start with
 
         if (!monthlySummary || monthlySummary.length === 0) {
           if (prevTransactions && prevTransactions.length > 0) {
-            const catSpendPrev: Record<string, number> = {}
-            for (const t of prevTransactions) {
-              if (t.cr_dr === 'debit') {
-                const cat = (t.category as unknown as { name: string } | null)?.name ?? 'Uncategorized'
-                catSpendPrev[cat] = (catSpendPrev[cat] ?? 0) + (t.amount_usd ?? 0)
-              }
-            }
             const prevSavingsRate = prevIncome > 0 ? ((prevIncome - prevExpenses) / prevIncome * 100).toFixed(1) : '0'
-            const topCats = Object.entries(catSpendPrev).sort((a, b) => b[1] - a[1]).slice(0, 3)
-              .map(([cat, amt]) => `${cat}: $${amt.toFixed(2)}`).join(', ')
+            const topCats = 'See transactions page for breakdown'
 
             const summaryPrompt = `Generate a concise monthly financial summary for ${prevMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}. Data:
 - Income: $${prevIncome.toFixed(2)}, Expenses: $${prevExpenses.toFixed(2)}, Savings rate: ${prevSavingsRate}%
@@ -242,8 +269,8 @@ Write 3-4 sentences covering performance, top spending areas, and one actionable
       }
     }
 
-    // Upsert this month's net worth snapshot so the trend chart has data
-    const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+    // Upsert this month's net worth snapshot using end-of-month date to match historical snapshots
+    const currentMonthStr = lastDay
     await supabase.from('networth_snapshots').upsert(
       {
         user_id: user.id,
@@ -267,7 +294,7 @@ Write 3-4 sentences covering performance, top spending areas, and one actionable
       networth_trend: [...snapshots].reverse(),
       latest_insight,
       categoryBreakdown,
-      monthComparison,
+      monthlyData,
     })
   } catch (err) {
     console.error('Dashboard error:', err)

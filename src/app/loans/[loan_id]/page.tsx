@@ -19,6 +19,9 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
 } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { HelpModal } from "@/components/ui/help-modal";
+import { EmptyState } from "@/components/ui/empty-state";
 import Link from "next/link";
 
 function monthsRemaining(balance: number, rate: number, emi: number): number {
@@ -37,6 +40,7 @@ function payoffDate(months: number): string {
 interface LoanWithDetails extends Loan {
   payments: LoanPayment[];
   transactions: Transaction[];
+  account?: { name: string } | null;
 }
 
 export default function LoanDetailPage({
@@ -69,7 +73,7 @@ export default function LoanDetailPage({
     ] = await Promise.all([
       supabase
         .from("loans")
-        .select("*")
+        .select("*, account:accounts(name)")
         .eq("id", loan_id)
         .eq("user_id", user!.id)
         .single(),
@@ -145,20 +149,35 @@ export default function LoanDetailPage({
       </Link>
 
       {/* Header */}
-      <div className="flex items-start gap-4">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--color-danger)]/10">
-          <Landmark className="h-6 w-6 text-[var(--color-danger)]" />
-        </div>
-        <div>
-          <h1 className="text-xl md:text-2xl font-semibold tracking-tight">{loan.name}</h1>
-          <p className="text-sm text-[var(--color-text-secondary)] capitalize mt-0.5">
-            {loan.type} loan
-            {loan.interest_rate > 0
-              ? ` · ${(loan.interest_rate * 100).toFixed(2)}% APR`
-              : " · 0% interest"}
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title={loan.name}
+        subtitle={`${loan.type} loan${loan.interest_rate > 0 ? ` · ${(loan.interest_rate * 100).toFixed(2)}% APR` : " · 0% interest"}`}
+        tooltip={
+          <HelpModal
+            title="Loan Details"
+            description="Deep-dive into a single loan. See the remaining balance, total interest paid, amortization progress, and a chronological log of every payment you have made."
+            sections={[
+              {
+                heading: "How to use",
+                items: [
+                  "The summary cards show remaining balance, EMI, interest rate, and progress",
+                  "The payment log lists every payment with the principal and interest breakdown",
+                  "Recent activity shows the last few transactions linked to this loan",
+                  "Click 'Log Payment' to record a new payment from the loans list page",
+                ],
+              },
+              {
+                heading: "Key actions",
+                items: [
+                  "Back to Loans — return to the loans list",
+                  "Payment log — review the full repayment history",
+                  "Progress bar — see what percentage of the principal remains",
+                ],
+              },
+            ]}
+          />
+        }
+      />
 
       {/* Summary Section */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -315,16 +334,11 @@ export default function LoanDetailPage({
         </div>
 
         {loan.payments.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <TrendingDown className="h-8 w-8 text-[var(--color-text-muted)] mb-2" />
-            <p className="text-sm text-[var(--color-text-secondary)]">No payments logged yet</p>
-            <Link
-              href="/loans"
-              className="mt-2 text-xs text-[var(--color-accent)] hover:underline"
-            >
-              Log a payment →
-            </Link>
-          </div>
+          <EmptyState
+            icon={<TrendingDown className="h-8 w-8" />}
+            title="No payments logged yet"
+            action={{ label: "Log a payment →", href: "/loans" }}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -392,6 +406,7 @@ export default function LoanDetailPage({
             { label: "Term", value: `${loan.term_months} months` },
             { label: "Interest Rate", value: loan.interest_rate > 0 ? `${(loan.interest_rate * 100).toFixed(2)}% APR` : "0% (interest-free)" },
             { label: "Loan Type", value: loan.type.charAt(0).toUpperCase() + loan.type.slice(1) },
+            ...(loan.account ? [{ label: "Linked Account", value: loan.account.name }] : []),
           ].map(({ label, value }) => (
             <div key={label} className="rounded-lg bg-[var(--color-bg-tertiary)] px-3 py-2">
               <p className="text-xs text-[var(--color-text-muted)] mb-0.5">{label}</p>

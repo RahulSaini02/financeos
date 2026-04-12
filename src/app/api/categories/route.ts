@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { name, type, icon, parent_name, monthly_budget, is_recurring, due_day, priority, notes } = body
+    const { name, type, icon, monthly_budget, is_recurring, due_day, priority, notes } = body
 
     if (!name?.trim()) {
       return NextResponse.json({ error: 'Category name is required' }, { status: 400 })
@@ -54,7 +54,6 @@ export async function POST(request: NextRequest) {
         name: name.trim(),
         type,
         icon: icon?.trim() || null,
-        parent_name: parent_name?.trim() || null,
         monthly_budget: monthly_budget || null,
         is_recurring: is_recurring ?? false,
         due_day: due_day || null,

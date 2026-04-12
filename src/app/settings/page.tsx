@@ -6,6 +6,8 @@ import { Loader2 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { createClient } from "@/lib/supabase";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { HelpModal } from "@/components/ui/help-modal";
 import { Button } from "@/components/ui/button";
 import { GridPageSkeleton } from "@/components/ui/skeleton";
 
@@ -227,14 +229,35 @@ export default function SettingsPage() {
         <div className="max-w-2xl mx-auto space-y-6">
 
           {/* Page heading */}
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "var(--color-text-primary)" }}>
-              Settings
-            </h1>
-            <p className="mt-1 text-sm" style={{ color: "var(--color-text-muted)" }}>
-              Manage your account, security, and preferences.
-            </p>
-          </div>
+          <PageHeader
+            title="Settings"
+            subtitle="Manage your account, security, and preferences."
+            tooltip={
+              <HelpModal
+                title="Settings"
+                description="Customize your FinanceOS experience — set your default currency, theme preference, and manage your profile. Changes here affect the entire app."
+                sections={[
+                  {
+                    heading: "How to use",
+                    items: [
+                      "Update your display name and email in the profile section",
+                      "Switch between light and dark theme to match your preference",
+                      "Set your default currency (USD or INR) for display purposes",
+                      "Sign out from the bottom of the page when you are done",
+                    ],
+                  },
+                  {
+                    heading: "Key actions",
+                    items: [
+                      "Save profile — update name, email, currency, or theme",
+                      "Change password — update your login credentials",
+                      "Sign out — end your current session",
+                    ],
+                  },
+                ]}
+              />
+            }
+          />
 
           {/* ── Profile ───────────────────────────────────────────────────── */}
           <Card>

@@ -24,6 +24,12 @@ import {
   Landmark,
 } from "lucide-react";
 import { GridPageSkeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/ui/page-header";
+import { HelpModal } from "@/components/ui/help-modal";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Modal } from "@/components/ui/modal";
+import { FormField, FormInput, FormTextarea, FormSelect } from "@/components/ui/form-field";
 import type { Account } from "@/lib/types";
 
 // ── Form ──────────────────────────────────────────────────────────────────────
@@ -229,34 +235,49 @@ export default function EmployersPage() {
   return (
     <div className="p-4 md:p-6 space-y-5 md:space-y-6 max-w-5xl mx-auto">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl md:text-2xl font-semibold text-[var(--color-text-primary)]">Employers</h1>
-          <p className="text-sm text-[var(--color-text-muted)] mt-0.5">
-            {employers.length} employer{employers.length !== 1 ? "s" : ""} on record
-          </p>
-        </div>
+      <PageHeader
+        title="Employers"
+        subtitle={`${employers.length} employer${employers.length !== 1 ? "s" : ""} on record`}
+        tooltip={
+          <HelpModal
+            title="Employers"
+            description="Store employer details including contact info, your start date, grade level, and a default deposit account. Used to auto-fill paycheck entries."
+            sections={[
+              {
+                heading: "How to use",
+                items: [
+                  "Add each employer you have worked for or currently work for",
+                  "Set a default deposit account so paychecks auto-select the right account",
+                  "Include HR contact and EIN for reference during tax season",
+                  "Past employers are kept for paycheck history even after you leave",
+                ],
+              },
+              {
+                heading: "Key actions",
+                items: [
+                  "Add Employer — log a new employer record",
+                  "Edit — update default account, contact info, or notes",
+                  "Delete — remove an employer (historical paychecks are preserved)",
+                ],
+              },
+            ]}
+          />
+        }
+      >
         <Button onClick={openAdd}>
           <Plus className="h-4 w-4 mr-1.5" />
           Add Employer
         </Button>
-      </div>
+      </PageHeader>
 
       {/* Empty state */}
       {employers.length === 0 && (
-        <Card>
-          <div className="flex flex-col items-center justify-center py-14 text-center">
-            <Briefcase className="h-10 w-10 text-[var(--color-text-muted)] mb-3" />
-            <p className="text-[var(--color-text-secondary)] font-medium">No employers yet</p>
-            <p className="text-[var(--color-text-muted)] text-sm mt-1 mb-4">
-              Add your employer to link paychecks and store details like EIN, manager, and HR contact.
-            </p>
-            <Button onClick={openAdd}>
-              <Plus className="h-4 w-4 mr-1.5" />
-              Add Employer
-            </Button>
-          </div>
-        </Card>
+        <EmptyState
+          icon={<Briefcase className="h-8 w-8" />}
+          title="No employers yet"
+          description="Add your employer to link paychecks and store details like EIN, manager, and HR contact."
+          action={{ label: "Add Employer", onClick: openAdd }}
+        />
       )}
 
       {/* Employer cards */}

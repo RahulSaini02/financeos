@@ -132,21 +132,18 @@ export function AppShell({ children }: AppShellProps) {
         <Link
           href="/settings"
           className={cn(
-            "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+            "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
             pathname === "/settings"
               ? "bg-[var(--color-accent)] text-white"
               : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
           )}
         >
-          <Settings className="h-4 w-4" />
-          Settings
-        </Link>
-        <div className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--color-accent)] text-xs font-medium text-white shrink-0">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--color-accent)]/80 text-xs font-medium text-white shrink-0">
             {initials}
           </div>
-          <span className="flex-1 truncate text-left text-[var(--color-text-primary)]">{displayName}</span>
-        </div>
+          <span className="flex-1 truncate text-left font-medium">{displayName}</span>
+          <Settings className="h-3.5 w-3.5 shrink-0 opacity-50" />
+        </Link>
       </div>
     </aside>
   );

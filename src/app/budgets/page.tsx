@@ -2,226 +2,319 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardTitle, CardValue } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { GridPageSkeleton } from "@/components/ui/skeleton";
-import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
+import { PageHeader } from "@/components/ui/page-header";
+import { HelpModal } from "@/components/ui/help-modal";
+import { EmptyState } from "@/components/ui/empty-state";
+import { MonthNav } from "@/components/ui/month-nav";
+import { Modal } from "@/components/ui/modal";
 import {
-  ChevronLeft,
-  ChevronRight,
-  Plus,
   X,
   Loader2,
   AlertTriangle,
   Pencil,
-  ExternalLink,
   PieChart,
+  TrendingUp,
+  TrendingDown,
+  Minus,
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { createClient } from "@/lib/supabase";
-import type { Budget, Category } from "@/lib/types";
+import type { Category } from "@/lib/types";
 
-interface BudgetWithActual extends Budget {
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface CategoryRow {
   category: Category;
-  spent: number;
+  budget: number;        // from budgets table override, or category.monthly_budget
+  isOverride: boolean;   // true if a budgets-row exists for this month
+  budgetRowId: string | null;
+  spent: number;         // sum of debit transactions this month (as positive)
+  pct: number;
 }
 
-interface BudgetCategory {
-  id: string;
-  category_id: string;
-  name: string;
-  icon: string;
-  amount_usd: number;
-  spent: number;
+type StatusGroup = "over" | "at_risk" | "on_track" | "unbudgeted";
+
+function groupStatus(row: CategoryRow): StatusGroup {
+  if (row.budget <= 0) return "unbudgeted";
+  if (row.pct >= 100) return "over";
+  if (row.pct >= 80) return "at_risk";
+  return "on_track";
 }
 
-function getProgressColor(pct: number): string {
-  if (pct >= 100) return "bg-[var(--color-danger)]";
-  if (pct >= 80) return "bg-[var(--color-warning)]";
-  return "bg-[var(--color-success)]";
-}
+const GROUP_META: Record<StatusGroup, { label: string; color: string; barColor: string; icon: React.ReactNode }> = {
+  over:        { label: "Over Budget",  color: "text-[var(--color-danger)]",  barColor: "bg-[var(--color-danger)]",  icon: <TrendingUp   className="h-4 w-4" /> },
+  at_risk:     { label: "At Risk",      color: "text-[var(--color-warning)]", barColor: "bg-[var(--color-warning)]", icon: <Minus        className="h-4 w-4" /> },
+  on_track:    { label: "On Track",     color: "text-[var(--color-success)]", barColor: "bg-[var(--color-success)]", icon: <TrendingDown className="h-4 w-4" /> },
+  unbudgeted:  { label: "Unbudgeted",   color: "text-[var(--color-text-muted)]", barColor: "bg-[var(--color-accent)]", icon: <PieChart  className="h-4 w-4" /> },
+};
 
-function getRemainingColor(remaining: number): string {
-  if (remaining < 0) return "text-[var(--color-danger)]";
-  return "text-[var(--color-success)]";
-}
+// ── Override Modal ────────────────────────────────────────────────────────────
 
-function BudgetModal({
+function OverrideModal({
   category,
-  existingAmount,
+  currentBudget,
+  isOverride,
   onClose,
   onSave,
+  onClear,
+  saving,
 }: {
-  category: { id: string; name: string; icon: string } | null;
-  existingAmount?: number;
+  category: Category;
+  currentBudget: number;
+  isOverride: boolean;
   onClose: () => void;
-  onSave: (id: string, amount: number) => void;
+  onSave: (amount: number) => void;
+  onClear: () => void;
+  saving: boolean;
 }) {
-  const [amount, setAmount] = useState<string>(
-    existingAmount != null ? existingAmount.toString() : ""
-  );
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (category && amount) {
-      onSave(category.id, parseFloat(amount));
-    }
-  };
+  const [amount, setAmount] = useState(currentBudget > 0 ? currentBudget.toFixed(2) : "");
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div
-        className="absolute inset-0 bg-black/50"
-        onClick={onClose}
-      />
-      <div className="relative z-10 w-full max-w-md rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-6 shadow-lg">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold">
-            {category ? `Edit Budget: ${category.icon} ${category.name}` : "Add Budget"}
-          </h2>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1 hover:bg-[var(--color-bg-tertiary)] transition-colors"
-          >
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-6 shadow-xl">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-base font-semibold">
+              {category.icon} {category.name}
+            </h2>
+            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+              {isOverride ? "This month's override" : `Default: ${formatCurrency(category.monthly_budget ?? 0)}/mo`}
+            </p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1 hover:bg-[var(--color-bg-tertiary)] transition-colors">
             <X className="h-5 w-5 text-[var(--color-text-muted)]" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
+
+        <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">
-              Monthly Budget Amount
+              Monthly Budget for this Month
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]">
-                $
-              </span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]">$</span>
               <input
                 type="number"
                 step="0.01"
                 min="0"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
+                placeholder={category.monthly_budget?.toFixed(2) ?? "0.00"}
                 className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] py-2 pl-7 pr-4 text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
                 autoFocus
               />
             </div>
+            {isOverride && (
+              <p className="text-xs text-[var(--color-text-muted)] mt-1.5">
+                Default from category: {formatCurrency(category.monthly_budget ?? 0)}/mo.
+                Clear override to revert.
+              </p>
+            )}
           </div>
-          <div className="flex gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
+
+          <div className="flex gap-2 pt-1">
+            {isOverride && (
+              <Button variant="secondary" onClick={onClear} disabled={saving} className="flex-1 text-[var(--color-danger)]">
+                Clear Override
+              </Button>
+            )}
+            <Button variant="secondary" onClick={onClose} disabled={saving} className={isOverride ? "" : "flex-1"}>
               Cancel
             </Button>
-            <Button type="submit" className="flex-1">
-              Save Budget
+            <Button
+              onClick={() => onSave(parseFloat(amount) || 0)}
+              disabled={saving || !amount}
+              className="flex-1"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+              {isOverride ? "Update Override" : "Set Override"}
             </Button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
 }
+
+// ── Category Card ─────────────────────────────────────────────────────────────
+
+function CategoryCard({
+  row,
+  onEdit,
+  onDrillDown,
+}: {
+  row: CategoryRow;
+  onEdit: (row: CategoryRow) => void;
+  onDrillDown: (row: CategoryRow) => void;
+}) {
+  const status = groupStatus(row);
+  const meta = GROUP_META[status];
+  const remaining = row.budget - row.spent;
+  const isUnbudgeted = status === "unbudgeted";
+
+  return (
+    <div
+      className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 hover:border-[var(--color-accent)]/50 transition-colors cursor-pointer"
+      onClick={() => onDrillDown(row)}
+    >
+      {/* Header */}
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-lg flex-shrink-0">{row.category.icon ?? "📦"}</span>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">{row.category.name}</p>
+            {row.isOverride && (
+              <span className="text-[10px] text-[var(--color-accent)] font-medium">month override</span>
+            )}
+          </div>
+        </div>
+        <button
+          onClick={(e) => { e.stopPropagation(); onEdit(row); }}
+          className="flex-shrink-0 ml-2 flex h-6 w-6 items-center justify-center rounded text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors"
+          title="Edit budget"
+        >
+          <Pencil className="h-3 w-3" />
+        </button>
+      </div>
+
+      {/* Progress bar */}
+      {!isUnbudgeted && (
+        <div className="h-1.5 w-full rounded-full bg-[var(--color-bg-tertiary)] overflow-hidden mb-3">
+          <div
+            className={`h-full rounded-full transition-all ${meta.barColor}`}
+            style={{ width: `${Math.min(row.pct, 100)}%` }}
+          />
+        </div>
+      )}
+
+      {/* Amounts */}
+      <div className="space-y-1">
+        {isUnbudgeted ? (
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-[var(--color-text-muted)]">Spent (no budget)</span>
+            <span className="text-sm font-semibold text-[var(--color-text-primary)]">
+              {formatCurrency(row.spent)}
+            </span>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
+              <span>{formatCurrency(row.spent)} spent</span>
+              <span>{formatCurrency(row.budget)} budget</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className={`text-xs ${meta.color}`}>{row.pct.toFixed(0)}% used</span>
+              <span className={`text-sm font-semibold ${remaining >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}`}>
+                {remaining >= 0
+                  ? `${formatCurrency(remaining)} left`
+                  : `${formatCurrency(Math.abs(remaining))} over`}
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function BudgetsPage() {
   const { user } = useAuth();
   const router = useRouter();
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth() + 1); // 1-indexed
+  const [month, setMonth] = useState(today.getMonth() + 1);
 
-  const [budgets, setBudgets] = useState<BudgetWithActual[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [rows, setRows] = useState<CategoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingCategory, setEditingCategory] = useState<{ id: string; name: string; icon: string } | null>(null);
+  const [editing, setEditing] = useState<CategoryRow | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const monthParam = `${year}-${String(month).padStart(2, "0")}-01`;
-
-  const monthLabel = new Date(year, month - 1, 1).toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
-
-  const prevMonth = () => {
-    if (month === 1) {
-      setYear((y) => y - 1);
-      setMonth(12);
-    } else {
-      setMonth((m) => m - 1);
-    }
-  };
-
-  const nextMonth = () => {
-    if (month === 12) {
-      setYear((y) => y + 1);
-      setMonth(1);
-    } else {
-      setMonth((m) => m + 1);
-    }
-  };
+  const monthLabel = new Date(year, month - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
   const fetchData = async () => {
     if (!user) return;
     setLoading(true);
     setError(null);
-
     try {
       const supabase = createClient();
-
-      // Month range for transaction filtering
-      const monthStart = monthParam;
-      const nextYear = month === 12 ? year + 1 : year;
+      const nextYear  = month === 12 ? year + 1 : year;
       const nextMonthNum = month === 12 ? 1 : month + 1;
       const nextMonthStart = `${nextYear}-${String(nextMonthNum).padStart(2, "0")}-01`;
 
-      // Fetch budgets with joined categories
-      const { data: budgetData, error: budgetError } = await supabase
-        .from("budgets")
-        .select("*, category:categories(*)")
-        .eq("user_id", user.id)
-        .eq("month", monthParam);
+      const [catRes, budgetRes, txnRes] = await Promise.all([
+        supabase
+          .from("categories")
+          .select("*")
+          .eq("user_id", user.id)
+          .in("type", ["expense"])
+          .order("name"),
+        supabase
+          .from("budgets")
+          .select("*")
+          .eq("user_id", user.id)
+          .eq("month", monthParam),
+        supabase
+          .from("transactions")
+          .select("category_id, amount_usd")
+          .eq("user_id", user.id)
+          .eq("cr_dr", "debit")
+          .eq("is_internal_transfer", false)
+          .gte("date", monthParam)
+          .lt("date", nextMonthStart),
+      ]);
 
-      if (budgetError) throw new Error(budgetError.message);
+      if (catRes.error) throw new Error(catRes.error.message);
 
-      // Fetch all user categories for the "add budget" dropdown
-      const { data: categoryData, error: categoryError } = await supabase
-        .from("categories")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("name");
-
-      if (categoryError) throw new Error(categoryError.message);
-
-      // Fetch actual debit transactions for this month
-      const { data: txnData, error: txnError } = await supabase
-        .from("transactions")
-        .select("category_id, amount_usd")
-        .eq("user_id", user.id)
-        .eq("cr_dr", "debit")
-        .gte("date", monthStart)
-        .lt("date", nextMonthStart);
-
-      if (txnError) throw new Error(txnError.message);
-
-      // Aggregate actual spend per category
-      const actualsByCategory: Record<string, number> = {};
-      for (const txn of txnData ?? []) {
-        if (txn.category_id) {
-          actualsByCategory[txn.category_id] =
-            (actualsByCategory[txn.category_id] ?? 0) + (txn.amount_usd ?? 0);
+      // Build spend map
+      const spendMap: Record<string, number> = {};
+      for (const t of txnRes.data ?? []) {
+        if (t.category_id) {
+          spendMap[t.category_id] = (spendMap[t.category_id] ?? 0) + Math.abs(t.amount_usd ?? 0);
         }
       }
 
-      // Merge budgets with actuals
-      const merged: BudgetWithActual[] = (budgetData ?? []).map((b) => ({
-        ...b,
-        spent: actualsByCategory[b.category_id] ?? 0,
-      }));
+      // Build override map from budgets table
+      const overrideMap: Record<string, { id: string; amount_usd: number }> = {};
+      for (const b of budgetRes.data ?? []) {
+        overrideMap[b.category_id] = { id: b.id, amount_usd: b.amount_usd };
+      }
 
-      setBudgets(merged);
-      setCategories(categoryData ?? []);
+      // Merge: all expense categories + any spending in uncategorised categories
+      const categoryRows: CategoryRow[] = [];
+      const seenCatIds = new Set<string>();
+
+      for (const cat of catRes.data ?? []) {
+        seenCatIds.add(cat.id);
+        const override = overrideMap[cat.id];
+        const defaultBudget = cat.monthly_budget ?? 0;
+        const budget = override ? override.amount_usd : defaultBudget;
+        const spent = spendMap[cat.id] ?? 0;
+
+        // Skip categories with no budget AND no spending (noise)
+        if (budget === 0 && spent === 0) continue;
+
+        const pct = budget > 0 ? (spent / budget) * 100 : 0;
+        categoryRows.push({
+          category: cat,
+          budget,
+          isOverride: !!override,
+          budgetRowId: override?.id ?? null,
+          spent,
+          pct,
+        });
+      }
+
+      setRows(categoryRows);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load budgets");
     } finally {
@@ -234,94 +327,65 @@ export default function BudgetsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, monthParam]);
 
-  const handleSaveBudget = async (categoryId: string, amount: number) => {
-    if (!user) return;
+  const handleSave = async (amount: number) => {
+    if (!editing || !user) return;
+    setSaving(true);
     const supabase = createClient();
-    const { error: upsertError } = await supabase.from("budgets").upsert(
-      {
-        user_id: user.id,
-        category_id: categoryId,
-        month: monthParam,
-        amount_usd: amount,
-      },
+
+    // Upsert the month-specific budgets row
+    const { error: upsertErr } = await supabase.from("budgets").upsert(
+      { user_id: user.id, category_id: editing.category.id, month: monthParam, amount_usd: amount },
       { onConflict: "user_id,category_id,month" }
     );
-    if (upsertError) {
-      setError(upsertError.message);
-      return;
-    }
-    setModalOpen(false);
-    setEditingCategory(null);
+    if (upsertErr) { setSaving(false); setError(upsertErr.message); return; }
+
+    // Keep categories.monthly_budget in sync so the default always matches
+    await supabase
+      .from("categories")
+      .update({ monthly_budget: amount })
+      .eq("id", editing.category.id)
+      .eq("user_id", user.id);
+
+    setSaving(false);
+    setEditing(null);
     await fetchData();
   };
 
-  const handleDeleteBudget = async (id: string) => {
-    if (!user) return;
+  const handleClearOverride = async () => {
+    if (!editing?.budgetRowId || !user) return;
+    setSaving(true);
     const supabase = createClient();
-    const { error: deleteError } = await supabase
-      .from("budgets")
-      .delete()
-      .eq("id", id);
-    if (deleteError) {
-      setError(deleteError.message);
-      return;
-    }
+    await supabase.from("budgets").delete().eq("id", editing.budgetRowId);
+    setSaving(false);
+    setEditing(null);
     await fetchData();
   };
 
-  // Categories that already have a budget this month
-  const categoriesWithBudgets: BudgetCategory[] = useMemo(() => {
-    return budgets
-      .filter((b) => b.category != null)
-      .map((b) => ({
-        id: b.id,
-        category_id: b.category_id,
-        name: b.category.name,
-        icon: b.category.icon ?? "📦",
-        amount_usd: b.amount_usd,
-        spent: b.spent,
-      }))
-      .sort((a, b) => {
-        const aPct = (a.spent / a.amount_usd) * 100;
-        const bPct = (b.spent / b.amount_usd) * 100;
-        return bPct - aPct;
-      });
-  }, [budgets]);
-
-  // Categories without a budget set for this month
-  const categoriesWithoutBudgets = useMemo(() => {
-    const budgetedCategoryIds = new Set(budgets.map((b) => b.category_id));
-    return categories.filter((c) => !budgetedCategoryIds.has(c.id));
-  }, [budgets, categories]);
-
-  // Find the existing budget amount for a category (for pre-filling the modal)
-  const getExistingAmount = (categoryId: string): number | undefined => {
-    const budget = budgets.find((b) => b.category_id === categoryId);
-    return budget?.amount_usd;
-  };
-
-  const totalBudgeted = categoriesWithBudgets.reduce((sum, b) => sum + b.amount_usd, 0);
-  const totalSpent = categoriesWithBudgets.reduce((sum, b) => sum + b.spent, 0);
-  const totalRemaining = totalBudgeted - totalSpent;
-  const overBudgetCount = categoriesWithBudgets.filter(
-    (b) => b.spent > b.amount_usd
-  ).length;
-  const overallPct = totalBudgeted > 0 ? (totalSpent / totalBudgeted) * 100 : 0;
-
-  const openModal = (category: { id: string; name: string; icon: string } | null = null) => {
-    setEditingCategory(category);
-    setModalOpen(true);
-  };
-
-  function drillDown(cat: BudgetCategory) {
+  const handleDrillDown = (row: CategoryRow) => {
     const nextYear = month === 12 ? year + 1 : year;
     const nextMonthNum = month === 12 ? 1 : month + 1;
-    const startDate = monthParam;
     const endDate = `${nextYear}-${String(nextMonthNum).padStart(2, "0")}-01`;
-    router.push(
-      `/transactions?categoryId=${cat.category_id}&startDate=${startDate}&endDate=${endDate}`
-    );
-  }
+    router.push(`/transactions?categoryId=${row.category.id}&startDate=${monthParam}&endDate=${endDate}`);
+  };
+
+  // ── Derived summaries ───────────────────────────────────────────────────────
+  const budgetedRows = useMemo(() => rows.filter(r => r.budget > 0), [rows]);
+  const totalBudgeted = budgetedRows.reduce((s, r) => s + r.budget, 0);
+  const totalSpent    = rows.reduce((s, r) => s + r.spent, 0);
+  const totalRemaining = totalBudgeted - totalSpent;
+  const overallPct = totalBudgeted > 0 ? (totalSpent / totalBudgeted) * 100 : 0;
+
+  const grouped = useMemo(() => {
+    const g: Record<StatusGroup, CategoryRow[]> = { over: [], at_risk: [], on_track: [], unbudgeted: [] };
+    for (const r of rows) g[groupStatus(r)].push(r);
+    // Sort each group: highest % first
+    for (const key of Object.keys(g) as StatusGroup[]) {
+      g[key].sort((a, b) => b.pct - a.pct);
+    }
+    return g;
+  }, [rows]);
+
+  const statusOrder: StatusGroup[] = ["over", "at_risk", "on_track", "unbudgeted"];
 
   if (loading) return <GridPageSkeleton cards={8} />;
 
@@ -335,199 +399,133 @@ export default function BudgetsPage() {
   }
 
   return (
-    <div className="p-4 md:p-6 space-y-5 md:space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Budgets</h1>
-            <InfoTooltip
-              title="Budgets"
-              description="Set monthly spending limits per category and track how much you've spent vs your budget."
-              howTo="Navigate months with the arrows. Click + to set a budget for any category. Budgets turn red when overspent."
-              keyActions={[
-                "Set a monthly budget for each spending category",
-                "View actual spend vs budget in real-time",
-                "Navigate to past months to review history",
-              ]}
-            />
+    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
+
+      {/* Header + Month Nav */}
+      <PageHeader
+        title="Budgets"
+        subtitle="Actual spend vs monthly limits · budgets auto-loaded from categories"
+        tooltip={
+          <HelpModal
+            title="Budgets"
+            description="Set monthly spending limits per category and track how you are performing against them in real time. Budgets help you stay intentional with spending."
+            sections={[
+              {
+                heading: "How to use",
+                items: [
+                  "Click 'Add Budget' to set a monthly limit for any expense category",
+                  "Watch the progress bars — green means on track, red means over budget",
+                  "Use the month navigator to review past budget performance",
+                  "Budgets auto-reset each month; adjust amounts any time",
+                ],
+              },
+              {
+                heading: "Key actions",
+                items: [
+                  "Add Budget — assign a dollar limit to a category for the month",
+                  "Edit — increase or decrease a budget mid-month",
+                  "Delete — remove a budget you no longer need",
+                  "Month nav — switch between months to compare performance",
+                ],
+              },
+            ]}
+          />
+        }
+      >
+        <MonthNav
+          year={year}
+          month={month}
+          onChange={(y, m) => { setYear(y); setMonth(m); }}
+        />
+      </PageHeader>
+
+      {/* Summary strip */}
+      <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5 space-y-4">
+        <div className="grid grid-cols-3 divide-x divide-[var(--color-border)]">
+          <div className="pr-6">
+            <p className="text-xs text-[var(--color-text-muted)]">Total Budgeted</p>
+            <p className="text-xl font-bold text-[var(--color-text-primary)] mt-0.5">{formatCurrency(totalBudgeted)}</p>
           </div>
-          <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">
-            Track and manage your monthly spending limits
-          </p>
+          <div className="px-6">
+            <p className="text-xs text-[var(--color-text-muted)]">Spent So Far</p>
+            <p className="text-xl font-bold text-[var(--color-text-primary)] mt-0.5">{formatCurrency(totalSpent)}</p>
+          </div>
+          <div className="pl-6">
+            <p className="text-xs text-[var(--color-text-muted)]">{totalRemaining >= 0 ? "Remaining" : "Over by"}</p>
+            <p className={`text-xl font-bold mt-0.5 ${totalRemaining >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}`}>
+              {formatCurrency(Math.abs(totalRemaining))}
+            </p>
+          </div>
         </div>
-      </div>
-
-      {/* Month Selector */}
-      <div className="flex items-center justify-center gap-4">
-        <Button variant="ghost" size="sm" onClick={prevMonth}>
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <span className="text-base font-medium min-w-[140px] text-center">
-          {monthLabel}
-        </span>
-        <Button variant="ghost" size="sm" onClick={nextMonth}>
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-      </div>
-
-      {/* Overall Utilization Bar */}
-      <Card>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-[var(--color-text-secondary)]">Overall Budget Utilization</span>
-            <span className="font-medium">
-              {formatCurrency(totalSpent)} / {formatCurrency(totalBudgeted)}
-            </span>
-          </div>
-          <div className="h-3 w-full rounded-full bg-[var(--color-bg-tertiary)] overflow-hidden">
+        {/* Overall bar */}
+        <div className="space-y-1.5">
+          <div className="h-2.5 w-full rounded-full bg-[var(--color-bg-tertiary)] overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all ${getProgressColor(overallPct)}`}
+              className={`h-full rounded-full transition-all ${overallPct >= 100 ? "bg-[var(--color-danger)]" : overallPct >= 80 ? "bg-[var(--color-warning)]" : "bg-[var(--color-success)]"}`}
               style={{ width: `${Math.min(overallPct, 100)}%` }}
             />
           </div>
-          <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)]">
-            <span>{overallPct.toFixed(1)}% used</span>
-            <span>{totalRemaining >= 0 ? `${formatCurrency(totalRemaining)} remaining` : `${formatCurrency(Math.abs(totalRemaining))} over`}</span>
+          <div className="flex justify-between text-xs text-[var(--color-text-muted)]">
+            <span>{overallPct.toFixed(1)}% of total budget used</span>
+            <span>
+              {grouped.over.length > 0 && (
+                <span className="text-[var(--color-danger)]">{grouped.over.length} over-budget</span>
+              )}
+              {grouped.at_risk.length > 0 && (
+                <span className="text-[var(--color-warning)] ml-2">{grouped.at_risk.length} at risk</span>
+              )}
+            </span>
           </div>
         </div>
-      </Card>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Card>
-          <CardTitle>Total Budgeted</CardTitle>
-          <CardValue className="mt-2 text-[var(--color-text-primary)]">
-            {formatCurrency(totalBudgeted)}
-          </CardValue>
-        </Card>
-        <Card>
-          <CardTitle>Total Spent</CardTitle>
-          <CardValue className="mt-2 text-[var(--color-text-primary)]">
-            {formatCurrency(totalSpent)}
-          </CardValue>
-        </Card>
-        <Card>
-          <CardTitle>Total Remaining</CardTitle>
-          <CardValue className={`mt-2 ${getRemainingColor(totalRemaining)}`}>
-            {totalRemaining >= 0 ? formatCurrency(totalRemaining) : `-${formatCurrency(Math.abs(totalRemaining))}`}
-          </CardValue>
-        </Card>
-        <Card>
-          <CardTitle>Over Budget</CardTitle>
-          <CardValue className={`mt-2 ${overBudgetCount > 0 ? "text-[var(--color-danger)]" : "text-[var(--color-text-primary)]"}`}>
-            {overBudgetCount} {overBudgetCount === 1 ? "category" : "categories"}
-          </CardValue>
-        </Card>
       </div>
 
-      {/* Budget Categories */}
-      <div>
-        <h2 className="text-lg font-semibold mb-4">Categories</h2>
-
-        {categories.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-bg-tertiary)] mb-4">
-              <PieChart className="h-6 w-6 text-[var(--color-text-muted)]" />
-            </div>
-            <p className="text-sm font-medium text-[var(--color-text-secondary)]">No categories yet</p>
-            <p className="text-xs text-[var(--color-text-muted)] mt-1 max-w-xs">
-              Create categories first, then set monthly budgets for each one.
-            </p>
-            <a
-              href="/categories"
-              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--color-accent-hover)] transition-colors"
-            >
-              Go to Categories
-            </a>
-          </div>
-        )}
-
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {categoriesWithBudgets.map((cat) => {
-            const pct = (cat.spent / cat.amount_usd) * 100;
-            const remaining = cat.amount_usd - cat.spent;
-
+      {/* Category groups */}
+      {rows.length === 0 ? (
+        <EmptyState
+          icon={<PieChart className="h-8 w-8" />}
+          title="No spending data this month"
+          description="Add transactions or set monthly budgets in your categories to see tracking here."
+          action={{ label: "Go to Categories →", href: "/categories" }}
+        />
+      ) : (
+        <div className="space-y-8">
+          {statusOrder.map((status) => {
+            const group = grouped[status];
+            if (group.length === 0) return null;
+            const meta = GROUP_META[status];
             return (
-              <Card
-                key={cat.id}
-                className="hover:border-[var(--color-accent)] transition-colors cursor-pointer"
-                onClick={() => drillDown(cat)}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">{cat.icon}</span>
-                    <span className="font-medium text-sm">{cat.name}</span>
-                  </div>
-                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={() => openModal({ id: cat.category_id, name: cat.name, icon: cat.icon })}
-                      className="flex h-6 w-6 items-center justify-center rounded text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors"
-                      title="Edit budget"
-                    >
-                      <Pencil className="h-3 w-3" />
-                    </button>
-                    <ExternalLink className="h-3 w-3 text-[var(--color-text-muted)]" />
-                  </div>
+              <section key={status}>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className={meta.color}>{meta.icon}</span>
+                  <h2 className={`text-sm font-semibold ${meta.color}`}>{meta.label}</h2>
+                  <span className="text-xs text-[var(--color-text-muted)]">· {group.length}</span>
                 </div>
-
-                <div className="space-y-2">
-                  <div className="h-2 w-full rounded-full bg-[var(--color-bg-tertiary)] overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${getProgressColor(pct)}`}
-                      style={{ width: `${Math.min(pct, 100)}%` }}
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {group.map((row) => (
+                    <CategoryCard
+                      key={row.category.id}
+                      row={row}
+                      onEdit={setEditing}
+                      onDrillDown={handleDrillDown}
                     />
-                  </div>
-
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-[var(--color-text-secondary)]">
-                      {formatCurrency(cat.spent)} of {formatCurrency(cat.amount_usd)}
-                    </span>
-                    <span className={`font-medium ${getRemainingColor(remaining)}`}>
-                      {remaining >= 0
-                        ? `${formatCurrency(remaining)} left`
-                        : `${formatCurrency(Math.abs(remaining))} over`}
-                    </span>
-                  </div>
+                  ))}
                 </div>
-              </Card>
+              </section>
             );
           })}
-
-          {/* Add Budget Cards for categories without a budget */}
-          {categoriesWithoutBudgets.map((cat) => (
-            <Card
-              key={cat.id}
-              className="hover:border-[var(--color-accent)] transition-colors cursor-pointer border-dashed"
-              onClick={() => openModal({ id: cat.id, name: cat.name, icon: cat.icon ?? "📦" })}
-            >
-              <div className="flex flex-col items-center justify-center py-4 text-center">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-bg-tertiary)] mb-3">
-                  <Plus className="h-5 w-5 text-[var(--color-text-muted)]" />
-                </div>
-                <span className="text-xl mb-1">{cat.icon ?? "📦"}</span>
-                <span className="text-sm font-medium text-[var(--color-text-secondary)]">
-                  {cat.name}
-                </span>
-                <span className="text-xs text-[var(--color-text-muted)] mt-1">
-                  Set budget
-                </span>
-              </div>
-            </Card>
-          ))}
         </div>
-      </div>
+      )}
 
-      {/* Budget Modal */}
-      {modalOpen && (
-        <BudgetModal
-          category={editingCategory}
-          existingAmount={editingCategory ? getExistingAmount(editingCategory.id) : undefined}
-          onClose={() => {
-            setModalOpen(false);
-            setEditingCategory(null);
-          }}
-          onSave={handleSaveBudget}
+      {/* Override Modal */}
+      {editing && (
+        <OverrideModal
+          category={editing.category}
+          currentBudget={editing.budget}
+          isOverride={editing.isOverride}
+          onClose={() => setEditing(null)}
+          onSave={handleSave}
+          onClear={handleClearOverride}
+          saving={saving}
         />
       )}
     </div>

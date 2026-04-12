@@ -46,10 +46,10 @@ export async function PATCH(
     const { id } = await params
     const body = await request.json()
 
-    // Capture original before update (include loan_id and cr_dr for sync)
+    // Capture original before update (include transfer fields)
     const { data: original } = await supabase
       .from('transactions')
-      .select('amount_usd, account_id, loan_id, cr_dr')
+      .select('amount_usd, account_id, loan_id, cr_dr, is_internal_transfer, linked_transaction_id')
       .eq('id', id)
       .eq('user_id', user.id)
       .single()
@@ -85,7 +85,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Transaction not found' }, { status: 404 })
     }
 
-    // Sync account balance when amount or account changed
+    // ── Account balance sync ────────────────────────────────────────────────
     if (original) {
       try {
         const oldAmt = original.amount_usd ?? 0
@@ -102,7 +102,50 @@ export async function PATCH(
       } catch { /* non-fatal */ }
     }
 
-    // Sync loan balance when loan_id or amount changed
+    // ── If this is a transfer, cascade amount change to the linked leg ──────
+    if (original?.is_internal_transfer && original.linked_transaction_id && amount_usd != null) {
+      try {
+        const oldAmt = original.amount_usd ?? 0
+        const newAmt = data.amount_usd ?? 0
+        const amtDelta = newAmt - oldAmt
+
+        // Fetch the linked transaction
+        const { data: linked } = await supabase
+          .from('transactions')
+          .select('id, amount_usd, account_id, cr_dr')
+          .eq('id', original.linked_transaction_id)
+          .eq('user_id', user.id)
+          .single()
+
+        if (linked) {
+          // The linked leg is the opposite direction: its sign is the mirror
+          const linkedNewAmt = linked.cr_dr === 'credit'
+            ? Math.abs(newAmt)
+            : -Math.abs(newAmt)
+          const linkedDelta = linkedNewAmt - (linked.amount_usd ?? 0)
+
+          await supabase
+            .from('transactions')
+            .update({
+              amount_usd: linkedNewAmt,
+              final_amount: linkedNewAmt,
+              amount_original: Math.abs(newAmt),
+            })
+            .eq('id', linked.id)
+
+          if (linked.account_id && linkedDelta !== 0) {
+            await adjustAccountBalance(supabase, linked.account_id, linkedDelta)
+          }
+        }
+
+        // Suppress unused variable warning
+        void amtDelta
+      } catch (e) {
+        console.warn('Transfer linked-leg update failed (non-fatal):', e)
+      }
+    }
+
+    // ── Loan balance sync ────────────────────────────────────────────────────
     if (original) {
       try {
         const oldLoanId = original.loan_id ?? null
@@ -111,11 +154,9 @@ export async function PATCH(
         const newAmt = data.amount_usd ?? 0
 
         if (oldLoanId !== newLoanId) {
-          // Link changed — undo old, apply new
           if (oldLoanId) await adjustLoanBalance(supabase, oldLoanId, -oldAmt)
           if (newLoanId) await adjustLoanBalance(supabase, newLoanId, newAmt)
         } else if (newLoanId && oldAmt !== newAmt) {
-          // Same loan, amount changed — apply delta
           await adjustLoanBalance(supabase, newLoanId, newAmt - oldAmt)
         }
       } catch { /* non-fatal */ }
@@ -142,10 +183,10 @@ export async function DELETE(
 
     const { id } = await params
 
-    // Fetch before delete to reverse balance effects
+    // Fetch before delete to reverse balance effects (include transfer fields)
     const { data: existing, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, amount_usd, account_id, loan_id')
+      .select('id, amount_usd, account_id, loan_id, is_internal_transfer, linked_transaction_id')
       .eq('id', id)
       .eq('user_id', user.id)
       .single()
@@ -154,6 +195,20 @@ export async function DELETE(
       return NextResponse.json({ error: 'Transaction not found' }, { status: 404 })
     }
 
+    // ── For transfers: also delete the linked leg and reverse its balance ───
+    let linkedTxn: { id: string; amount_usd: number | null; account_id: string | null } | null = null
+
+    if (existing.is_internal_transfer && existing.linked_transaction_id) {
+      const { data: linked } = await supabase
+        .from('transactions')
+        .select('id, amount_usd, account_id')
+        .eq('id', existing.linked_transaction_id)
+        .eq('user_id', user.id)
+        .single()
+      if (linked) linkedTxn = linked
+    }
+
+    // Delete this transaction
     const { error } = await supabase
       .from('transactions')
       .delete()
@@ -165,7 +220,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Failed to delete transaction' }, { status: 500 })
     }
 
-    // Reverse account balance
+    // Reverse this transaction's account balance
     if (existing.account_id) {
       try {
         await adjustAccountBalance(supabase, existing.account_id, -(existing.amount_usd ?? 0))
@@ -177,6 +232,23 @@ export async function DELETE(
       try {
         await adjustLoanBalance(supabase, existing.loan_id, -(existing.amount_usd ?? 0))
       } catch { /* non-fatal */ }
+    }
+
+    // ── Delete linked transfer leg + reverse its account balance ────────────
+    if (linkedTxn) {
+      try {
+        await supabase
+          .from('transactions')
+          .delete()
+          .eq('id', linkedTxn.id)
+          .eq('user_id', user.id)
+
+        if (linkedTxn.account_id) {
+          await adjustAccountBalance(supabase, linkedTxn.account_id, -(linkedTxn.amount_usd ?? 0))
+        }
+      } catch (e) {
+        console.warn('Linked transfer leg delete failed (non-fatal):', e)
+      }
     }
 
     return NextResponse.json({ success: true })

@@ -23,12 +23,15 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') ?? '50', 10)
     const offset = parseInt(searchParams.get('offset') ?? '0', 10)
     const flaggedParam = searchParams.get('flagged')
+    // txnType: "credit" | "debit" | "transfer"
+    const txnType = searchParams.get('txnType')
 
     let query = supabase
       .from('transactions')
       .select('*, account:accounts(*), category:categories(*)')
       .eq('user_id', user.id)
       .order('date', { ascending: false })
+      .order('created_at', { ascending: false })
 
     let countQuery = supabase
       .from('transactions')
@@ -39,7 +42,10 @@ export async function GET(request: NextRequest) {
       query = query.eq('account_id', accountId)
       countQuery = countQuery.eq('account_id', accountId)
     }
-    if (categoryId) {
+    if (categoryId === '__uncategorized__') {
+      query = query.is('category_id', null)
+      countQuery = countQuery.is('category_id', null)
+    } else if (categoryId) {
       query = query.eq('category_id', categoryId)
       countQuery = countQuery.eq('category_id', categoryId)
     }
@@ -59,6 +65,16 @@ export async function GET(request: NextRequest) {
       const flaggedBool = flaggedParam === 'true'
       query = query.eq('flagged', flaggedBool)
       countQuery = countQuery.eq('flagged', flaggedBool)
+    }
+    if (txnType === 'transfer') {
+      query = query.eq('is_internal_transfer', true)
+      countQuery = countQuery.eq('is_internal_transfer', true)
+    } else if (txnType === 'credit') {
+      query = query.eq('cr_dr', 'credit').eq('is_internal_transfer', false)
+      countQuery = countQuery.eq('cr_dr', 'credit').eq('is_internal_transfer', false)
+    } else if (txnType === 'debit') {
+      query = query.eq('cr_dr', 'debit').eq('is_internal_transfer', false)
+      countQuery = countQuery.eq('cr_dr', 'debit').eq('is_internal_transfer', false)
     }
 
     query = query.range(offset, offset + limit - 1)
@@ -132,8 +148,9 @@ export async function POST(request: NextRequest) {
           category_id: transferCategoryId,
           description: description || `Transfer to account`,
           amount_usd: -amount_usd,
+          final_amount: -amount_usd,
           amount_original,
-          original_currency: original_currency ?? null,
+          original_currency: original_currency ?? 'USD',
           cr_dr: 'debit',
           date,
           notes: notes ?? null,
@@ -162,8 +179,9 @@ export async function POST(request: NextRequest) {
           category_id: transferCategoryId,
           description: description || `Transfer from account`,
           amount_usd,
+          final_amount: amount_usd,
           amount_original,
-          original_currency: original_currency ?? null,
+          original_currency: original_currency ?? 'USD',
           cr_dr: 'credit',
           date,
           notes: notes ?? null,
@@ -268,8 +286,9 @@ export async function POST(request: NextRequest) {
         category_id: resolvedCategoryId,
         description,
         amount_usd: final_amount,
+        final_amount,
         amount_original,
-        original_currency: original_currency ?? null,
+        original_currency: original_currency ?? 'USD',
         cr_dr,
         date,
         notes: notes ?? null,
@@ -308,8 +327,8 @@ export async function POST(request: NextRequest) {
       flagReasons.push('Possible duplicate within 24h')
     }
 
-    // Rule 2: Large round number > $500
-    if (cr_dr === 'debit' && amount_usd >= 500 && amount_usd % 50 === 0) {
+    // Rule 2: Very large round number (≥$5000, divisible by $500) — avoids flagging normal bills/rent
+    if (cr_dr === 'debit' && amount_usd >= 5000 && amount_usd % 500 === 0) {
       flagReasons.push(`Large round-number transaction ($${amount_usd})`)
     }
 
