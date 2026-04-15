@@ -12,6 +12,7 @@ import {
   FileText,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
+import { MarkdownContent } from "@/components/ui/markdown-content";
 import { EmptyState } from "@/components/ui/empty-state";
 import { HelpModal } from "@/components/ui/help-modal";
 import {
@@ -62,58 +63,6 @@ function fmtFull(n: number) {
   }).format(n);
 }
 
-function MarkdownRenderer({ text }: { text: string }) {
-  const lines = text.split("\n");
-  return (
-    <div className="space-y-1.5 text-sm text-[var(--color-text-secondary)] leading-relaxed">
-      {lines.map((line, i) => {
-        if (line.startsWith("## ") || line.startsWith("### ")) {
-          return (
-            <h3 key={i} className="font-semibold text-[var(--color-text-primary)] mt-4 mb-1 first:mt-0">
-              {line.replace(/^#{2,3} /, "")}
-            </h3>
-          );
-        }
-        if (line.match(/^\*\*(.+)\*\*$/) || line.match(/^#+\s+\d+\.\s/)) {
-          const content = line.replace(/^\*\*|\*\*$/g, "").replace(/^#+\s+\d+\.\s/, "");
-          return (
-            <p key={i} className="font-semibold text-[var(--color-text-primary)] mt-3 first:mt-0">
-              {content}
-            </p>
-          );
-        }
-        if (line.startsWith("- ") || line.startsWith("• ") || line.match(/^\d+\.\s/)) {
-          const content = line.replace(/^[-•]\s|^\d+\.\s/, "");
-          return (
-            <div key={i} className="flex gap-2 pl-1">
-              <span className="text-[var(--color-accent)] shrink-0 mt-0.5 text-xs">▸</span>
-              <span
-                dangerouslySetInnerHTML={{
-                  __html: content.replace(
-                    /\*\*(.+?)\*\*/g,
-                    '<strong class="text-[var(--color-text-primary)]">$1</strong>'
-                  ),
-                }}
-              />
-            </div>
-          );
-        }
-        if (line.trim() === "") return <div key={i} className="h-1" />;
-        return (
-          <p
-            key={i}
-            dangerouslySetInnerHTML={{
-              __html: line.replace(
-                /\*\*(.+?)\*\*/g,
-                '<strong class="text-[var(--color-text-primary)]">$1</strong>'
-              ),
-            }}
-          />
-        );
-      })}
-    </div>
-  );
-}
 
 // ── Weekly bar chart (recharts) ─────────────────────────────────────────────────
 function WeeklyBarTick({
@@ -650,7 +599,7 @@ export default function AiReviewPage() {
                 {loading && <RefreshCw className="h-3.5 w-3.5 animate-spin text-[var(--color-text-muted)]" />}
               </div>
               {data.analysis ? (
-                <MarkdownRenderer text={data.analysis} />
+                <MarkdownContent content={data.analysis} className="text-sm text-[var(--color-text-secondary)] leading-relaxed" />
               ) : (
                 <p className="text-sm text-[var(--color-text-muted)]">
                   Configure <code className="text-xs bg-[var(--color-bg-tertiary)] px-1 rounded">ANTHROPIC_API_KEY</code> to enable AI analysis.

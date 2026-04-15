@@ -92,7 +92,7 @@ export default function AiChatPage() {
   }, [fetchInsights]);
 
   async function markAsRead(id: string) {
-    await supabase.from('ai_insights').update({ is_read: true }).eq('id', id);
+    await supabase.from('ai_insights').update({ is_read: true }).eq('id', id).eq('user_id', user?.id ?? '');
     setInsights((prev) =>
       prev.map((ins) => (ins.id === id ? { ...ins, is_read: true } : ins))
     );

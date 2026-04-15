@@ -53,14 +53,27 @@ export function TransactionModal({
   const [isAISuggested, setIsAISuggested] = useState(false);
   // Track whether the user has manually touched the category field
   const categoryManuallySet = useRef(false);
+  // Refs for values read inside the debounce effect to avoid stale closures
+  const modeRef = useRef(mode);
+  const categoryIdRef = useRef(categoryId);
+  useEffect(() => { modeRef.current = mode; }, [mode]);
+  useEffect(() => { categoryIdRef.current = categoryId; }, [categoryId]);
+
+  // Reset the manual-set guard whenever the modal switches to a new transaction (txn → null = new add)
+  useEffect(() => {
+    categoryManuallySet.current = false;
+    setIsAISuggested(false);
+  }, [txn]);
 
   // Debounced auto-categorization — triggers when description changes and no category is selected
   useEffect(() => {
     // Skip for edits (existing transaction), transfers, or if user already set a category manually
-    if (txn || mode === "transfer" || categoryManuallySet.current || categoryId) return;
+    if (txn || modeRef.current === "transfer" || categoryManuallySet.current || categoryIdRef.current) return;
     if (!description || description.trim().length < 2) return;
 
     const timer = setTimeout(async () => {
+      // Re-check guards at fire time using refs (not stale closure values)
+      if (modeRef.current === "transfer" || categoryManuallySet.current || categoryIdRef.current) return;
       setIsCategorizingAI(true);
       try {
         const res = await fetch("/api/transactions/categorize", {
@@ -84,8 +97,7 @@ export function TransactionModal({
     }, 400);
 
     return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [description]);
+  }, [description, txn]);
 
   // Auto-detect transfer when a transfer-type category is selected
   function handleCategoryChange(newCategoryId: string) {
