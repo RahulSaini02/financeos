@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { X } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { X, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
@@ -48,8 +48,49 @@ export function TransactionModal({
     (txn as Transaction & { loan_id?: string })?.loan_id ?? ""
   );
 
+  // AI auto-categorization state
+  const [isCategorizingAI, setIsCategorizingAI] = useState(false);
+  const [isAISuggested, setIsAISuggested] = useState(false);
+  // Track whether the user has manually touched the category field
+  const categoryManuallySet = useRef(false);
+
+  // Debounced auto-categorization — triggers when description changes and no category is selected
+  useEffect(() => {
+    // Skip for edits (existing transaction), transfers, or if user already set a category manually
+    if (txn || mode === "transfer" || categoryManuallySet.current || categoryId) return;
+    if (!description || description.trim().length < 2) return;
+
+    const timer = setTimeout(async () => {
+      setIsCategorizingAI(true);
+      try {
+        const res = await fetch("/api/transactions/categorize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ description: description.trim() }),
+        });
+        if (res.ok) {
+          const data = await res.json() as { categoryId: string | null };
+          // Double-check: only apply if user hasn't set a category in the meantime
+          if (data.categoryId && !categoryManuallySet.current) {
+            setCategoryId(data.categoryId);
+            setIsAISuggested(true);
+          }
+        }
+      } catch {
+        // Fail silently
+      } finally {
+        setIsCategorizingAI(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [description]);
+
   // Auto-detect transfer when a transfer-type category is selected
   function handleCategoryChange(newCategoryId: string) {
+    categoryManuallySet.current = true;
+    setIsAISuggested(false);
     setCategoryId(newCategoryId);
     const selectedCat = categories.find((c) => c.id === newCategoryId);
     if (selectedCat?.type === "transfer") {
@@ -221,11 +262,28 @@ export function TransactionModal({
 
           {mode !== "transfer" && (
           <div>
-            <label className="text-xs text-[var(--color-text-muted)] mb-1 block">
-              Category
-            </label>
+            <div className="flex items-center gap-1 mb-1">
+              <label className="text-xs text-[var(--color-text-muted)]">
+                Category
+              </label>
+              {isCategorizingAI && (
+                <span className="text-xs text-[var(--color-text-secondary)] animate-pulse">
+                  Detecting…
+                </span>
+              )}
+              {isAISuggested && !isCategorizingAI && (
+                <span className="inline-flex items-center gap-0.5 text-xs text-[var(--color-accent)]">
+                  <Sparkles className="h-3 w-3" />
+                  AI
+                </span>
+              )}
+            </div>
             <select
-              className="w-full h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-3 text-sm"
+              className={`w-full h-9 rounded-lg border px-3 text-sm bg-[var(--color-bg-tertiary)] transition-colors ${
+                isAISuggested
+                  ? "border-[var(--color-accent)]/60"
+                  : "border-[var(--color-border)]"
+              }`}
               value={categoryId}
               onChange={(e) => handleCategoryChange(e.target.value)}
             >

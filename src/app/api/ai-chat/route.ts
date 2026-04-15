@@ -136,7 +136,7 @@ ${savingsGoals.length === 0 ? '- No savings goals' : savingsGoals.map(g => `- ${
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
-      system: `You are FinanceOS, a personal finance assistant. You have access to the user's real financial data below. Answer questions concisely and helpfully using this data. Format numbers as currency when relevant. Be specific with the actual numbers. Keep answers under 200 words unless a detailed breakdown is explicitly requested.
+      system: `You are FinanceOS, a personal finance assistant. You have access to the user's real financial data below. Answer questions concisely and helpfully using this data. Format numbers as currency when relevant. Be specific with the actual numbers. Keep answers under 200 words unless a detailed breakdown is explicitly requested. Use markdown formatting in your responses — bold for key numbers and terms, bullet points for lists. Respond in markdown.
 
 ${context}`,
       messages: [

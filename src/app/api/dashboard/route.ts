@@ -197,7 +197,7 @@ export async function GET() {
 - Flagged transactions: ${flagged_count}
 - Upcoming bills in 7 days: ${bills.length}
 
-Be specific, actionable, and encouraging. Do not use markdown. Do not start with "Based on" or "Your data shows".`
+Be specific, actionable, and encouraging. Respond in 2–3 sentences using markdown for emphasis — bold key numbers and terms. Do not start with "Based on" or "Your data shows".`
 
         const message = await anthropic.messages.create({
           model: 'claude-haiku-4-5-20251001',
@@ -244,7 +244,7 @@ Be specific, actionable, and encouraging. Do not use markdown. Do not start with
             const summaryPrompt = `Generate a concise monthly financial summary for ${prevMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}. Data:
 - Income: $${prevIncome.toFixed(2)}, Expenses: $${prevExpenses.toFixed(2)}, Savings rate: ${prevSavingsRate}%
 - Top spending: ${topCats || 'none'}
-Write 3-4 sentences covering performance, top spending areas, and one actionable suggestion. No markdown.`
+Write 3-4 sentences covering performance, top spending areas, and one actionable suggestion. Use markdown for emphasis — bold key numbers and dollar amounts. You may use short bullet points if listing multiple items.`
 
             const summaryMsg = await anthropic.messages.create({
               model: 'claude-haiku-4-5-20251001',

@@ -9,6 +9,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Minus,
+  FileText,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -319,15 +320,26 @@ function MonthlyAreaChart({
 }
 
 function InsightCards({ analysis }: { analysis: string }) {
-  // Parse sections from markdown-style headers in the analysis
+  // Parse TLDR section (narrative text, not bullets)
+  const tldrMatch = analysis.match(/##\s*TLDR[\s\S]*?(?=##|$)/i);
+  const tldrText = tldrMatch
+    ? tldrMatch[0]
+        .split("\n")
+        .slice(1)
+        .filter((l) => l.trim() && !l.startsWith("##"))
+        .join(" ")
+        .trim()
+    : null;
+
+  // Parse bullet-point sections
   const sections = [
-    { key: "Alerts", icon: "⚠️", color: "var(--color-danger)", bg: "var(--color-danger)" },
-    { key: "Budget Deviations", icon: "📊", color: "var(--color-warning)", bg: "var(--color-warning)" },
-    { key: "Spending Insights", icon: "💡", color: "var(--color-accent)", bg: "var(--color-accent)" },
-    { key: "Suggestions", icon: "✅", color: "var(--color-success)", bg: "var(--color-success)" },
+    { key: "Spending Insights", icon: "💡", color: "var(--color-accent)" },
+    { key: "Budget Deviations", icon: "📊", color: "var(--color-warning)" },
+    { key: "Alerts", icon: "⚠️", color: "var(--color-danger)" },
+    { key: "Suggestions", icon: "✅", color: "var(--color-success)" },
   ];
 
-  const parsed: { key: string; icon: string; color: string; bg: string; items: string[] }[] = [];
+  const parsed: { key: string; icon: string; color: string; items: string[] }[] = [];
 
   for (const sec of sections) {
     const regex = new RegExp(`##\\s*${sec.key}[\\s\\S]*?(?=##|$)`, "i");
@@ -346,10 +358,22 @@ function InsightCards({ analysis }: { analysis: string }) {
     }
   }
 
-  if (parsed.length === 0) return null;
+  if (!tldrText && parsed.length === 0) return null;
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* TLDR card — full width */}
+      {tldrText && (
+        <div className="col-span-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <FileText className="h-4 w-4 text-[var(--color-text-secondary)]" />
+            <span className="text-sm font-semibold text-[var(--color-text-primary)]">TLDR</span>
+          </div>
+          <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed">{tldrText}</p>
+        </div>
+      )}
+
+      {/* Bullet-point insight cards */}
       {parsed.map((sec) => (
         <div
           key={sec.key}
@@ -435,29 +459,31 @@ export default function AiReviewPage() {
           />
         }
       >
-        <div className="flex rounded-lg border border-[var(--color-border)] overflow-hidden text-sm">
-          {(["week", "month"] as const).map((p) => (
-            <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              className={`px-3 py-1.5 font-medium transition-colors ${
-                period === p
-                  ? "bg-[var(--color-accent)] text-white"
-                  : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"
-              }`}
-            >
-              {p === "week" ? "This Week" : "This Month"}
-            </button>
-          ))}
+        <div className="flex w-full sm:w-auto gap-2">
+          <div className="flex flex-1 sm:flex-none rounded-lg border border-[var(--color-border)] overflow-hidden text-sm">
+            {(["week", "month"] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`flex-1 sm:flex-none px-3 py-1.5 font-medium transition-colors ${
+                  period === p
+                    ? "bg-[var(--color-accent)] text-white"
+                    : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"
+                }`}
+              >
+                {p === "week" ? "This Week" : "This Month"}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={load}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors disabled:opacity-50 shrink-0"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
         </div>
-        <button
-          onClick={load}
-          disabled={loading}
-          className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
       </PageHeader>
 
       {/* ── Error ──────────────────────────────────────────────── */}
@@ -470,7 +496,7 @@ export default function AiReviewPage() {
       {/* ── Skeleton ───────────────────────────────────────────── */}
       {loading && !data && (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[...Array(4)].map((_, i) => (
               <div key={i} className="h-20 rounded-xl bg-[var(--color-bg-tertiary)] animate-pulse" />
             ))}
@@ -486,7 +512,7 @@ export default function AiReviewPage() {
       {data && (
         <>
           {/* ── Summary strip ─────────────────────────────────── */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {/* Income */}
             <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
               <div className="flex items-center gap-1.5 mb-2">
@@ -534,15 +560,15 @@ export default function AiReviewPage() {
           {data.analysis && <InsightCards analysis={data.analysis} />}
 
           {/* ── Daily spending chart — full width ─────────────── */}
-          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5">
-            <div className="flex items-center justify-between mb-4">
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5 min-w-0">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-[var(--color-accent)]" />
                 <span className="text-sm font-semibold text-[var(--color-text-primary)]">
                   {period === "week" ? "Daily Spending" : "Daily Spending Trend"}
                 </span>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 {data.previousAvgDaily > 0 && (
                   <div className="flex items-center gap-1.5">
                     <div className="w-4 border-t-2 border-dashed border-[#f59e0b]" />
@@ -554,28 +580,30 @@ export default function AiReviewPage() {
                 <span className="text-xs text-[var(--color-text-muted)]">{data.label}</span>
               </div>
             </div>
-            {period === "week" ? (
-              <WeeklyBarChart
-                dailySpend={data.dailySpend}
-                start={data.start}
-                end={data.end}
-                previousAvgDaily={data.previousAvgDaily}
-              />
-            ) : (
-              <MonthlyAreaChart
-                dailySpend={data.dailySpend}
-                start={data.start}
-                end={data.end}
-                previousAvgDaily={data.previousAvgDaily}
-              />
-            )}
+            <div className="overflow-x-auto min-w-0">
+              {period === "week" ? (
+                <WeeklyBarChart
+                  dailySpend={data.dailySpend}
+                  start={data.start}
+                  end={data.end}
+                  previousAvgDaily={data.previousAvgDaily}
+                />
+              ) : (
+                <MonthlyAreaChart
+                  dailySpend={data.dailySpend}
+                  start={data.start}
+                  end={data.end}
+                  previousAvgDaily={data.previousAvgDaily}
+                />
+              )}
+            </div>
           </div>
 
           {/* ── Two column: top spending + AI analysis ─────────── */}
-          <div className="grid gap-6 lg:grid-cols-5">
+          <div className="grid gap-6 lg:grid-cols-5 min-w-0">
 
             {/* Top spending */}
-            <div className="lg:col-span-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5">
+            <div className="lg:col-span-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5 min-w-0">
               <div className="flex items-center gap-2 mb-4">
                 <TrendingDown className="h-4 w-4 text-[var(--color-danger)]" />
                 <span className="text-sm font-semibold text-[var(--color-text-primary)]">Top Spending</span>
@@ -611,7 +639,7 @@ export default function AiReviewPage() {
             </div>
 
             {/* AI analysis */}
-            <div className="lg:col-span-3 rounded-xl border border-[var(--color-accent)]/30 bg-[var(--color-bg-secondary)] p-5">
+            <div className="lg:col-span-3 rounded-xl border border-[var(--color-accent)]/30 bg-[var(--color-bg-secondary)] p-4 sm:p-5 min-w-0 overflow-hidden">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-[var(--color-accent)]">

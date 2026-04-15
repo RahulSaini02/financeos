@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
+import { MarkdownContent } from "@/components/ui/markdown-content";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -52,24 +53,6 @@ const SUGGESTED_QUESTIONS = [
   "Am I over budget anywhere?",
   "What's my savings rate?",
 ]
-
-function formatMessageContent(content: string) {
-  // Render simple **bold** markdown and line breaks
-  return content.split('\n').map((line, i) => {
-    const parts = line.split(/(\*\*[^*]+\*\*)/g)
-    return (
-      <span key={i}>
-        {parts.map((part, j) => {
-          if (part.startsWith('**') && part.endsWith('**')) {
-            return <strong key={j}>{part.slice(2, -2)}</strong>
-          }
-          return <span key={j}>{part}</span>
-        })}
-        {i < content.split('\n').length - 1 && <br />}
-      </span>
-    )
-  })
-}
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
@@ -342,9 +325,7 @@ export default function AiChatPage() {
                         <Bot className="h-3.5 w-3.5 text-[var(--color-accent)]" />
                       </div>
                       <div className="bg-[var(--color-bg-tertiary)] rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-[75%]">
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                          {formatMessageContent(msg.content)}
-                        </p>
+                        <MarkdownContent content={msg.content} className="text-sm leading-relaxed" />
                       </div>
                     </div>
                   )

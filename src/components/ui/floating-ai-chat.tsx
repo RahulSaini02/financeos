@@ -13,6 +13,7 @@ import {
   BrainCircuit,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { MarkdownContent } from "@/components/ui/markdown-content";
 
 interface ChatMessage {
   id: string;
@@ -26,24 +27,6 @@ const SUGGESTED_QUESTIONS = [
   "Am I over budget anywhere?",
   "What's my savings rate?",
 ];
-
-function formatMessageContent(content: string) {
-  return content.split("\n").map((line, i, arr) => {
-    const parts = line.split(/(\*\*[^*]+\*\*)/g);
-    return (
-      <span key={i}>
-        {parts.map((part, j) =>
-          part.startsWith("**") && part.endsWith("**") ? (
-            <strong key={j}>{part.slice(2, -2)}</strong>
-          ) : (
-            <span key={j}>{part}</span>
-          )
-        )}
-        {i < arr.length - 1 && <br />}
-      </span>
-    );
-  });
-}
 
 export function FloatingAiChat() {
   const { user } = useAuth();
@@ -220,9 +203,7 @@ export function FloatingAiChat() {
                       <Bot className="h-3 w-3 text-[var(--color-accent)]" />
                     </div>
                     <div className="bg-[var(--color-bg-tertiary)] rounded-2xl rounded-tl-sm px-3 py-2 max-w-[80%]">
-                      <p className="text-xs leading-relaxed whitespace-pre-wrap">
-                        {formatMessageContent(msg.content)}
-                      </p>
+                      <MarkdownContent content={msg.content} className="text-xs leading-relaxed" />
                     </div>
                   </div>
                 );

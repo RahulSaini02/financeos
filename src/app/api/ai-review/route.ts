@@ -70,16 +70,6 @@ export async function GET(request: NextRequest) {
     const { start, end, label } = dateRange(period)
     const prev = previousDateRange(period)
 
-    // ── Debug: log query payload ──────────────────────────────────────────────
-    console.log('[AI Review] Query payload:', {
-      user_id: user.id,
-      period,
-      start,
-      end,
-      prev_start: prev.start,
-      prev_end: prev.end,
-    })
-
     // Fetch confirmed transactions only (user-scoped, excluding internal transfers)
     const [txRes, budgetRes, accountsRes, prevTxRes] = await Promise.all([
       supabase
@@ -110,15 +100,6 @@ export async function GET(request: NextRequest) {
         .gte('date', prev.start)
         .lte('date', prev.end),
     ])
-
-    // ── Debug: log raw DB responses ──────────────────────────────────────────
-    console.log('[AI Review] DB response:', {
-      transactions_count: txRes.data?.length ?? 0,
-      transactions_error: txRes.error?.message,
-      budgets_count: budgetRes.data?.length ?? 0,
-      accounts_count: accountsRes.data?.length ?? 0,
-      prev_transactions_count: prevTxRes.data?.length ?? 0,
-    })
 
     const transactions = txRes.data ?? []
     const budgets = budgetRes.data ?? []
@@ -190,10 +171,6 @@ ${Object.entries(dailySpend).sort((a, b) => a[0].localeCompare(b[0])).map(([d, a
 ${transactions.filter(t => t.cr_dr === 'debit').sort((a, b) => Math.abs(b.amount_usd) - Math.abs(a.amount_usd)).slice(0, 5).map(t => `- ${t.description}: ${fmt(Math.abs(t.amount_usd))} on ${t.date}`).join('\n') || '- None'}
 `.trim()
 
-    // ── Debug: log final AI input ─────────────────────────────────────────────
-    console.log('[AI Review] Final AI input length:', aiInput.length)
-    console.log('[AI Review] AI input preview:', aiInput.substring(0, 500))
-
     // Generate AI analysis
     let analysis = ''
     if (process.env.ANTHROPIC_API_KEY) {
@@ -202,7 +179,10 @@ ${transactions.filter(t => t.cr_dr === 'debit').sort((a, b) => Math.abs(b.amount
         max_tokens: 1200,
         system: `You are FinanceOS, a personal finance analyst. Analyze the user's financial data for the given period and provide actionable insights.
 
-Structure your response with exactly these four sections using ## headers:
+Structure your response with exactly these five sections using ## headers:
+
+## TLDR
+(2-3 sentences summarizing the period — top insight, key number, one action)
 
 ## Spending Insights
 (2-3 bullet points about spending patterns and top categories)
@@ -216,7 +196,7 @@ Structure your response with exactly these four sections using ## headers:
 ## Suggestions
 (2-3 actionable bullet points the user can act on this week/month)
 
-Be specific with numbers. Keep it practical and concise (under 400 words total).`,
+Be specific with numbers. Keep it practical and concise (under 450 words total).`,
         messages: [{ role: 'user', content: `Analyze my finances for ${label}:\n\n${aiInput}` }],
       })
       analysis = msg.content[0].type === 'text' ? msg.content[0].text : ''
