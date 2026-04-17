@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/monthly-review",
+      "schedule": "0 6 1 * *"
+    },
+    {
       "path": "/api/cron/networth-snapshot",
       "schedule": "0 23 28-31 * *"
     },
