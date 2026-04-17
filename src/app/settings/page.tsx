@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, Eye, EyeOff, ChevronUp, ChevronDown, RotateCcw } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { createClient } from "@/lib/supabase";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
 import { Button } from "@/components/ui/button";
 import { GridPageSkeleton } from "@/components/ui/skeleton";
+import { ALL_NAV_ITEMS, NAV_PREFS_KEY, getNavPrefs, type NavPref } from "@/components/ui/app-shell";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -145,6 +146,10 @@ export default function SettingsPage() {
   // ── preferences ──
   const [payFrequency, setPayFrequency] = useState("biweekly");
   const [filingStatus, setFilingStatus] = useState("single");
+  const [timezone, setTimezone] = useState("America/Los_Angeles");
+
+  // ── sidebar nav prefs ──
+  const [navPrefs, setNavPrefs] = useState<NavPref[]>([]);
 
   // Seed state from user / localStorage once available
   useEffect(() => {
@@ -156,8 +161,46 @@ export default function SettingsPage() {
       if (freq) setPayFrequency(freq);
       const filing = localStorage.getItem("pref_filing_status");
       if (filing) setFilingStatus(filing);
+      const tz = localStorage.getItem("pref_timezone");
+      if (tz) setTimezone(tz);
+      setNavPrefs(getNavPrefs());
     }
   }, [user]);
+
+  // ── nav prefs helpers ──────────────────────────────────────────────────────
+
+  function saveNavPrefs(prefs: NavPref[]) {
+    localStorage.setItem(NAV_PREFS_KEY, JSON.stringify(prefs));
+    window.dispatchEvent(new Event("nav-prefs-updated"));
+  }
+
+  function toggleNavVisible(href: string) {
+    setNavPrefs((prev) => {
+      const next = prev.map((p) => (p.href === href ? { ...p, visible: !p.visible } : p));
+      saveNavPrefs(next);
+      return next;
+    });
+  }
+
+  function moveNavItem(href: string, dir: -1 | 1) {
+    setNavPrefs((prev) => {
+      const idx = prev.findIndex((p) => p.href === href);
+      if (idx < 0) return prev;
+      const swapIdx = idx + dir;
+      if (swapIdx < 0 || swapIdx >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx], next[swapIdx]] = [next[swapIdx], next[idx]];
+      saveNavPrefs(next);
+      return next;
+    });
+  }
+
+  function resetNavToDefaults() {
+    const DEFAULT_HREFS = ["/dashboard", "/accounts", "/transactions", "/budgets", "/categories"];
+    const next = ALL_NAV_ITEMS.map((n) => ({ href: n.href, visible: DEFAULT_HREFS.includes(n.href) }));
+    setNavPrefs(next);
+    saveNavPrefs(next);
+  }
 
   // ── handlers ──────────────────────────────────────────────────────────────
 
@@ -213,6 +256,11 @@ export default function SettingsPage() {
   function handleFilingStatusChange(value: string) {
     setFilingStatus(value);
     localStorage.setItem("pref_filing_status", value);
+  }
+
+  function handleTimezoneChange(value: string) {
+    setTimezone(value);
+    localStorage.setItem("pref_timezone", value);
   }
 
   // ── loading state ─────────────────────────────────────────────────────────
@@ -424,6 +472,99 @@ export default function SettingsPage() {
               <p className="text-xs -mt-2" style={{ color: "var(--color-text-muted)" }}>
                 Used for federal income tax bracket calculations.
               </p>
+
+              <SelectField
+                label="Timezone"
+                value={timezone}
+                onChange={handleTimezoneChange}
+                options={[
+                  { value: "America/Los_Angeles", label: "Pacific Time (PT) — Los Angeles" },
+                  { value: "America/Denver", label: "Mountain Time (MT) — Denver" },
+                  { value: "America/Phoenix", label: "Mountain Time no DST (MST) — Phoenix" },
+                  { value: "America/Chicago", label: "Central Time (CT) — Chicago" },
+                  { value: "America/New_York", label: "Eastern Time (ET) — New York" },
+                  { value: "America/Anchorage", label: "Alaska Time (AKT) — Anchorage" },
+                  { value: "Pacific/Honolulu", label: "Hawaii Time (HST) — Honolulu" },
+                  { value: "Asia/Kolkata", label: "India Standard Time (IST) — Kolkata" },
+                  { value: "UTC", label: "UTC" },
+                ]}
+              />
+              <p className="text-xs -mt-2" style={{ color: "var(--color-text-muted)" }}>
+                Used for displaying transaction and date fields across the app.
+              </p>
+            </div>
+          </Card>
+
+          {/* ── Sidebar ───────────────────────────────────────────────────── */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Sidebar</CardTitle>
+            </CardHeader>
+            <p className="text-sm mb-4" style={{ color: "var(--color-text-secondary)" }}>
+              Choose which views appear in the sidebar and reorder them to fit your workflow. Hidden views are never deleted.
+            </p>
+
+            <div className="space-y-1">
+              {navPrefs.map((pref, idx) => {
+                const item = ALL_NAV_ITEMS.find((n) => n.href === pref.href);
+                if (!item) return null;
+                const Icon = item.icon;
+                return (
+                  <div
+                    key={pref.href}
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
+                    style={{
+                      background: pref.visible ? "var(--color-bg-tertiary)" : "transparent",
+                      opacity: pref.visible ? 1 : 0.5,
+                    }}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" style={{ color: "var(--color-text-muted)" }} />
+                    <span className="flex-1 text-sm" style={{ color: "var(--color-text-primary)" }}>
+                      {item.label}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => moveNavItem(pref.href, -1)}
+                        disabled={idx === 0}
+                        className="p-1 rounded transition-colors disabled:opacity-20 hover:bg-[var(--color-bg-secondary)]"
+                        aria-label="Move up"
+                      >
+                        <ChevronUp className="h-3.5 w-3.5" style={{ color: "var(--color-text-muted)" }} />
+                      </button>
+                      <button
+                        onClick={() => moveNavItem(pref.href, 1)}
+                        disabled={idx === navPrefs.length - 1}
+                        className="p-1 rounded transition-colors disabled:opacity-20 hover:bg-[var(--color-bg-secondary)]"
+                        aria-label="Move down"
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--color-text-muted)" }} />
+                      </button>
+                      <button
+                        onClick={() => toggleNavVisible(pref.href)}
+                        className="p-1 rounded transition-colors hover:bg-[var(--color-bg-secondary)]"
+                        aria-label={pref.visible ? "Hide" : "Show"}
+                      >
+                        {pref.visible ? (
+                          <Eye className="h-4 w-4" style={{ color: "var(--color-accent)" }} />
+                        ) : (
+                          <EyeOff className="h-4 w-4" style={{ color: "var(--color-text-muted)" }} />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={resetNavToDefaults}
+                className="flex items-center gap-1.5 text-xs transition-colors hover:opacity-80"
+                style={{ color: "var(--color-text-muted)" }}
+              >
+                <RotateCcw className="h-3 w-3" />
+                Reset to defaults
+              </button>
             </div>
           </Card>
 

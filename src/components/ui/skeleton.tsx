@@ -36,8 +36,8 @@ export function SkeletonHeading({ className }: { className?: string }) {
 export function SkeletonMetricCard() {
   return (
     <SkeletonCard>
-      <Skeleton className="h-3 w-24 mb-3" />
-      <Skeleton className="h-7 w-32" />
+      <Skeleton className="h-3 w-20 mb-3" />
+      <Skeleton className="h-7 w-24" />
     </SkeletonCard>
   );
 }
@@ -50,7 +50,7 @@ export function SkeletonRow() {
         <Skeleton className="h-3.5 w-40" />
         <Skeleton className="h-3 w-24" />
       </div>
-      <Skeleton className="h-4 w-16 shrink-0" />
+      <Skeleton className="h-4 w-20 shrink-0" />
     </div>
   );
 }

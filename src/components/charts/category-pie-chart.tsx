@@ -40,14 +40,14 @@ export function CategoryPieChart({ data }: CategoryPieChartProps) {
         </span>
       </CardHeader>
       <div className="mt-2">
-        <ResponsiveContainer width="100%" height={180}>
+        <ResponsiveContainer width="100%" height={170}>
           <PieChart>
             <Pie
               data={data}
               cx="50%"
               cy="50%"
-              innerRadius={52}
-              outerRadius={82}
+              innerRadius={50}
+              outerRadius={78}
               dataKey="value"
               nameKey="name"
               paddingAngle={2}
@@ -74,7 +74,7 @@ export function CategoryPieChart({ data }: CategoryPieChartProps) {
             />
           </PieChart>
         </ResponsiveContainer>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-1">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 mt-2">
           {data.map((cat) => (
             <div key={cat.name} className="flex items-center gap-2 min-w-0">
               <div

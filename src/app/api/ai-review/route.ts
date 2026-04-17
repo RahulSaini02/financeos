@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 
@@ -8,107 +8,73 @@ function fmt(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n)
 }
 
-function dateRange(period: 'week' | 'month'): { start: string; end: string; label: string } {
-  const now = new Date()
-  if (period === 'week') {
-    const day = now.getDay() // 0=Sun
-    const start = new Date(now)
-    start.setDate(now.getDate() - day)
-    start.setHours(0, 0, 0, 0)
-    const end = new Date(start)
-    end.setDate(start.getDate() + 6)
-    return {
-      start: start.toISOString().split('T')[0],
-      end: end.toISOString().split('T')[0],
-      label: `Week of ${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
-    }
-  }
-  // month
-  const start = new Date(now.getFullYear(), now.getMonth(), 1)
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-  return {
-    start: start.toISOString().split('T')[0],
-    end: end.toISOString().split('T')[0],
-    label: start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
-  }
-}
-
-function previousDateRange(period: 'week' | 'month'): { start: string; end: string; numDays: number } {
-  const now = new Date()
-  if (period === 'week') {
-    const day = now.getDay()
-    const thisSunday = new Date(now)
-    thisSunday.setDate(now.getDate() - day)
-    thisSunday.setHours(0, 0, 0, 0)
-    const prevSunday = new Date(thisSunday)
-    prevSunday.setDate(thisSunday.getDate() - 7)
-    const prevSat = new Date(prevSunday)
-    prevSat.setDate(prevSunday.getDate() + 6)
-    return {
-      start: prevSunday.toISOString().split('T')[0],
-      end: prevSat.toISOString().split('T')[0],
-      numDays: 7,
-    }
-  }
-  // previous month
-  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-  const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
-  return {
-    start: prevMonth.toISOString().split('T')[0],
-    end: prevMonthEnd.toISOString().split('T')[0],
-    numDays: prevMonthEnd.getDate(),
-  }
-}
-
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const supabase = await createServerSupabaseClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const period = (request.nextUrl.searchParams.get('period') ?? 'month') as 'week' | 'month'
-    const { start, end, label } = dateRange(period)
-    const prev = previousDateRange(period)
+    // ── Date ranges ──────────────────────────────────────────────
+    const now = new Date()
 
-    // Fetch confirmed transactions only (user-scoped, excluding internal transfers)
-    const [txRes, budgetRes, accountsRes, prevTxRes] = await Promise.all([
+    // Last month
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
+    const lastMonthKey = `${lastMonthStart.getFullYear()}-${String(lastMonthStart.getMonth() + 1).padStart(2, '0')}-01`
+    const label = lastMonthStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+
+    // Month before last (for MoM comparison)
+    const priorStart = new Date(now.getFullYear(), now.getMonth() - 2, 1)
+    const priorEnd = new Date(now.getFullYear(), now.getMonth() - 1, 0)
+
+    // ── Cache check ───────────────────────────────────────────────
+    const { data: cachedInsight } = await supabase
+      .from('ai_insights')
+      .select('content')
+      .eq('user_id', user.id)
+      .eq('type', 'monthly_review')
+      .eq('month', lastMonthKey)
+      .maybeSingle()
+
+    let analysis = ''
+    let isCached = false
+
+    if (cachedInsight) {
+      analysis = cachedInsight.content
+      isCached = true
+    }
+
+    // ── Fetch transactions ────────────────────────────────────────
+    const [lastMonthRes, priorMonthRes] = await Promise.all([
       supabase
         .from('transactions')
-        .select('description, amount_usd, cr_dr, date, category:categories(name, type)')
+        .select('description, amount_usd, cr_dr, date, category:categories(id, name)')
         .eq('user_id', user.id)
         .eq('import_status', 'confirmed')
         .eq('is_internal_transfer', false)
-        .gte('date', start)
-        .lte('date', end)
-        .order('date', { ascending: false }),
-      supabase
-        .from('budgets')
-        .select('amount_usd, category:categories(name)')
-        .eq('user_id', user.id)
-        .eq('month', start.substring(0, 7) + '-01'),
-      supabase
-        .from('accounts')
-        .select('name, kind, current_balance')
-        .eq('user_id', user.id)
-        .eq('is_active', true),
+        .gte('date', lastMonthStart.toISOString().split('T')[0])
+        .lte('date', lastMonthEnd.toISOString().split('T')[0]),
       supabase
         .from('transactions')
-        .select('amount_usd, cr_dr')
+        .select('amount_usd, cr_dr, category:categories(name)')
         .eq('user_id', user.id)
         .eq('import_status', 'confirmed')
         .eq('is_internal_transfer', false)
-        .gte('date', prev.start)
-        .lte('date', prev.end),
+        .gte('date', priorStart.toISOString().split('T')[0])
+        .lte('date', priorEnd.toISOString().split('T')[0]),
     ])
 
-    const transactions = txRes.data ?? []
-    const budgets = budgetRes.data ?? []
-    const accounts = accountsRes.data ?? []
-    const prevTransactions = prevTxRes.data ?? []
+    const transactions = lastMonthRes.data ?? []
+    const priorTransactions = priorMonthRes.data ?? []
 
-    // Compute aggregates
-    const income = transactions.filter(t => t.cr_dr === 'credit').reduce((s, t) => s + Math.abs(t.amount_usd ?? 0), 0)
-    const expenses = transactions.filter(t => t.cr_dr === 'debit').reduce((s, t) => s + Math.abs(t.amount_usd ?? 0), 0)
+    // ── Aggregate last month ──────────────────────────────────────
+    const income = transactions
+      .filter(t => t.cr_dr === 'credit')
+      .reduce((s, t) => s + Math.abs(t.amount_usd ?? 0), 0)
+
+    const expenses = transactions
+      .filter(t => t.cr_dr === 'debit')
+      .reduce((s, t) => s + Math.abs(t.amount_usd ?? 0), 0)
 
     const byCategory: Record<string, { amount: number; count: number }> = {}
     for (const t of transactions) {
@@ -120,108 +86,111 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const topCategories = Object.entries(byCategory)
-      .sort((a, b) => b[1].amount - a[1].amount)
-      .slice(0, 8)
-      .map(([name, { amount, count }]) => ({ name, amount, count }))
-
-    const dailySpend: Record<string, number> = {}
-    for (const t of transactions) {
+    // ── Prior month category map ──────────────────────────────────
+    const priorByCategory: Record<string, number> = {}
+    for (const t of priorTransactions) {
       if (t.cr_dr === 'debit') {
-        dailySpend[t.date] = (dailySpend[t.date] ?? 0) + Math.abs(t.amount_usd ?? 0)
+        const cat = (t.category as unknown as { name: string } | null)?.name ?? 'Uncategorized'
+        priorByCategory[cat] = (priorByCategory[cat] ?? 0) + Math.abs(t.amount_usd ?? 0)
       }
     }
 
-    const netWorth = accounts
-      .reduce((s, a) => s + (a.kind === 'asset' || a.kind === 'investment' ? (a.current_balance ?? 0) : -(a.current_balance ?? 0)), 0)
+    const hasPriorMonth = Object.keys(priorByCategory).length > 0
 
-    // Previous period average daily spend (for reference line)
-    const prevExpenses = prevTransactions
-      .filter(t => t.cr_dr === 'debit')
-      .reduce((s, t) => s + Math.abs(t.amount_usd ?? 0), 0)
-    const previousAvgDaily = prev.numDays > 0 ? prevExpenses / prev.numDays : 0
+    // ── Top categories with MoM ───────────────────────────────────
+    const topCategories = Object.entries(byCategory)
+      .sort((a, b) => b[1].amount - a[1].amount)
+      .slice(0, 8)
+      .map(([name, { amount, count }]) => {
+        const prevAmount = priorByCategory[name] ?? null
+        const changePct = prevAmount != null ? ((amount - prevAmount) / prevAmount) * 100 : null
+        const pctOfTotal = expenses > 0 ? (amount / expenses) * 100 : 0
+        return { name, amount, count, pctOfTotal, prevAmount, changePct }
+      })
 
-    // Build AI prompt context
-    const budgetLines = budgets.map(b => {
-      const catName = (b.category as unknown as { name: string } | null)?.name ?? 'Unknown'
-      const spent = byCategory[catName]?.amount ?? 0
-      const pct = b.amount_usd > 0 ? ((spent / b.amount_usd) * 100).toFixed(0) : '0'
-      return `- ${catName}: spent ${fmt(spent)} / ${fmt(b.amount_usd)} budget (${pct}%)`
-    }).join('\n')
+    // ── LLM analysis (skip if cached) ────────────────────────────
+    if (!isCached && process.env.ANTHROPIC_API_KEY) {
+      const topTxns = transactions
+        .filter(t => t.cr_dr === 'debit')
+        .sort((a, b) => Math.abs(b.amount_usd ?? 0) - Math.abs(a.amount_usd ?? 0))
+        .slice(0, 5)
 
-    const aiInput = `
-## Period: ${label}
-- Total Income: ${fmt(income)}
-- Total Expenses: ${fmt(expenses)}
+      const categorySummaryLines = topCategories.map(c => {
+        let line = `- ${c.name}: ${fmt(c.amount)} (${c.count} txns, ${c.pctOfTotal.toFixed(1)}% of expenses)`
+        if (hasPriorMonth && c.prevAmount != null && c.changePct != null) {
+          const direction = c.changePct >= 0 ? 'up' : 'down'
+          line += ` — ${direction} ${Math.abs(c.changePct).toFixed(1)}% vs prior month (${fmt(c.prevAmount)})`
+        }
+        return line
+      }).join('\n')
+
+      const userMessage = `
+Analyze my spending for ${label}:
+
+## Summary
+- Income: ${fmt(income)}
+- Expenses: ${fmt(expenses)}
 - Net Cash Flow: ${fmt(income - expenses)}
-- Net Worth: ${fmt(netWorth)}
-- Transactions: ${transactions.length} (confirmed, excluding internal transfers)
-- Previous period avg daily spend: ${fmt(previousAvgDaily)}
+- Transactions: ${transactions.length}
 
-## Spending by Category
-${topCategories.map(c => `- ${c.name}: ${fmt(c.amount)} (${c.count} txns)`).join('\n') || '- No spending data'}
-
-## Budget vs Actual
-${budgetLines || '- No budgets configured'}
-
-## Daily Spending Pattern
-${Object.entries(dailySpend).sort((a, b) => a[0].localeCompare(b[0])).map(([d, a]) => `- ${d}: ${fmt(a)}`).join('\n') || '- No daily data'}
+## Top Spending Categories
+${categorySummaryLines || '- No spending data'}
 
 ## Top Individual Transactions
-${transactions.filter(t => t.cr_dr === 'debit').sort((a, b) => Math.abs(b.amount_usd) - Math.abs(a.amount_usd)).slice(0, 5).map(t => `- ${t.description}: ${fmt(Math.abs(t.amount_usd))} on ${t.date}`).join('\n') || '- None'}
+${topTxns.map(t => `- ${t.description}: ${fmt(Math.abs(t.amount_usd ?? 0))} on ${t.date}`).join('\n') || '- None'}
+${hasPriorMonth ? '' : '\n(No prior month data available — skip the Month-over-Month section.)'}
 `.trim()
 
-    // Generate AI analysis
-    let analysis = ''
-    if (process.env.ANTHROPIC_API_KEY) {
       const msg = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1200,
-        system: `You are FinanceOS, a personal finance analyst. Analyze the user's financial data for the given period and provide actionable insights.
+        max_tokens: 900,
+        system: `You are FinanceOS, a personal finance analyst reviewing last month's spending.
 
-Structure your response with exactly these five sections using ## headers:
+Structure your response with exactly these four sections using ## headers:
 
 ## TLDR
-(2-3 sentences summarizing the period — top insight, key number, one action)
+(2–3 sentences: biggest takeaway, key number, one immediate action)
 
-## Spending Insights
-(2-3 bullet points about spending patterns and top categories)
+## Key Highlights
+(3–5 bullet points: notable patterns, anything unusual, positive trends)
 
-## Budget Deviations
-(bullet points comparing actual vs expected spending — if no budget data available, note it briefly)
+## Category Breakdown
+(brief narrative on top 2–3 spending categories — context on why they matter)
 
-## Alerts
-(bullet points for any anomalies, overspending categories, or unusual activity)
+## Month-over-Month Changes
+(bullet points comparing to the prior month — highlight significant increases/decreases by %. Skip this section entirely if no prior month data is provided.)
 
-## Suggestions
-(2-3 actionable bullet points the user can act on this week/month)
-
-Be specific with numbers. Keep it practical and concise (under 450 words total).`,
-        messages: [{ role: 'user', content: `Analyze my finances for ${label}:\n\n${aiInput}` }],
+Be specific with dollar amounts. Keep total response under 400 words. No long paragraphs.`,
+        messages: [{ role: 'user', content: userMessage }],
       })
+
       analysis = msg.content[0].type === 'text' ? msg.content[0].text : ''
 
-      // Save as insight
-      await supabase.from('ai_insights').insert({
+      // Save to cache
+      await supabase.from('ai_insights').upsert({
         user_id: user.id,
-        type: 'monthly',
+        type: 'monthly_review',
         content: analysis,
-        month: start.substring(0, 7) + '-01',
+        month: lastMonthKey,
         is_read: false,
-      }).then(() => {})
-    } else {
-      analysis = `**Summary**\nYou spent ${fmt(expenses)} against ${fmt(income)} income this period, resulting in a ${income >= expenses ? 'positive' : 'negative'} cash flow of ${fmt(Math.abs(income - expenses))}.\n\n_AI analysis requires ANTHROPIC_API_KEY to be configured._`
+      }, { onConflict: 'user_id,type,month' })
+    } else if (!isCached) {
+      // No API key — return a simple fallback
+      analysis = `**Summary**\nYou spent ${fmt(expenses)} against ${fmt(income)} income in ${label}, resulting in a ${income >= expenses ? 'positive' : 'negative'} cash flow of ${fmt(Math.abs(income - expenses))}.\n\n_AI analysis requires ANTHROPIC_API_KEY to be configured._`
     }
 
     return NextResponse.json({
-      period,
       label,
-      start,
-      end,
-      summary: { income, expenses, netCashFlow: income - expenses, netWorth, transactionCount: transactions.length },
+      month: lastMonthKey,
+      cached: isCached,
+      summary: {
+        income,
+        expenses,
+        netCashFlow: income - expenses,
+        transactionCount: transactions.length,
+      },
       topCategories,
-      dailySpend,
-      previousAvgDaily,
+      hasPriorMonth,
       analysis,
     })
   } catch (err) {

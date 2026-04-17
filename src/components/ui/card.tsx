@@ -8,7 +8,7 @@ export function Card({ children, className, ...props }: CardProps) {
   return (
     <div
       className={cn(
-        "rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5",
+        "rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 sm:p-5",
         className
       )}
       {...props}
@@ -43,7 +43,7 @@ export function CardTitle({ children, className, ...props }: CardProps) {
 export function CardValue({ children, className, ...props }: CardProps) {
   return (
     <p
-      className={cn("text-2xl font-semibold tracking-tight", className)}
+      className={cn("text-lg sm:text-2xl font-semibold tracking-tight", className)}
       {...props}
     >
       {children}

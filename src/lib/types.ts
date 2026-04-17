@@ -11,7 +11,7 @@ export type CurrencyCode = 'USD' | 'INR'
 export type BillingStatus = 'active' | 'inactive' | 'cancelled'
 export type LoanType = 'student' | 'personal' | 'mortgage' | 'auto' | 'other'
 export type GoalStatus = 'active' | 'paused' | 'completed'
-export type InsightType = 'daily' | 'monthly' | 'alert'
+export type InsightType = 'daily' | 'monthly' | 'alert' | 'monthly_review'
 
 export interface Profile {
   id: string

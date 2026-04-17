@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useId } from "react";
+import { useState, useId, useRef, useEffect } from "react";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
@@ -17,9 +17,11 @@ interface NetWorthChartProps {
 export function NetWorthChart({ points }: NetWorthChartProps) {
   const [hovered, setHovered] = useState<number | null>(null);
   const uid = useId().replace(/:/g, "");
+  const lineRef = useRef<SVGPathElement>(null);
+  const areaRef = useRef<SVGPathElement>(null);
 
   const W = 800;
-  const H = 240;
+  const H = 340;
   const PAD_L = 8;
   const PAD_R = 8;
   const PAD_T = 28;
@@ -64,6 +66,34 @@ export function NetWorthChart({ points }: NetWorthChartProps) {
       linePath +
       ` L ${coords[coords.length - 1].x},${baseline} L ${coords[0].x},${baseline} Z`;
   }
+
+  useEffect(() => {
+    const line = lineRef.current;
+    if (!line || coords.length < 2) return;
+    const len = line.getTotalLength();
+    line.style.strokeDasharray = String(len);
+    line.style.strokeDashoffset = String(len);
+    line.style.transition = "none";
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        line.style.transition = "stroke-dashoffset 1.4s cubic-bezier(0.4, 0, 0.2, 1)";
+        line.style.strokeDashoffset = "0";
+      });
+    });
+
+    const area = areaRef.current;
+    if (area) {
+      area.style.opacity = "0";
+      area.style.transition = "none";
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          area.style.transition = "opacity 1.2s ease-out 0.6s";
+          area.style.opacity = "1";
+        });
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linePath]);
 
   const first = values[0];
   const last = values[values.length - 1];
@@ -111,7 +141,7 @@ export function NetWorthChart({ points }: NetWorthChartProps) {
         <svg
           viewBox={`0 0 ${W} ${H}`}
           className="w-full overflow-visible"
-          style={{ height: 220 }}
+          style={{ height: 320 }}
           aria-label="Net worth trend chart"
         >
           <defs>
@@ -182,6 +212,7 @@ export function NetWorthChart({ points }: NetWorthChartProps) {
 
           {areaPath && (
             <path
+              ref={areaRef}
               d={areaPath}
               fill={`url(#grad-${uid})`}
               clipPath={`url(#clip-${uid})`}
@@ -189,6 +220,7 @@ export function NetWorthChart({ points }: NetWorthChartProps) {
           )}
 
           <path
+            ref={lineRef}
             d={linePath}
             fill="none"
             stroke="var(--color-accent)"
@@ -199,7 +231,12 @@ export function NetWorthChart({ points }: NetWorthChartProps) {
           />
 
           {coords.map((c, i) => (
-            <g key={i}>
+            <g
+              key={i}
+              style={{
+                animation: `fadeInUp 0.3s ease-out ${0.8 + i * 0.06}s both`,
+              }}
+            >
               <rect
                 x={c.x - (i === 0 ? 0 : chartW / points.length / 2)}
                 y={PAD_T}

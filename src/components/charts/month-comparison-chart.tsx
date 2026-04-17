@@ -73,7 +73,7 @@ export function MonthComparisonChart({ monthlyData }: MonthComparisonChartProps)
         </div>
       </CardHeader>
       <div className="mt-2">
-        <ResponsiveContainer width="100%" height={220}>
+        <ResponsiveContainer width="100%" height={320}>
           <BarChart
             data={chartData}
             margin={{ top: 10, right: 16, left: 0, bottom: 5 }}

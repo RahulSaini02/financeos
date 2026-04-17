@@ -28,7 +28,7 @@ import { FloatingAiChat } from "@/components/ui/floating-ai-chat";
 import { KeyboardShortcuts } from "@/components/ui/keyboard-shortcuts";
 import { useAuth } from "@/components/auth-provider";
 
-const navItems = [
+export const ALL_NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/transactions", label: "Transactions", icon: Receipt },
   { href: "/accounts", label: "Accounts", icon: Wallet },
@@ -46,7 +46,30 @@ const navItems = [
   { href: "/import", label: "Import", icon: Upload },
 ];
 
-// Bottom nav shows 5 most-used items on mobile
+export const NAV_PREFS_KEY = "pref_nav_items";
+
+export interface NavPref {
+  href: string;
+  visible: boolean;
+}
+
+export function getNavPrefs(): NavPref[] {
+  if (typeof window === "undefined") return ALL_NAV_ITEMS.map((n) => ({ href: n.href, visible: true }));
+  try {
+    const stored = localStorage.getItem(NAV_PREFS_KEY);
+    if (!stored) return ALL_NAV_ITEMS.map((n) => ({ href: n.href, visible: true }));
+    const parsed: NavPref[] = JSON.parse(stored);
+    // Validate each entry, merge any new items added since user saved prefs
+    const knownHrefs = new Set(parsed.map((p) => p.href));
+    const validParsed = parsed.filter((p) => ALL_NAV_ITEMS.some((n) => n.href === p.href));
+    const newItems = ALL_NAV_ITEMS.filter((n) => !knownHrefs.has(n.href)).map((n) => ({ href: n.href, visible: true }));
+    return [...validParsed, ...newItems];
+  } catch {
+    return ALL_NAV_ITEMS.map((n) => ({ href: n.href, visible: true }));
+  }
+}
+
+// Bottom nav shows 5 most-used items on mobile (always fixed)
 const bottomNavItems = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/transactions", label: "Txns", icon: Receipt },
@@ -61,8 +84,26 @@ interface AppShellProps {
 
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [navPrefs, setNavPrefs] = useState<NavPref[]>(() => ALL_NAV_ITEMS.map((n) => ({ href: n.href, visible: true })));
+
+  // Load nav prefs from localStorage on mount
+  useEffect(() => {
+    setNavPrefs(getNavPrefs());
+    // Listen for storage changes (e.g., settings page updates prefs)
+    function handleStorage(e: StorageEvent) {
+      if (e.key === NAV_PREFS_KEY) setNavPrefs(getNavPrefs());
+    }
+    window.addEventListener("storage", handleStorage);
+    // Also listen for a custom event (same-tab updates)
+    function handleNavUpdate() { setNavPrefs(getNavPrefs()); }
+    window.addEventListener("nav-prefs-updated", handleNavUpdate);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("nav-prefs-updated", handleNavUpdate);
+    };
+  }, []);
 
   // Close sidebar on route change
   useEffect(() => {
@@ -90,6 +131,12 @@ export function AppShell({ children }: AppShellProps) {
     .map((w: string) => w[0]?.toUpperCase() ?? "")
     .join("");
 
+  // Build ordered, filtered nav items from prefs
+  const visibleNavItems = navPrefs
+    .filter((p) => p.visible)
+    .map((p) => ALL_NAV_ITEMS.find((n) => n.href === p.href))
+    .filter(Boolean) as typeof ALL_NAV_ITEMS;
+
   const sidebar = (
     <aside className="flex w-64 flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-secondary)] h-full">
       {/* Logo */}
@@ -107,7 +154,7 @@ export function AppShell({ children }: AppShellProps) {
 
       {/* Nav */}
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const isActive = pathname === item.href || pathname?.startsWith(item.href + "/");
           return (
             <Link
@@ -147,6 +194,11 @@ export function AppShell({ children }: AppShellProps) {
       </div>
     </aside>
   );
+
+  // Don't show sidebar until auth resolves, or if user is not authenticated
+  if (isLoading || !user) {
+    return <>{children}</>;
+  }
 
   return (
     <div className="flex h-full flex-col lg:flex-row">

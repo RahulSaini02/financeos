@@ -58,11 +58,11 @@ const BRACKET_COLORS = [
   "bg-rose-600",
 ];
 
-function calcTax(income: number, brackets: typeof FEDERAL_BRACKETS_SINGLE): number {
+function calcTax ( income: number, brackets: typeof FEDERAL_BRACKETS_SINGLE ): number {
   let tax = 0;
-  for (const bracket of brackets) {
-    if (income <= bracket.min) break;
-    const taxable = Math.min(income, bracket.max) - bracket.min;
+  for ( const bracket of brackets ) {
+    if ( income <= bracket.min ) break;
+    const taxable = Math.min( income, bracket.max ) - bracket.min;
     tax += taxable * bracket.rate;
   }
   return tax;
@@ -93,10 +93,10 @@ interface TaxResults {
   effectiveStateRate: number;
 }
 
-function calculateTaxes(inputs: TaxInputs): TaxResults {
+function calculateTaxes ( inputs: TaxInputs ): TaxResults {
   const { annualGross, filingStatus, contribution401kPct, otherPreTaxDeductions, standardDeductionOverride } = inputs;
 
-  const contribution401k = annualGross * (contribution401kPct / 100);
+  const contribution401k = annualGross * ( contribution401kPct / 100 );
   const otherPreTax = otherPreTaxDeductions;
 
   const standardDeduction = standardDeductionOverride != null && standardDeductionOverride >= 0
@@ -111,14 +111,14 @@ function calculateTaxes(inputs: TaxInputs): TaxResults {
   const federalBrackets =
     filingStatus === "mfj" ? FEDERAL_BRACKETS_MFJ : FEDERAL_BRACKETS_SINGLE;
 
-  const federalTax = calcTax(federalTaxableIncome, federalBrackets);
-  const stateTax = calcTax(Math.max(0, annualGross - contribution401k - otherPreTax), CA_BRACKETS_SINGLE);
+  const federalTax = calcTax( federalTaxableIncome, federalBrackets );
+  const stateTax = calcTax( Math.max( 0, annualGross - contribution401k - otherPreTax ), CA_BRACKETS_SINGLE );
   const sdi = annualGross * CA_SDI_RATE;
 
   const netPay = annualGross - contribution401k - otherPreTax - federalTax - stateTax - sdi;
 
-  const effectiveFederalRate = annualGross > 0 ? (federalTax / annualGross) * 100 : 0;
-  const effectiveStateRate = annualGross > 0 ? (stateTax / annualGross) * 100 : 0;
+  const effectiveFederalRate = annualGross > 0 ? ( federalTax / annualGross ) * 100 : 0;
+  const effectiveStateRate = annualGross > 0 ? ( stateTax / annualGross ) * 100 : 0;
 
   return {
     grossPay: annualGross,
@@ -134,80 +134,80 @@ function calculateTaxes(inputs: TaxInputs): TaxResults {
   };
 }
 
-function fmt(n: number) {
-  return formatCurrency(n);
+function fmt ( n: number ) {
+  return formatCurrency( n );
 }
 
-function pct(n: number) {
-  return `${n.toFixed(2)}%`;
+function pct ( n: number ) {
+  return `${ n.toFixed( 2 ) }%`;
 }
 
-export default function TaxEstimatorPage() {
+export default function TaxEstimatorPage () {
   const { user } = useAuth();
   const supabase = createClient();
 
-  const [paychecks, setPaychecks] = useState<Paycheck[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [paychecks, setPaychecks] = useState<Paycheck[]>( [] );
+  const [isLoading, setIsLoading] = useState( true );
+  const [error, setError] = useState<string | null>( null );
 
-  const [inputs, setInputs] = useState<TaxInputs>({
+  const [inputs, setInputs] = useState<TaxInputs>( {
     annualGross: 0,
     filingStatus: "single",
     payFrequency: 26,
     contribution401kPct: 0,
     otherPreTaxDeductions: 0,
     standardDeductionOverride: null,
-  });
+  } );
 
-  const [prefilled, setPrefilled] = useState(false);
+  const [prefilled, setPrefilled] = useState( false );
 
-  useEffect(() => {
-    if (!user) return;
+  useEffect( () => {
+    if ( !user ) return;
 
-    async function fetchPaychecks() {
-      setIsLoading(true);
-      setError(null);
+    async function fetchPaychecks () {
+      setIsLoading( true );
+      setError( null );
       const { data, error: err } = await supabase
-        .from("paychecks")
-        .select("*")
-        .eq("user_id", user!.id)
-        .order("date", { ascending: false });
+        .from( "paychecks" )
+        .select( "*" )
+        .eq( "user_id", user!.id )
+        .order( "date", { ascending: false } );
 
-      if (err) {
-        setError(err.message);
-      } else if (data && data.length > 0) {
-        setPaychecks(data as Paycheck[]);
-        if (!prefilled) {
+      if ( err ) {
+        setError( err.message );
+      } else if ( data && data.length > 0 ) {
+        setPaychecks( data as Paycheck[] );
+        if ( !prefilled ) {
           const freq: PayFrequency = 24;
-          const ytdGross = data.reduce((sum, p) => sum + p.gross_pay, 0);
-          const ytdRetirement = data.reduce((sum, p) => sum + p.retirement_401k, 0);
+          const ytdGross = data.reduce( ( sum, p ) => sum + p.gross_pay, 0 );
+          const ytdRetirement = data.reduce( ( sum, p ) => sum + p.retirement_401k, 0 );
           const count = data.length;
-          const annualGross = count > 0 ? (ytdGross / count) * freq : 0;
-          const contrib401kPct = ytdGross > 0 ? (ytdRetirement / ytdGross) * 100 : 0;
+          const annualGross = count > 0 ? ( ytdGross / count ) * freq : 0;
+          const contrib401kPct = ytdGross > 0 ? ( ytdRetirement / ytdGross ) * 100 : 0;
 
-          setInputs((prev) => ({
+          setInputs( ( prev ) => ( {
             ...prev,
-            annualGross: Math.round(annualGross),
-            contribution401kPct: Math.round(contrib401kPct * 10) / 10,
+            annualGross: Math.round( annualGross ),
+            contribution401kPct: Math.round( contrib401kPct * 10 ) / 10,
             payFrequency: freq,
-          }));
-          setPrefilled(true);
+          } ) );
+          setPrefilled( true );
         }
       }
-      setIsLoading(false);
+      setIsLoading( false );
     }
 
     fetchPaychecks();
-  }, [user]);
+  }, [user] );
 
-  const results = useMemo(() => calculateTaxes(inputs), [inputs]);
+  const results = useMemo( () => calculateTaxes( inputs ), [inputs] );
 
-  const perPaycheck = (annual: number) =>
+  const perPaycheck = ( annual: number ) =>
     inputs.payFrequency > 0 ? annual / inputs.payFrequency : 0;
 
-  const ytdFederal = paychecks.reduce((sum, p) => sum + p.federal_tax, 0);
-  const ytdState = paychecks.reduce((sum, p) => sum + p.state_tax, 0);
-  const ytdSdi = paychecks.reduce((sum, p) => sum + p.sdi, 0);
+  const ytdFederal = paychecks.reduce( ( sum, p ) => sum + p.federal_tax, 0 );
+  const ytdState = paychecks.reduce( ( sum, p ) => sum + p.state_tax, 0 );
+  const ytdSdi = paychecks.reduce( ( sum, p ) => sum + p.sdi, 0 );
   const ytdTotal = ytdFederal + ytdState + ytdSdi;
   const projectedTotal = results.federalTax + results.stateTax + results.sdi;
 
@@ -216,8 +216,8 @@ export default function TaxEstimatorPage() {
   const federalBrackets =
     inputs.filingStatus === "mfj" ? FEDERAL_BRACKETS_MFJ : FEDERAL_BRACKETS_SINGLE;
 
-  function setField<K extends keyof TaxInputs>(key: K, value: TaxInputs[K]) {
-    setInputs((prev) => ({ ...prev, [key]: value }));
+  function setField<K extends keyof TaxInputs> ( key: K, value: TaxInputs[K] ) {
+    setInputs( ( prev ) => ( { ...prev, [key]: value } ) );
   }
 
   const inputClass =
@@ -225,7 +225,7 @@ export default function TaxEstimatorPage() {
 
   const labelClass = "block text-xs font-medium text-[var(--color-text-secondary)] mb-1";
 
-  if (!user) {
+  if ( !user ) {
     return (
       <div className="flex items-center justify-center h-64 text-[var(--color-text-muted)] text-sm">
         Please sign in to use the Tax Estimator.
@@ -233,7 +233,7 @@ export default function TaxEstimatorPage() {
     );
   }
 
-  if (isLoading) return <GridPageSkeleton cards={3} />;
+  if ( isLoading ) return <GridPageSkeleton cards={3} />;
 
   return (
     <div className="space-y-6 p-6 max-w-5xl mx-auto">
@@ -290,7 +290,7 @@ export default function TaxEstimatorPage() {
               type="number"
               className={inputClass}
               value={inputs.annualGross}
-              onChange={(e) => setField("annualGross", Number(e.target.value))}
+              onChange={( e ) => setField( "annualGross", Number( e.target.value ) )}
               min={0}
             />
           </div>
@@ -300,7 +300,7 @@ export default function TaxEstimatorPage() {
             <select
               className={inputClass}
               value={inputs.filingStatus}
-              onChange={(e) => setField("filingStatus", e.target.value as FilingStatus)}
+              onChange={( e ) => setField( "filingStatus", e.target.value as FilingStatus )}
             >
               <option value="single">Single</option>
               <option value="mfj">Married Filing Jointly</option>
@@ -312,7 +312,7 @@ export default function TaxEstimatorPage() {
             <select
               className={inputClass}
               value={inputs.payFrequency}
-              onChange={(e) => setField("payFrequency", Number(e.target.value) as PayFrequency)}
+              onChange={( e ) => setField( "payFrequency", Number( e.target.value ) as PayFrequency )}
             >
               <option value={26}>Biweekly (26/yr)</option>
               <option value={24}>Semi-monthly (24/yr)</option>
@@ -326,7 +326,7 @@ export default function TaxEstimatorPage() {
               type="number"
               className={inputClass}
               value={inputs.contribution401kPct}
-              onChange={(e) => setField("contribution401kPct", Number(e.target.value))}
+              onChange={( e ) => setField( "contribution401kPct", Number( e.target.value ) )}
               min={0}
               max={100}
               step={0.1}
@@ -339,7 +339,7 @@ export default function TaxEstimatorPage() {
               type="number"
               className={inputClass}
               value={inputs.otherPreTaxDeductions}
-              onChange={(e) => setField("otherPreTaxDeductions", Number(e.target.value))}
+              onChange={( e ) => setField( "otherPreTaxDeductions", Number( e.target.value ) )}
               min={0}
             />
           </div>
@@ -348,16 +348,16 @@ export default function TaxEstimatorPage() {
             <label className={labelClass}>
               Standard Deduction Override{" "}
               <span className="text-[var(--color-text-muted)] font-normal">
-                (leave 0 to use default: {inputs.filingStatus === "mfj" ? `$${FEDERAL_STANDARD_DEDUCTION_MFJ.toLocaleString()}` : `$${FEDERAL_STANDARD_DEDUCTION_SINGLE.toLocaleString()}`})
+                (default: {inputs.filingStatus === "mfj" ? `$${ FEDERAL_STANDARD_DEDUCTION_MFJ.toLocaleString() }` : `$${ FEDERAL_STANDARD_DEDUCTION_SINGLE.toLocaleString() }`})
               </span>
             </label>
             <input
               type="number"
               className={inputClass}
               value={inputs.standardDeductionOverride ?? 0}
-              onChange={(e) => {
-                const val = Number(e.target.value);
-                setField("standardDeductionOverride", val > 0 ? val : null);
+              onChange={( e ) => {
+                const val = Number( e.target.value );
+                setField( "standardDeductionOverride", val > 0 ? val : null );
               }}
               min={0}
               placeholder="0 = use default"
@@ -366,25 +366,25 @@ export default function TaxEstimatorPage() {
         </div>
       </Card>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <Card>
           <CardHeader>
             <CardTitle>Federal Tax (Annual)</CardTitle>
           </CardHeader>
-          <CardValue className="text-[var(--color-danger)]">{fmt(results.federalTax)}</CardValue>
+          <CardValue className="text-[var(--color-danger)]">{fmt( results.federalTax )}</CardValue>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle>State Tax CA (Annual)</CardTitle>
           </CardHeader>
-          <CardValue className="text-[var(--color-warning)]">{fmt(results.stateTax)}</CardValue>
+          <CardValue className="text-[var(--color-warning)]">{fmt( results.stateTax )}</CardValue>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle>Effective Federal Rate</CardTitle>
           </CardHeader>
           <CardValue className="text-[var(--color-text-primary)]">
-            {pct(results.effectiveFederalRate)}
+            {pct( results.effectiveFederalRate )}
           </CardValue>
         </Card>
         <Card>
@@ -392,7 +392,7 @@ export default function TaxEstimatorPage() {
             <CardTitle>Effective State Rate</CardTitle>
           </CardHeader>
           <CardValue className="text-[var(--color-text-primary)]">
-            {pct(results.effectiveStateRate)}
+            {pct( results.effectiveStateRate )}
           </CardValue>
         </Card>
       </div>
@@ -421,28 +421,28 @@ export default function TaxEstimatorPage() {
                 { label: "Gross Pay", value: results.grossPay, color: "text-[var(--color-text-primary)]" },
                 { label: "401K Contribution", value: -results.contribution401k, color: "text-[var(--color-warning)]" },
                 { label: "Other Pre-tax Deductions", value: -results.otherPreTax, color: "text-[var(--color-text-muted)]" },
-                { label: "Standard Deduction", value: -(inputs.standardDeductionOverride != null && inputs.standardDeductionOverride > 0 ? inputs.standardDeductionOverride : inputs.filingStatus === "mfj" ? FEDERAL_STANDARD_DEDUCTION_MFJ : FEDERAL_STANDARD_DEDUCTION_SINGLE), color: "text-[var(--color-text-muted)]" },
+                { label: "Standard Deduction", value: -( inputs.standardDeductionOverride != null && inputs.standardDeductionOverride > 0 ? inputs.standardDeductionOverride : inputs.filingStatus === "mfj" ? FEDERAL_STANDARD_DEDUCTION_MFJ : FEDERAL_STANDARD_DEDUCTION_SINGLE ), color: "text-[var(--color-text-muted)]" },
                 { label: "Taxable Income (Federal)", value: results.federalTaxableIncome, color: "text-[var(--color-text-secondary)]" },
                 { label: "Federal Tax", value: -results.federalTax, color: "text-[var(--color-danger)]" },
                 { label: "State Tax (CA)", value: -results.stateTax, color: "text-[var(--color-warning)]" },
                 { label: "SDI (1.1%)", value: -results.sdi, color: "text-[var(--color-text-muted)]" },
                 { label: "Net Pay", value: results.netPay, color: "text-[var(--color-success)]", bold: true },
-              ].map((row) => (
+              ].map( ( row ) => (
                 <tr key={row.label}>
-                  <td className={`py-2.5 pr-4 ${row.bold ? "font-semibold text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)]"}`}>
+                  <td className={`py-2.5 pr-4 ${ row.bold ? "font-semibold text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)]" }`}>
                     {row.label}
                   </td>
-                  <td className={`py-2.5 pr-4 text-right ${row.color} ${row.bold ? "font-semibold" : ""}`}>
-                    {fmt(Math.abs(row.value))}
+                  <td className={`py-2.5 pr-4 text-right ${ row.color } ${ row.bold ? "font-semibold" : "" }`}>
+                    {fmt( Math.abs( row.value ) )}
                     {row.value < 0 && row.label !== "Net Pay" ? (
                       <span className="text-[var(--color-text-muted)] ml-0.5 text-xs">&nbsp;↓</span>
                     ) : null}
                   </td>
-                  <td className={`py-2.5 text-right ${row.color} ${row.bold ? "font-semibold" : ""}`}>
-                    {fmt(Math.abs(perPaycheck(row.value)))}
+                  <td className={`py-2.5 text-right ${ row.color } ${ row.bold ? "font-semibold" : "" }`}>
+                    {fmt( Math.abs( perPaycheck( row.value ) ) )}
                   </td>
                 </tr>
-              ))}
+              ) )}
             </tbody>
           </table>
         </div>
@@ -457,45 +457,45 @@ export default function TaxEstimatorPage() {
           </span>
         </CardHeader>
         <div className="space-y-3">
-          {federalBrackets.map((bracket, i) => {
+          {federalBrackets.map( ( bracket, i ) => {
             const isInfinite = bracket.max === Infinity;
             const reached = results.federalTaxableIncome > bracket.min;
             const taxInBracket = reached
-              ? (Math.min(results.federalTaxableIncome, isInfinite ? results.federalTaxableIncome : bracket.max) - bracket.min) *
-                bracket.rate
+              ? ( Math.min( results.federalTaxableIncome, isInfinite ? results.federalTaxableIncome : bracket.max ) - bracket.min ) *
+              bracket.rate
               : 0;
             const bracketWidth = isInfinite ? 0 : bracket.max - bracket.min;
             const fillPct = isInfinite
               ? reached ? 100 : 0
               : bracketWidth > 0
-              ? Math.min(
+                ? Math.min(
                   100,
-                  (Math.max(0, results.federalTaxableIncome - bracket.min) / bracketWidth) * 100
+                  ( Math.max( 0, results.federalTaxableIncome - bracket.min ) / bracketWidth ) * 100
                 )
-              : 0;
+                : 0;
 
             return (
-              <div key={i} className={`space-y-1 ${!reached ? "opacity-40" : ""}`}>
+              <div key={i} className={`space-y-1 ${ !reached ? "opacity-40" : "" }`}>
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-[var(--color-text-secondary)]">
-                    {(bracket.rate * 100).toFixed(0)}% —{" "}
+                    {( bracket.rate * 100 ).toFixed( 0 )}% —{" "}
                     {isInfinite
-                      ? `over ${fmt(bracket.min)}`
-                      : `${fmt(bracket.min)} – ${fmt(bracket.max)}`}
+                      ? `over ${ fmt( bracket.min ) }`
+                      : `${ fmt( bracket.min ) } – ${ fmt( bracket.max ) }`}
                   </span>
                   <span className="text-[var(--color-text-muted)]">
-                    {reached ? fmt(taxInBracket) : "—"}
+                    {reached ? fmt( taxInBracket ) : "—"}
                   </span>
                 </div>
                 <div className="h-2 rounded-full bg-[var(--color-bg-tertiary)] overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all duration-300 ${BRACKET_COLORS[i] ?? "bg-gray-500"}`}
-                    style={{ width: `${fillPct}%` }}
+                    className={`h-full rounded-full transition-all duration-300 ${ BRACKET_COLORS[i] ?? "bg-gray-500" }`}
+                    style={{ width: `${ fillPct }%` }}
                   />
                 </div>
               </div>
             );
-          })}
+          } )}
         </div>
       </Card>
 
@@ -510,26 +510,26 @@ export default function TaxEstimatorPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div className="space-y-1">
               <p className="text-xs text-[var(--color-text-secondary)]">YTD Federal Withheld</p>
-              <p className="text-lg font-semibold text-[var(--color-text-primary)]">{fmt(ytdFederal)}</p>
+              <p className="text-lg font-semibold text-[var(--color-text-primary)]">{fmt( ytdFederal )}</p>
             </div>
             <div className="space-y-1">
               <p className="text-xs text-[var(--color-text-secondary)]">YTD State Withheld</p>
-              <p className="text-lg font-semibold text-[var(--color-text-primary)]">{fmt(ytdState)}</p>
+              <p className="text-lg font-semibold text-[var(--color-text-primary)]">{fmt( ytdState )}</p>
             </div>
             <div className="space-y-1">
               <p className="text-xs text-[var(--color-text-secondary)]">YTD SDI</p>
-              <p className="text-lg font-semibold text-[var(--color-text-primary)]">{fmt(ytdSdi)}</p>
+              <p className="text-lg font-semibold text-[var(--color-text-primary)]">{fmt( ytdSdi )}</p>
             </div>
           </div>
 
           <div className="border-t border-[var(--color-border)] pt-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm text-[var(--color-text-secondary)]">Total YTD Withheld</span>
-              <span className="text-sm font-medium text-[var(--color-text-primary)]">{fmt(ytdTotal)}</span>
+              <span className="text-sm font-medium text-[var(--color-text-primary)]">{fmt( ytdTotal )}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-[var(--color-text-secondary)]">Projected Annual Total</span>
-              <span className="text-sm font-medium text-[var(--color-text-primary)]">{fmt(projectedTotal)}</span>
+              <span className="text-sm font-medium text-[var(--color-text-primary)]">{fmt( projectedTotal )}</span>
             </div>
             {overUnder !== null && (
               <div className="flex items-center justify-between rounded-lg px-3 py-2.5 border border-[var(--color-border)] bg-[var(--color-bg-tertiary)]">
@@ -544,20 +544,19 @@ export default function TaxEstimatorPage() {
                   {overUnder > 0
                     ? "Under-withheld — you may owe at filing"
                     : overUnder < 0
-                    ? "Over-withheld — expect a refund"
-                    : "On track"}
+                      ? "Over-withheld — expect a refund"
+                      : "On track"}
                 </span>
                 <span
-                  className={`text-sm font-semibold ${
-                    overUnder > 0
-                      ? "text-[var(--color-danger)]"
-                      : overUnder < 0
+                  className={`text-sm font-semibold ${ overUnder > 0
+                    ? "text-[var(--color-danger)]"
+                    : overUnder < 0
                       ? "text-[var(--color-success)]"
                       : "text-[var(--color-text-muted)]"
-                  }`}
+                    }`}
                 >
                   {overUnder > 0 ? "+" : ""}
-                  {fmt(overUnder)}
+                  {fmt( overUnder )}
                 </span>
               </div>
             )}
