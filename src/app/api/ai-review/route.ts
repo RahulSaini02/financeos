@@ -8,24 +8,46 @@ function fmt(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n)
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = await createServerSupabaseClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // ── Date ranges ──────────────────────────────────────────────
+    // ── Force param ───────────────────────────────────────────────
+    const url = new URL(request.url)
+    const force = url.searchParams.get('force') === 'true'
+
+    // ── Date ranges (15-day periods) ─────────────────────────────
     const now = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const dayOfMonth = now.getDate()
+    const isFirstHalf = dayOfMonth <= 15
 
-    // Last month
-    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
-    const lastMonthKey = `${lastMonthStart.getFullYear()}-${String(lastMonthStart.getMonth() + 1).padStart(2, '0')}-01`
-    const label = lastMonthStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    // Current period bounds
+    const periodStart = isFirstHalf
+      ? new Date(now.getFullYear(), now.getMonth(), 1)
+      : new Date(now.getFullYear(), now.getMonth(), 16)
+    const periodEnd = isFirstHalf
+      ? new Date(now.getFullYear(), now.getMonth(), 15)
+      : new Date(now.getFullYear(), now.getMonth() + 1, 0) // last day of month
 
-    // Month before last (for MoM comparison)
-    const priorStart = new Date(now.getFullYear(), now.getMonth() - 2, 1)
-    const priorEnd = new Date(now.getFullYear(), now.getMonth() - 1, 0)
+    // Cache key
+    const periodKey = isFirstHalf
+      ? `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`
+      : `${now.getFullYear()}-${pad(now.getMonth() + 1)}-16`
+
+    // Label for display
+    const endDay = periodEnd.getDate()
+    const label = isFirstHalf
+      ? `${periodStart.toLocaleDateString('en-US', { month: 'long' })} 1–15, ${now.getFullYear()}`
+      : `${periodStart.toLocaleDateString('en-US', { month: 'long' })} 16–${endDay}, ${now.getFullYear()}`
+
+    // Prior period bounds (the 15-day window before this one)
+    const priorPeriodEnd = new Date(periodStart.getTime() - 86400000)
+    const priorPeriodStart = isFirstHalf
+      ? new Date(now.getFullYear(), now.getMonth() - 1, 16) // second half of previous month
+      : new Date(now.getFullYear(), now.getMonth(), 1) // first half of this month
 
     // ── Cache check ───────────────────────────────────────────────
     const { data: cachedInsight } = await supabase
@@ -33,13 +55,13 @@ export async function GET() {
       .select('content')
       .eq('user_id', user.id)
       .eq('type', 'monthly_review')
-      .eq('month', lastMonthKey)
+      .eq('month', periodKey)
       .maybeSingle()
 
     let analysis = ''
     let isCached = false
 
-    if (cachedInsight) {
+    if (cachedInsight && !force) {
       analysis = cachedInsight.content
       isCached = true
     }
@@ -52,16 +74,16 @@ export async function GET() {
         .eq('user_id', user.id)
         .eq('import_status', 'confirmed')
         .eq('is_internal_transfer', false)
-        .gte('date', lastMonthStart.toISOString().split('T')[0])
-        .lte('date', lastMonthEnd.toISOString().split('T')[0]),
+        .gte('date', periodStart.toISOString().split('T')[0])
+        .lte('date', periodEnd.toISOString().split('T')[0]),
       supabase
         .from('transactions')
         .select('amount_usd, cr_dr, category:categories(name)')
         .eq('user_id', user.id)
         .eq('import_status', 'confirmed')
         .eq('is_internal_transfer', false)
-        .gte('date', priorStart.toISOString().split('T')[0])
-        .lte('date', priorEnd.toISOString().split('T')[0]),
+        .gte('date', priorPeriodStart.toISOString().split('T')[0])
+        .lte('date', priorPeriodEnd.toISOString().split('T')[0]),
     ])
 
     const transactions = lastMonthRes.data ?? []
@@ -110,57 +132,37 @@ export async function GET() {
 
     // ── LLM analysis (skip if cached) ────────────────────────────
     if (!isCached && process.env.ANTHROPIC_API_KEY) {
-      const topTxns = transactions
+      const top3 = topCategories
+        .slice(0, 3)
+        .map(c => `${c.name} ${fmt(c.amount)}`)
+        .join(', ')
+
+      const priorIncome = priorTransactions
+        .filter(t => t.cr_dr === 'credit')
+        .reduce((s, t) => s + Math.abs(t.amount_usd ?? 0), 0)
+      const priorExpenses = priorTransactions
         .filter(t => t.cr_dr === 'debit')
-        .sort((a, b) => Math.abs(b.amount_usd ?? 0) - Math.abs(a.amount_usd ?? 0))
-        .slice(0, 5)
+        .reduce((s, t) => s + Math.abs(t.amount_usd ?? 0), 0)
 
-      const categorySummaryLines = topCategories.map(c => {
-        let line = `- ${c.name}: ${fmt(c.amount)} (${c.count} txns, ${c.pctOfTotal.toFixed(1)}% of expenses)`
-        if (hasPriorMonth && c.prevAmount != null && c.changePct != null) {
-          const direction = c.changePct >= 0 ? 'up' : 'down'
-          line += ` — ${direction} ${Math.abs(c.changePct).toFixed(1)}% vs prior month (${fmt(c.prevAmount)})`
-        }
-        return line
-      }).join('\n')
-
-      const userMessage = `
-Analyze my spending for ${label}:
-
-## Summary
-- Income: ${fmt(income)}
-- Expenses: ${fmt(expenses)}
-- Net Cash Flow: ${fmt(income - expenses)}
+      const userMessage = `Review my last 15 days (${label}):
+- Income: ${fmt(income)}, Expenses: ${fmt(expenses)}, Net: ${fmt(income - expenses)}
+- Top categories: ${top3 || 'None'}
 - Transactions: ${transactions.length}
-
-## Top Spending Categories
-${categorySummaryLines || '- No spending data'}
-
-## Top Individual Transactions
-${topTxns.map(t => `- ${t.description}: ${fmt(Math.abs(t.amount_usd ?? 0))} on ${t.date}`).join('\n') || '- None'}
-${hasPriorMonth ? '' : '\n(No prior month data available — skip the Month-over-Month section.)'}
-`.trim()
+${hasPriorMonth ? `Prior 15 days: Income ${fmt(priorIncome)}, Expenses ${fmt(priorExpenses)}` : '(No prior period data)'}`
 
       const msg = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 900,
-        system: `You are FinanceOS, a personal finance analyst reviewing last month's spending.
+        max_tokens: 250,
+        system: `You are FinanceOS, a personal finance analyst. Write a brief TLDR review of the last 15 days.
 
-Structure your response with exactly these four sections using ## headers:
+Format your response as 3–4 bullet points only. No section headers. Keep total under 120 words.
 
-## TLDR
-(2–3 sentences: biggest takeaway, key number, one immediate action)
+• **Overall**: one sentence — income vs expenses, net cash flow, whether it was positive or negative
+• **Top Spend**: biggest spending category with dollar amount and brief context
+• **Trend**: one notable change vs prior period (use % or $ delta). Skip if no prior data.
+• **Action**: one specific, concrete recommendation based on the data
 
-## Key Highlights
-(3–5 bullet points: notable patterns, anything unusual, positive trends)
-
-## Category Breakdown
-(brief narrative on top 2–3 spending categories — context on why they matter)
-
-## Month-over-Month Changes
-(bullet points comparing to the prior month — highlight significant increases/decreases by %. Skip this section entirely if no prior month data is provided.)
-
-Be specific with dollar amounts. Keep total response under 400 words. No long paragraphs.`,
+Be direct and specific. Use bold for key numbers. No filler phrases.`,
         messages: [{ role: 'user', content: userMessage }],
       })
 
@@ -171,17 +173,17 @@ Be specific with dollar amounts. Keep total response under 400 words. No long pa
         user_id: user.id,
         type: 'monthly_review',
         content: analysis,
-        month: lastMonthKey,
+        month: periodKey,
         is_read: false,
       }, { onConflict: 'user_id,type,month' })
     } else if (!isCached) {
       // No API key — return a simple fallback
-      analysis = `**Summary**\nYou spent ${fmt(expenses)} against ${fmt(income)} income in ${label}, resulting in a ${income >= expenses ? 'positive' : 'negative'} cash flow of ${fmt(Math.abs(income - expenses))}.\n\n_AI analysis requires ANTHROPIC_API_KEY to be configured._`
+      analysis = `${income >= expenses ? 'Positive' : 'Negative'} cash flow of **${fmt(Math.abs(income - expenses))}** for ${label} — ${fmt(income)} income vs ${fmt(expenses)} expenses. Configure \`ANTHROPIC_API_KEY\` to enable full AI analysis.`
     }
 
     return NextResponse.json({
       label,
-      month: lastMonthKey,
+      month: periodKey,
       cached: isCached,
       summary: {
         income,

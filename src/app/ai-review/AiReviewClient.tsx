@@ -119,11 +119,11 @@ export default function AiReviewClient({ initialData }: { initialData: ReviewDat
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/ai-review");
+      const res = await fetch(force ? "/api/ai-review?force=true" : "/api/ai-review");
       if (!res.ok) throw new Error("Failed to load review");
       setData(await res.json());
     } catch (e) {
@@ -146,18 +146,18 @@ export default function AiReviewClient({ initialData }: { initialData: ReviewDat
       {/* ── Header ─────────────────────────────────────────────── */}
       <PageHeader
         title="AI Financial Review"
-        subtitle={loading && !data ? "Loading…" : (data?.label ?? "Last Month")}
+        subtitle={loading && !data ? "Loading…" : (data?.label ?? "Last 15 Days")}
         tooltip={
           <HelpModal
             title="AI Financial Review"
-            description="A monthly AI-powered analysis of your last month's spending. Auto-generated on the 1st of each month and cached for instant access."
+            description="A 15-day review cycle AI-powered analysis of your recent spending. Cached per period for instant access."
             sections={[
               {
                 heading: "How it works",
                 items: [
-                  "Automatically analyzes last month's spending on the 1st of each month",
-                  "Compares current month vs prior month to highlight meaningful changes",
-                  "Shows top spending categories ranked by amount with % of total spend",
+                  "Each month is split into two 15-day windows: day 1–15 and day 16–end",
+                  "Auto-generates a TLDR review for the current 15-day period",
+                  "Compares current period vs the prior 15-day window for trend context",
                   "Hit Refresh to regenerate with the latest data at any time",
                 ],
               },
@@ -166,7 +166,7 @@ export default function AiReviewClient({ initialData }: { initialData: ReviewDat
         }
       >
         <button
-          onClick={load}
+          onClick={() => load(true)}
           disabled={loading}
           className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors disabled:opacity-50"
         >

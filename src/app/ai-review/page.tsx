@@ -11,22 +11,41 @@ export default async function AiReviewPage() {
 
   try {
     const now = new Date();
-    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
-    const priorStart = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-    const priorEnd = new Date(now.getFullYear(), now.getMonth() - 1, 0);
-    const lastMonthKey = `${lastMonthStart.getFullYear()}-${String(lastMonthStart.getMonth() + 1).padStart(2, "0")}-01`;
-    const label = lastMonthStart.toLocaleDateString("en-US", {
-      month: "long",
-      year: "numeric",
-    });
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const dayOfMonth = now.getDate();
+    const isFirstHalf = dayOfMonth <= 15;
+
+    // Current period bounds
+    const periodStart = isFirstHalf
+      ? new Date(now.getFullYear(), now.getMonth(), 1)
+      : new Date(now.getFullYear(), now.getMonth(), 16);
+    const periodEnd = isFirstHalf
+      ? new Date(now.getFullYear(), now.getMonth(), 15)
+      : new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    // Cache key
+    const periodKey = isFirstHalf
+      ? `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`
+      : `${now.getFullYear()}-${pad(now.getMonth() + 1)}-16`;
+
+    // Label for display
+    const endDay = periodEnd.getDate();
+    const label = isFirstHalf
+      ? `${periodStart.toLocaleDateString("en-US", { month: "long" })} 1–15, ${now.getFullYear()}`
+      : `${periodStart.toLocaleDateString("en-US", { month: "long" })} 16–${endDay}, ${now.getFullYear()}`;
+
+    // Prior period bounds
+    const priorPeriodEnd = new Date(periodStart.getTime() - 86400000);
+    const priorPeriodStart = isFirstHalf
+      ? new Date(now.getFullYear(), now.getMonth() - 1, 16)
+      : new Date(now.getFullYear(), now.getMonth(), 1);
 
     const { data: cachedInsight } = await supabase
       .from("ai_insights")
       .select("content")
       .eq("user_id", user.id)
       .eq("type", "monthly_review")
-      .eq("month", lastMonthKey)
+      .eq("month", periodKey)
       .maybeSingle();
 
     const [lastMonthRes, priorMonthRes] = await Promise.all([
@@ -36,16 +55,16 @@ export default async function AiReviewPage() {
         .eq("user_id", user.id)
         .eq("import_status", "confirmed")
         .eq("is_internal_transfer", false)
-        .gte("date", lastMonthStart.toISOString().split("T")[0])
-        .lte("date", lastMonthEnd.toISOString().split("T")[0]),
+        .gte("date", periodStart.toISOString().split("T")[0])
+        .lte("date", periodEnd.toISOString().split("T")[0]),
       supabase
         .from("transactions")
         .select("amount_usd, cr_dr, category:categories(name)")
         .eq("user_id", user.id)
         .eq("import_status", "confirmed")
         .eq("is_internal_transfer", false)
-        .gte("date", priorStart.toISOString().split("T")[0])
-        .lte("date", priorEnd.toISOString().split("T")[0]),
+        .gte("date", priorPeriodStart.toISOString().split("T")[0])
+        .lte("date", priorPeriodEnd.toISOString().split("T")[0]),
     ]);
 
     const transactions = lastMonthRes.data ?? [];
@@ -98,7 +117,7 @@ export default async function AiReviewPage() {
 
     const initialData: ReviewData = {
       label,
-      month: lastMonthKey,
+      month: periodKey,
       cached: !!cachedInsight,
       hasPriorMonth,
       summary: {
