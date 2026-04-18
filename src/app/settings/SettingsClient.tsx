@@ -10,6 +10,7 @@ import { HelpModal } from "@/components/ui/help-modal";
 import { Button } from "@/components/ui/button";
 import { ALL_NAV_ITEMS, NAV_PREFS_KEY, getNavPrefs, type NavPref } from "@/components/ui/app-shell";
 import PromptsManager from "./PromptsManager";
+import { AI_MODELS, DEFAULT_AI_MODEL } from "@/lib/get-user-model";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -133,10 +134,12 @@ export default function SettingsClient({
   initialName,
   email,
   initialPrompts = [],
+  initialModel = DEFAULT_AI_MODEL,
 }: {
   initialName: string;
   email: string;
   initialPrompts?: InitialPrompt[];
+  initialModel?: string;
 }) {
   const router = useRouter();
   const supabase = createClient();
@@ -165,6 +168,11 @@ export default function SettingsClient({
   const [timezone, setTimezone] = useState<string>(() =>
     (typeof window !== "undefined" && localStorage.getItem("pref_timezone")) || "America/Los_Angeles"
   );
+
+  // ── AI model ──
+  const [aiModel, setAiModel] = useState(initialModel);
+  const [modelSaving, setModelSaving] = useState(false);
+  const [modelAlert, setModelAlert] = useState<InlineAlert | null>(null);
 
   // ── sidebar nav prefs ──
   const [navPrefs, setNavPrefs] = useState<NavPref[]>(() => getNavPrefs());
@@ -206,6 +214,51 @@ export default function SettingsClient({
   }
 
   // ── handlers ──────────────────────────────────────────────────────────────
+
+  async function handleSaveModel() {
+    setModelSaving(true);
+    setModelAlert(null);
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error("Not authenticated");
+
+      // Deactivate current active model preference (if any)
+      await supabase
+        .from("user_prompts")
+        .update({ is_active: false })
+        .eq("user_id", currentUser.id)
+        .eq("prompt_key", "ai_model")
+        .eq("is_active", true);
+
+      // Get next version number
+      const { data: maxRow } = await supabase
+        .from("user_prompts")
+        .select("version")
+        .eq("user_id", currentUser.id)
+        .eq("prompt_key", "ai_model")
+        .order("version", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const nextVersion = (maxRow?.version ?? 0) + 1;
+
+      const { error } = await supabase.from("user_prompts").insert({
+        user_id: currentUser.id,
+        prompt_key: "ai_model",
+        content: aiModel,
+        version: nextVersion,
+        is_active: true,
+      });
+
+      if (error) throw new Error(error.message);
+      setModelAlert({ kind: "success", message: "AI model preference saved." });
+      setTimeout(() => setModelAlert(null), 4000);
+    } catch (err) {
+      setModelAlert({ kind: "error", message: err instanceof Error ? err.message : "Failed to save." });
+    } finally {
+      setModelSaving(false);
+    }
+  }
 
   async function handleSaveProfile() {
     setProfileSaving(true);
@@ -582,6 +635,29 @@ export default function SettingsClient({
             Customize the AI prompts used throughout FinanceOS. Changes apply immediately to new AI generations.
           </p>
           <PromptsManager initialPrompts={initialPrompts} />
+        </Card>
+
+        {/* ── AI Model ──────────────────────────────────────────────────── */}
+        <Card>
+          <CardHeader>
+            <CardTitle>AI Model</CardTitle>
+          </CardHeader>
+          <p className="text-sm mb-4" style={{ color: "var(--color-text-secondary)" }}>
+            Choose the Claude model used for AI Review, chat, daily insights, and auto-categorization.
+            A more capable model gives richer analysis but uses more tokens.
+          </p>
+          <SelectField
+            label="Model"
+            value={aiModel}
+            onChange={setAiModel}
+            options={AI_MODELS.map((m) => ({ value: m.value, label: m.label }))}
+          />
+          {modelAlert && <Alert alert={modelAlert} />}
+          <div className="mt-4 flex justify-end">
+            <Button onClick={handleSaveModel} disabled={modelSaving} size="sm">
+              {modelSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save Model"}
+            </Button>
+          </div>
         </Card>
 
         {/* ── About ─────────────────────────────────────────────────────── */}

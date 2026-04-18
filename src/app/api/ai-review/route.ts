@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
 import { getUserPrompt } from '@/lib/get-user-prompt'
+import { getUserModel } from '@/lib/get-user-model'
 import { formatCurrency } from '@/lib/utils'
 import {
   getDefaultPeriodKey,
@@ -19,6 +20,8 @@ export async function GET(request: Request) {
     const supabase = await createServerSupabaseClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const aiModel = await getUserModel(supabase, user.id)
 
     const url = new URL(request.url)
     const force = url.searchParams.get('force') === 'true'
@@ -143,7 +146,7 @@ ${hasPriorMonth ? `Prior month: Income ${fmt(priorIncome)}, Expenses ${fmt(prior
       )
 
       const msg = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
+        model: aiModel,
         max_tokens: 250,
         system: reviewSystemPrompt,
         messages: [{ role: 'user', content: userMessage }],

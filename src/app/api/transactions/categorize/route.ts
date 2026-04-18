@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
 import { getUserPrompt } from '@/lib/get-user-prompt'
+import { getUserModel } from '@/lib/get-user-model'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -19,7 +20,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ categoryId: null }, { status: 200 })
     }
 
-    const body = await request.json()
+    const [aiModel, body] = await Promise.all([
+      getUserModel(supabase, user.id),
+      request.json(),
+    ])
     const { description, createIfMissing = false } = body as {
       description: string
       createIfMissing?: boolean
@@ -58,7 +62,7 @@ No other text.`
     }
 
     const msg = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: aiModel,
       max_tokens: 80,
       messages: [{ role: 'user', content: prompt }],
     })

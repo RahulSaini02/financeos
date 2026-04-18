@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
 import { getUserPrompt } from '@/lib/get-user-prompt'
+import { getUserModel } from '@/lib/get-user-model'
 import { formatCurrency } from '@/lib/utils'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -17,6 +18,8 @@ export async function POST(request: NextRequest) {
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const aiModel = await getUserModel(supabase, user.id)
 
     const body = await request.json()
     const { question } = body as { question: string }
@@ -140,7 +143,7 @@ ${savingsGoals.length === 0 ? '- No savings goals' : savingsGoals.map(g => `- ${
 
     // Call Claude
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: aiModel,
       max_tokens: 1024,
       system: chatSystemPrompt,
       messages: [

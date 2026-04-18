@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { getUserModel } from '@/lib/get-user-model'
 import { randomUUID } from 'crypto'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -105,7 +106,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json()
+    const [aiModel, body] = await Promise.all([
+      getUserModel(supabase, user.id),
+      request.json(),
+    ])
     const {
       account_id,
       category_id,
@@ -258,7 +262,7 @@ export async function POST(request: NextRequest) {
         if (cats && cats.length > 0) {
           const catList = cats.map(c => `${c.id} | ${c.name} (${c.type})`).join('\n')
           const msg = await anthropic.messages.create({
-            model: 'claude-haiku-4-5-20251001',
+            model: aiModel,
             max_tokens: 100,
             messages: [{
               role: 'user',

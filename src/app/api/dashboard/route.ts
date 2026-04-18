@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
 import { getUserPrompt } from '@/lib/get-user-prompt'
+import { getUserModel } from '@/lib/get-user-model'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -16,6 +17,8 @@ export async function GET() {
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const aiModel = await getUserModel(supabase, user.id)
 
     const now = new Date()
     const firstDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
@@ -208,7 +211,7 @@ export async function GET() {
           .replaceAll('{{bills_count}}', String(bills.length))
 
         const message = await anthropic.messages.create({
-          model: 'claude-haiku-4-5-20251001',
+          model: aiModel,
           max_tokens: 150,
           messages: [{ role: 'user', content: prompt }],
         })
@@ -264,7 +267,7 @@ export async function GET() {
               .replaceAll('{{top_categories}}', topCats || 'none')
 
             const summaryMsg = await anthropic.messages.create({
-              model: 'claude-haiku-4-5-20251001',
+              model: aiModel,
               max_tokens: 200,
               messages: [{ role: 'user', content: summaryPrompt }],
             })
