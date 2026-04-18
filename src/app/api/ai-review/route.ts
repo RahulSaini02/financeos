@@ -25,7 +25,7 @@ export async function GET(request: Request) {
 
     // Accept an explicit period key; validate format; fall back to the last completed period
     const periodParam = url.searchParams.get('period') ?? ''
-    const isValidKey = /^\d{4}-\d{2}-(01|16)$/.test(periodParam)
+    const isValidKey = /^\d{4}-\d{2}-01$/.test(periodParam)
     const now = new Date()
     const periodKey = isValidKey ? periodParam : getDefaultPeriodKey(now)
 
@@ -129,11 +129,11 @@ export async function GET(request: Request) {
         .filter(t => t.cr_dr === 'debit')
         .reduce((s, t) => s + Math.abs(t.amount_usd ?? 0), 0)
 
-      const userMessage = `Review my last 15 days (${label}):
+      const userMessage = `Review my last month (${label}):
 - Income: ${fmt(income)}, Expenses: ${fmt(expenses)}, Net: ${fmt(income - expenses)}
 - Top categories: ${top3 || 'None'}
 - Transactions: ${transactions.length}
-${hasPriorMonth ? `Prior 15 days: Income ${fmt(priorIncome)}, Expenses ${fmt(priorExpenses)}` : '(No prior period data)'}`
+${hasPriorMonth ? `Prior month: Income ${fmt(priorIncome)}, Expenses ${fmt(priorExpenses)}` : '(No prior month data)'}`
 
       const reviewSystemPrompt = await getUserPrompt(
         supabase,

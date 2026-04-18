@@ -174,19 +174,18 @@ export default function AiReviewClient({ initialData }: { initialData: ReviewDat
       {/* ── Header ─────────────────────────────────────────────── */}
       <PageHeader
         title="AI Financial Review"
-        subtitle={loading && !data ? "Loading…" : (data?.label ?? "Last 15 Days")}
+        subtitle={loading && !data ? "Loading…" : (data?.label ?? "Last Month")}
         tooltip={
           <HelpModal
             title="AI Financial Review"
-            description="A 15-day review cycle AI-powered analysis of your recent spending. Cached per period for instant access."
+            description="A monthly AI-powered analysis of your spending. Cached per month for instant access."
             sections={[
               {
                 heading: "How it works",
                 items: [
-                  "Each month is split into two 15-day windows: day 1–15 and day 16–end",
-                  "Always shows the most recently completed period",
-                  "Use the period selector to browse past reviews",
-                  "Compares each period vs the prior 15-day window for trend context",
+                  "Always shows the most recently completed full month",
+                  "Use the month selector to browse past reviews",
+                  "Compares the selected month vs the prior month for trend context",
                   "Hit Refresh to regenerate with the latest data at any time",
                 ],
               },
@@ -204,7 +203,7 @@ export default function AiReviewClient({ initialData }: { initialData: ReviewDat
           >
             {periodOptions.map((key, i) => (
               <option key={key} value={key}>
-                {periodInfo(key).label}{i === 0 ? " (latest)" : ""}
+                {periodInfo(key).label}{i === 0 ? " (current)" : ""}
               </option>
             ))}
           </select>
