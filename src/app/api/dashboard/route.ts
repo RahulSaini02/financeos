@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
+import { getUserPrompt } from '@/lib/get-user-prompt'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -191,13 +193,20 @@ export async function GET() {
       try {
         const savingsRate = monthly_income > 0 ? ((monthly_income - monthly_expenses) / monthly_income * 100).toFixed(1) : '0'
 
-        const prompt = `You are a personal finance assistant. Generate a single concise daily financial insight (2-3 sentences max) based on this data:
-- Net worth: $${net_worth.toFixed(2)}
-- This month income: $${monthly_income.toFixed(2)}, expenses: $${monthly_expenses.toFixed(2)}, savings rate: ${savingsRate}%
-- Flagged transactions: ${flagged_count}
-- Upcoming bills in 7 days: ${bills.length}
+        const dailyPromptTemplate = await getUserPrompt(
+          supabase,
+          user.id,
+          'daily_insight',
+          DEFAULT_PROMPTS.daily_insight.content,
+        )
 
-Be specific, actionable, and encouraging. Respond in 2–3 sentences using markdown for emphasis — bold key numbers and terms. Do not start with "Based on" or "Your data shows".`
+        const prompt = dailyPromptTemplate
+          .replace('{{net_worth}}', net_worth.toFixed(2))
+          .replace('{{monthly_income}}', monthly_income.toFixed(2))
+          .replace('{{monthly_expenses}}', monthly_expenses.toFixed(2))
+          .replace('{{savings_rate}}', savingsRate)
+          .replace('{{flagged_count}}', String(flagged_count))
+          .replace('{{bills_count}}', String(bills.length))
 
         const message = await anthropic.messages.create({
           model: 'claude-haiku-4-5-20251001',
@@ -241,10 +250,19 @@ Be specific, actionable, and encouraging. Respond in 2–3 sentences using markd
             const prevSavingsRate = prevIncome > 0 ? ((prevIncome - prevExpenses) / prevIncome * 100).toFixed(1) : '0'
             const topCats = 'See transactions page for breakdown'
 
-            const summaryPrompt = `Generate a concise monthly financial summary for ${prevMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}. Data:
-- Income: $${prevIncome.toFixed(2)}, Expenses: $${prevExpenses.toFixed(2)}, Savings rate: ${prevSavingsRate}%
-- Top spending: ${topCats || 'none'}
-Write 3-4 sentences covering performance, top spending areas, and one actionable suggestion. Use markdown for emphasis — bold key numbers and dollar amounts. You may use short bullet points if listing multiple items.`
+            const monthlyPromptTemplate = await getUserPrompt(
+              supabase,
+              user.id,
+              'monthly_summary',
+              DEFAULT_PROMPTS.monthly_summary.content,
+            )
+
+            const summaryPrompt = monthlyPromptTemplate
+              .replace('{{month_label}}', prevMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }))
+              .replace('{{prev_income}}', prevIncome.toFixed(2))
+              .replace('{{prev_expenses}}', prevExpenses.toFixed(2))
+              .replace('{{prev_savings_rate}}', prevSavingsRate)
+              .replace('{{top_categories}}', topCats || 'none')
 
             const summaryMsg = await anthropic.messages.create({
               model: 'claude-haiku-4-5-20251001',

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
+import { getUserPrompt } from '@/lib/get-user-prompt'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -150,19 +152,17 @@ export async function GET(request: Request) {
 - Transactions: ${transactions.length}
 ${hasPriorMonth ? `Prior 15 days: Income ${fmt(priorIncome)}, Expenses ${fmt(priorExpenses)}` : '(No prior period data)'}`
 
+      const reviewSystemPrompt = await getUserPrompt(
+        supabase,
+        user.id,
+        'ai_review',
+        DEFAULT_PROMPTS.ai_review.content,
+      )
+
       const msg = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 250,
-        system: `You are FinanceOS, a personal finance analyst. Write a brief TLDR review of the last 15 days.
-
-Format your response as 3–4 bullet points only. No section headers. Keep total under 120 words.
-
-• **Overall**: one sentence — income vs expenses, net cash flow, whether it was positive or negative
-• **Top Spend**: biggest spending category with dollar amount and brief context
-• **Trend**: one notable change vs prior period (use % or $ delta). Skip if no prior data.
-• **Action**: one specific, concrete recommendation based on the data
-
-Be direct and specific. Use bold for key numbers. No filler phrases.`,
+        system: reviewSystemPrompt,
         messages: [{ role: 'user', content: userMessage }],
       })
 

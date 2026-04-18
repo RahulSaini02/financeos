@@ -12,5 +12,24 @@ export default async function SettingsPage() {
   const initialName: string = user.user_metadata?.full_name ?? "";
   const email: string = user.email ?? "";
 
-  return <SettingsClient initialName={initialName} email={email} />;
+  // Pre-fetch user's active custom prompts for hydration
+  const { data: promptsData } = await supabase
+    .from("user_prompts")
+    .select("prompt_key, content, version")
+    .eq("user_id", user.id)
+    .eq("is_active", true);
+
+  const initialPrompts = (promptsData ?? []).map((p) => ({
+    prompt_key: p.prompt_key as string,
+    content: p.content as string,
+    version: p.version as number,
+  }));
+
+  return (
+    <SettingsClient
+      initialName={initialName}
+      email={email}
+      initialPrompts={initialPrompts}
+    />
+  );
 }

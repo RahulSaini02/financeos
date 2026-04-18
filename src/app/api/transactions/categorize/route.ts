@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
+import { getUserPrompt } from '@/lib/get-user-prompt'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -33,20 +35,22 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .order('name')
 
+    // Fetch user's custom categorize prompt template (or fall back to default)
+    const categorizeTemplate = await getUserPrompt(
+      supabase,
+      user.id,
+      'auto_categorize',
+      DEFAULT_PROMPTS.auto_categorize.content,
+    )
+
     let prompt: string
     if (cats && cats.length > 0) {
       const catList = cats.map((c) => `${c.id} | ${c.name} (${c.type})`).join('\n')
-      prompt = `Categorize this transaction merchant/description: "${description.trim()}"
-
-Available categories:
-${catList}
-
-Reply with ONLY one of:
-- The category ID (UUID) that best fits
-- "new:<CategoryName>|<type>" if none fit well, where type is "expense", "income", or "transfer"
-
-No other text.`
+      prompt = categorizeTemplate
+        .replace('{{description}}', description.trim())
+        .replace('{{category_list}}', catList)
     } else {
+      // No categories — fall back to a simple suggestion prompt
       prompt = `Suggest a category for this transaction: "${description.trim()}"
 
 Reply with ONLY: "new:<CategoryName>|<type>" where type is "expense", "income", or "transfer".

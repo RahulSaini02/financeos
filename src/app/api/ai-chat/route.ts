@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
+import { getUserPrompt } from '@/lib/get-user-prompt'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -132,13 +134,20 @@ ${activeSubs.length === 0 ? '- No active subscriptions' : `- Total: ${fmt(monthl
 ${savingsGoals.length === 0 ? '- No savings goals' : savingsGoals.map(g => `- ${g.name}: ${fmt(g.current_amount)} / ${fmt(g.target_amount)} (${g.status})`).join('\n')}
 `.trim()
 
+    // Fetch user's custom chat system prompt (or fall back to default)
+    const chatPromptTemplate = await getUserPrompt(
+      supabase,
+      user.id,
+      'ai_chat',
+      DEFAULT_PROMPTS.ai_chat.content,
+    )
+    const chatSystemPrompt = chatPromptTemplate.replace('{{context}}', context)
+
     // Call Claude
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
-      system: `You are FinanceOS, a personal finance assistant. You have access to the user's real financial data below. Answer questions concisely and helpfully using this data. Format numbers as currency when relevant. Be specific with the actual numbers. Keep answers under 200 words unless a detailed breakdown is explicitly requested. Use markdown formatting in your responses — bold for key numbers and terms, bullet points for lists. Respond in markdown.
-
-${context}`,
+      system: chatSystemPrompt,
       messages: [
         { role: 'user', content: question },
       ],

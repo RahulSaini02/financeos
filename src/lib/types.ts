@@ -274,6 +274,34 @@ export interface AiInsight {
   created_at: string
 }
 
+export interface UserPrompt {
+  id: string
+  user_id: string
+  prompt_key: string
+  content: string
+  version: number
+  is_active: boolean
+  version_label: string | null
+  created_at: string
+}
+
+export interface UserPromptVersion {
+  id: string
+  version: number
+  version_label: string | null
+  created_at: string
+}
+
+export interface UserPromptWithMeta {
+  key: string
+  label: string
+  description: string
+  content: string
+  version: number
+  isDefault: boolean
+  versions?: UserPromptVersion[]
+}
+
 export interface BudgetWithActual extends Budget {
   actual_spend: number
   remaining: number

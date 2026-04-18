@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
 import { Button } from "@/components/ui/button";
 import { ALL_NAV_ITEMS, NAV_PREFS_KEY, getNavPrefs, type NavPref } from "@/components/ui/app-shell";
+import PromptsManager from "./PromptsManager";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -122,12 +123,20 @@ function Divider() {
 
 // ─── component ────────────────────────────────────────────────────────────────
 
+interface InitialPrompt {
+  prompt_key: string;
+  content: string;
+  version: number;
+}
+
 export default function SettingsClient({
   initialName,
   email,
+  initialPrompts = [],
 }: {
   initialName: string;
   email: string;
+  initialPrompts?: InitialPrompt[];
 }) {
   const router = useRouter();
   const supabase = createClient();
@@ -569,6 +578,17 @@ export default function SettingsClient({
               Reset to defaults
             </button>
           </div>
+        </Card>
+
+        {/* ── AI Prompts ────────────────────────────────────────────────── */}
+        <Card>
+          <CardHeader>
+            <CardTitle>AI Prompts</CardTitle>
+          </CardHeader>
+          <p className="text-sm mb-4" style={{ color: "var(--color-text-secondary)" }}>
+            Customize the AI prompts used throughout FinanceOS. Changes apply immediately to new AI generations.
+          </p>
+          <PromptsManager initialPrompts={initialPrompts} />
         </Card>
 
         {/* ── About ─────────────────────────────────────────────────────── */}
