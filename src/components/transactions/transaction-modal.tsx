@@ -65,26 +65,35 @@ export function TransactionModal({
     setIsAISuggested(false);
   }, [txn]);
 
-  // Debounced auto-categorization — triggers when description changes and no category is selected
+  // Debounced auto-categorization — triggers when description changes
   useEffect(() => {
-    // Skip for edits (existing transaction), transfers, or if user already set a category manually
-    if (txn || modeRef.current === "transfer" || categoryManuallySet.current || categoryIdRef.current) return;
+    // Skip for transfers or if user manually picked a category this session
+    if (modeRef.current === "transfer" || categoryManuallySet.current) return;
     if (!description || description.trim().length < 2) return;
 
     const timer = setTimeout(async () => {
-      // Re-check guards at fire time using refs (not stale closure values)
-      if (modeRef.current === "transfer" || categoryManuallySet.current || categoryIdRef.current) return;
+      if (modeRef.current === "transfer" || categoryManuallySet.current) return;
       setIsCategorizingAI(true);
       try {
         const res = await fetch("/api/transactions/categorize", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ description: description.trim() }),
+          body: JSON.stringify({ description: description.trim(), createIfMissing: true }),
         });
         if (res.ok) {
-          const data = await res.json() as { categoryId: string | null };
-          // Double-check: only apply if user hasn't set a category in the meantime
+          const data = await res.json() as {
+            categoryId: string | null;
+            newCategory?: { id: string; name: string; type: string };
+          };
           if (data.categoryId && !categoryManuallySet.current) {
+            // If a brand-new category was created, add it to the local list
+            if (data.newCategory) {
+              setCategories((prev) =>
+                prev.some((c) => c.id === data.newCategory!.id)
+                  ? prev
+                  : [...prev, data.newCategory as Category]
+              );
+            }
             setCategoryId(data.categoryId);
             setIsAISuggested(true);
           }
@@ -97,7 +106,7 @@ export function TransactionModal({
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [description, txn]);
+  }, [description]);
 
   // Auto-detect transfer when a transfer-type category is selected
   function handleCategoryChange(newCategoryId: string) {

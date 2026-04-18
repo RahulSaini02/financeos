@@ -183,6 +183,20 @@ export async function GET(request: NextRequest) {
         continue
       }
 
+      // Update account balance
+      const { data: acct } = await supabase
+        .from('accounts')
+        .select('current_balance')
+        .eq('id', rule.account_id)
+        .single()
+      if (acct) {
+        const delta = rule.cr_dr === 'credit' ? rule.amount_usd : -rule.amount_usd
+        await supabase
+          .from('accounts')
+          .update({ current_balance: (acct.current_balance ?? 0) + delta })
+          .eq('id', rule.account_id)
+      }
+
       // Advance next_due
       const nextDue = advanceDate(rule.next_due, rule.frequency, rule.day_of_month)
       await supabase

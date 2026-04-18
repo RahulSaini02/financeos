@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
@@ -26,6 +26,18 @@ import {
   Gift,
   Camera,
   Dumbbell,
+  PiggyBank,
+  Wallet,
+  ShoppingBag,
+  Coffee,
+  Music,
+  Baby,
+  Diamond,
+  Briefcase,
+  Laptop,
+  Bike,
+  Umbrella,
+  Trees,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
@@ -55,6 +67,18 @@ const ICON_OPTIONS = [
   { value: "gift", label: "Gift" },
   { value: "camera", label: "Electronics" },
   { value: "dumbbell", label: "Fitness" },
+  { value: "piggy-bank", label: "Savings" },
+  { value: "wallet", label: "Wallet" },
+  { value: "shopping-bag", label: "Shopping" },
+  { value: "coffee", label: "Lifestyle" },
+  { value: "music", label: "Entertainment" },
+  { value: "baby", label: "Baby" },
+  { value: "diamond", label: "Wedding/Ring" },
+  { value: "briefcase", label: "Business" },
+  { value: "laptop", label: "Tech" },
+  { value: "bike", label: "Cycling" },
+  { value: "umbrella", label: "Rainy Day" },
+  { value: "trees", label: "Outdoor" },
 ];
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -66,11 +90,28 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   gift: Gift,
   camera: Camera,
   dumbbell: Dumbbell,
+  "piggy-bank": PiggyBank,
+  wallet: Wallet,
+  "shopping-bag": ShoppingBag,
+  coffee: Coffee,
+  music: Music,
+  baby: Baby,
+  diamond: Diamond,
+  briefcase: Briefcase,
+  laptop: Laptop,
+  bike: Bike,
+  umbrella: Umbrella,
+  trees: Trees,
 };
 
 function getIconComponent(iconName: string | null) {
   const Icon = (iconName && ICON_MAP[iconName]) ? ICON_MAP[iconName] : Target;
   return <Icon className="h-5 w-5" />;
+}
+
+function getIconComponentSm(iconName: string | null) {
+  const Icon = (iconName && ICON_MAP[iconName]) ? ICON_MAP[iconName] : Target;
+  return <Icon className="h-4 w-4" />;
 }
 
 function statusBadge(status: GoalStatus) {
@@ -95,6 +136,47 @@ function statusBadge(status: GoalStatus) {
       <CheckCircle2 className="h-3 w-3" />
       Completed
     </span>
+  );
+}
+
+// Visual icon grid used in both the modal and the card popover
+function IconGrid({
+  selected,
+  onSelect,
+  compact = false,
+}: {
+  selected: string;
+  onSelect: (value: string) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-4 gap-1.5">
+      {ICON_OPTIONS.map((opt) => {
+        const isSelected = selected === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onSelect(opt.value)}
+            title={opt.label}
+            className={`flex flex-col items-center justify-center gap-1 rounded-lg border transition-colors ${
+              compact ? "h-10 w-10 p-0" : "h-14 w-full p-1"
+            } ${
+              isSelected
+                ? "border-[var(--color-accent)] bg-[var(--color-accent)]/15 text-[var(--color-accent)]"
+                : "border-[var(--color-border)] bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:border-[var(--color-accent)]/50 hover:bg-[var(--color-accent)]/5 hover:text-[var(--color-accent)]"
+            }`}
+          >
+            {compact ? getIconComponentSm(opt.value) : getIconComponent(opt.value)}
+            {!compact && (
+              <span className="text-[10px] leading-tight text-center text-[var(--color-text-muted)] truncate w-full px-0.5">
+                {opt.label}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -192,7 +274,7 @@ function SavingsGoalModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-6 shadow-xl">
+      <div className="relative z-10 w-full max-w-md rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-6 shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-semibold">
             {editingGoal ? "Edit Savings Goal" : "Add Savings Goal"}
@@ -280,49 +362,37 @@ function SavingsGoalModal({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-                Icon
-              </label>
-              <select
-                value={form.icon}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    icon: e.target.value,
-                  }))
-                }
-                className={inputClass}
-              >
-                {ICON_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-                Status
-              </label>
-              <select
-                value={form.status}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    status: e.target.value as GoalStatus,
-                  }))
-                }
-                className={inputClass}
-              >
-                {GOAL_STATUS_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+          {/* Icon picker — visual grid */}
+          <div>
+            <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
+              Icon
+            </label>
+            <IconGrid
+              selected={form.icon}
+              onSelect={(value) => setForm((f) => ({ ...f, icon: value }))}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
+              Status
+            </label>
+            <select
+              value={form.status}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  status: e.target.value as GoalStatus,
+                }))
+              }
+              className={inputClass}
+            >
+              {GOAL_STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -379,6 +449,74 @@ function SavingsGoalModal({
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+// Floating icon picker popover attached to a goal card
+function GoalIconPopover({
+  goalId,
+  currentIcon,
+  onIconSaved,
+}: {
+  goalId: string;
+  currentIcon: string | null;
+  onIconSaved: (goalId: string, newIcon: string) => void;
+}) {
+  const supabase = createClient();
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const handleSelect = async (value: string) => {
+    setSaving(true);
+    const { error } = await supabase
+      .from("savings_goals")
+      .update({ icon: value })
+      .eq("id", goalId);
+    setSaving(false);
+    if (!error) {
+      onIconSaved(goalId, value);
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title="Change icon"
+        className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--color-accent)]/10 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/20 transition-colors"
+      >
+        {saving ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          getIconComponent(currentIcon)
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-12 z-50 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-2 shadow-xl w-[11rem]">
+          <IconGrid
+            selected={currentIcon ?? "house"}
+            onSelect={handleSelect}
+            compact
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -444,9 +582,19 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
     loadGoals();
   };
 
+  // Update icon in local state after quick-pick save
+  const handleIconSaved = (goalId: string, newIcon: string) => {
+    setGoals((prev) =>
+      prev.map((g) => (g.id === goalId ? { ...g, icon: newIcon } : g))
+    );
+  };
+
   const activeGoals = goals.filter((g) => g.status === "active");
   const totalTarget = activeGoals.reduce((sum, g) => sum + g.target_amount, 0);
-  const totalCurrent = activeGoals.reduce((sum, g) => sum + g.current_amount, 0);
+  const totalCurrent = activeGoals.reduce((sum, g) => {
+    const linked = g.linked_account_id ? accounts.find((a) => a.id === g.linked_account_id) : null;
+    return sum + (linked ? linked.current_balance : g.current_amount);
+  }, 0);
   const overallProgress = totalTarget > 0 ? (totalCurrent / totalTarget) * 100 : 0;
   const totalMonthlyContribution = activeGoals.reduce(
     (sum, g) => sum + g.monthly_contribution,
@@ -607,7 +755,9 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
             const linkedAccount = goal.linked_account_id
               ? accounts.find((a) => a.id === goal.linked_account_id)
               : null;
-            const effectiveCurrent = goal.current_amount;
+            const effectiveCurrent = linkedAccount
+              ? linkedAccount.current_balance
+              : goal.current_amount;
             const progress = goal.target_amount > 0
               ? (effectiveCurrent / goal.target_amount) * 100
               : 0;
@@ -624,9 +774,11 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--color-accent)]/10 text-[var(--color-accent)]">
-                      {getIconComponent(goal.icon)}
-                    </div>
+                    <GoalIconPopover
+                      goalId={goal.id}
+                      currentIcon={goal.icon}
+                      onIconSaved={handleIconSaved}
+                    />
                     <div>
                       <h3 className="text-base font-semibold text-[var(--color-text-primary)]">
                         {goal.name}

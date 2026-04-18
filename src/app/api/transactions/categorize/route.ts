@@ -18,7 +18,10 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { description } = body as { description: string }
+    const { description, createIfMissing = false } = body as {
+      description: string
+      createIfMissing?: boolean
+    }
 
     if (!description || typeof description !== 'string' || description.trim().length < 2) {
       return NextResponse.json({ categoryId: null }, { status: 200 })
@@ -30,28 +33,63 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .order('name')
 
-    if (!cats || cats.length === 0) {
-      return NextResponse.json({ categoryId: null }, { status: 200 })
-    }
+    let prompt: string
+    if (cats && cats.length > 0) {
+      const catList = cats.map((c) => `${c.id} | ${c.name} (${c.type})`).join('\n')
+      prompt = `Categorize this transaction merchant/description: "${description.trim()}"
 
-    const catList = cats.map((c) => `${c.id} | ${c.name} (${c.type})`).join('\n')
+Available categories:
+${catList}
+
+Reply with ONLY one of:
+- The category ID (UUID) that best fits
+- "new:<CategoryName>|<type>" if none fit well, where type is "expense", "income", or "transfer"
+
+No other text.`
+    } else {
+      prompt = `Suggest a category for this transaction: "${description.trim()}"
+
+Reply with ONLY: "new:<CategoryName>|<type>" where type is "expense", "income", or "transfer".
+No other text.`
+    }
 
     const msg = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 80,
-      messages: [
-        {
-          role: 'user',
-          content: `Categorize this transaction merchant/description: "${description.trim()}"\n\nAvailable categories:\n${catList}\n\nReply with ONLY the category ID (UUID) that best fits. If none fit well, reply "none". No other text.`,
-        },
-      ],
+      messages: [{ role: 'user', content: prompt }],
     })
 
-    const reply =
-      msg.content[0].type === 'text' ? msg.content[0].text.trim() : 'none'
-    const suggestedId = reply.split('|')[0].trim()
+    const reply = msg.content[0].type === 'text' ? msg.content[0].text.trim() : 'none'
 
-    if (suggestedId !== 'none' && cats.some((c) => c.id === suggestedId)) {
+    // AI suggested a new category
+    if (reply.startsWith('new:') && createIfMissing) {
+      const rest = reply.slice(4)
+      const [rawName, rawType] = rest.split('|').map((s) => s.trim())
+      const name = rawName?.trim()
+      const validTypes = ['expense', 'income', 'transfer'] as const
+      type CategoryType = typeof validTypes[number]
+      const type: CategoryType = validTypes.includes(rawType?.toLowerCase() as CategoryType)
+        ? (rawType.toLowerCase() as CategoryType)
+        : 'expense'
+
+      if (!name) return NextResponse.json({ categoryId: null }, { status: 200 })
+
+      const { data: newCat, error: createErr } = await supabase
+        .from('categories')
+        .insert({ user_id: user.id, name, type })
+        .select()
+        .single()
+
+      if (createErr || !newCat) {
+        return NextResponse.json({ categoryId: null }, { status: 200 })
+      }
+
+      return NextResponse.json({ categoryId: newCat.id, newCategory: newCat }, { status: 200 })
+    }
+
+    // AI returned an existing category ID
+    const suggestedId = reply.split('|')[0].trim()
+    if (suggestedId !== 'none' && cats?.some((c) => c.id === suggestedId)) {
       return NextResponse.json({ categoryId: suggestedId }, { status: 200 })
     }
 

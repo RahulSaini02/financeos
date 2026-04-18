@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Eye, EyeOff, ChevronUp, ChevronDown, RotateCcw } from "lucide-react";
+import { Loader2, Eye, EyeOff, GripVertical, RotateCcw } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
@@ -182,14 +182,14 @@ export default function SettingsClient({
     });
   }
 
-  function moveNavItem(href: string, dir: -1 | 1) {
+  const dragIndexRef = useRef<number | null>(null);
+
+  function reorderNavItems(fromIdx: number, toIdx: number) {
+    if (fromIdx === toIdx) return;
     setNavPrefs((prev) => {
-      const idx = prev.findIndex((p) => p.href === href);
-      if (idx < 0) return prev;
-      const swapIdx = idx + dir;
-      if (swapIdx < 0 || swapIdx >= prev.length) return prev;
       const next = [...prev];
-      [next[idx], next[swapIdx]] = [next[swapIdx], next[idx]];
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
       saveNavPrefs(next);
       return next;
     });
@@ -508,45 +508,41 @@ export default function SettingsClient({
               return (
                 <div
                   key={pref.href}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
+                  draggable
+                  onDragStart={() => { dragIndexRef.current = idx; }}
+                  onDragOver={(e) => { e.preventDefault(); }}
+                  onDrop={() => {
+                    if (dragIndexRef.current !== null) {
+                      reorderNavItems(dragIndexRef.current, idx);
+                      dragIndexRef.current = null;
+                    }
+                  }}
+                  onDragEnd={() => { dragIndexRef.current = null; }}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors cursor-default select-none"
                   style={{
                     background: pref.visible ? "var(--color-bg-tertiary)" : "transparent",
                     opacity: pref.visible ? 1 : 0.5,
                   }}
                 >
+                  <GripVertical
+                    className="h-4 w-4 shrink-0 cursor-grab active:cursor-grabbing"
+                    style={{ color: "var(--color-text-muted)" }}
+                  />
                   <Icon className="h-4 w-4 shrink-0" style={{ color: "var(--color-text-muted)" }} />
                   <span className="flex-1 text-sm" style={{ color: "var(--color-text-primary)" }}>
                     {item.label}
                   </span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => moveNavItem(pref.href, -1)}
-                      disabled={idx === 0}
-                      className="p-1 rounded transition-colors disabled:opacity-20 hover:bg-[var(--color-bg-secondary)]"
-                      aria-label="Move up"
-                    >
-                      <ChevronUp className="h-3.5 w-3.5" style={{ color: "var(--color-text-muted)" }} />
-                    </button>
-                    <button
-                      onClick={() => moveNavItem(pref.href, 1)}
-                      disabled={idx === navPrefs.length - 1}
-                      className="p-1 rounded transition-colors disabled:opacity-20 hover:bg-[var(--color-bg-secondary)]"
-                      aria-label="Move down"
-                    >
-                      <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--color-text-muted)" }} />
-                    </button>
-                    <button
-                      onClick={() => toggleNavVisible(pref.href)}
-                      className="p-1 rounded transition-colors hover:bg-[var(--color-bg-secondary)]"
-                      aria-label={pref.visible ? "Hide" : "Show"}
-                    >
-                      {pref.visible ? (
-                        <Eye className="h-4 w-4" style={{ color: "var(--color-accent)" }} />
-                      ) : (
-                        <EyeOff className="h-4 w-4" style={{ color: "var(--color-text-muted)" }} />
-                      )}
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => toggleNavVisible(pref.href)}
+                    className="p-1 rounded transition-colors hover:bg-[var(--color-bg-secondary)]"
+                    aria-label={pref.visible ? "Hide" : "Show"}
+                  >
+                    {pref.visible ? (
+                      <Eye className="h-4 w-4" style={{ color: "var(--color-accent)" }} />
+                    ) : (
+                      <EyeOff className="h-4 w-4" style={{ color: "var(--color-text-muted)" }} />
+                    )}
+                  </button>
                 </div>
               );
             })}
