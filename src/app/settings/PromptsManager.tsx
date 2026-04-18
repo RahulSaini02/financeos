@@ -65,6 +65,66 @@ function formatVersionDate(dateStr: string): string {
   }).format(new Date(dateStr));
 }
 
+// ── PlaceholderChip — hover + long-press tooltip ───────────────────────────────
+
+function PlaceholderChip({ name, hint }: { name: string; hint: string }) {
+  const [visible, setVisible] = useState(false);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function show() { setVisible(true); }
+  function hide() { setVisible(false); }
+
+  function onTouchStart() {
+    holdTimer.current = setTimeout(() => setVisible(true), 400);
+  }
+  function onTouchEnd() {
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    // hide after a short delay so user can read it
+    setTimeout(() => setVisible(false), 1200);
+  }
+  function onTouchCancel() {
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    setVisible(false);
+  }
+
+  return (
+    <span className="relative inline-flex">
+      <span
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchCancel}
+        className="inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[10px] cursor-help select-none"
+        style={{
+          background: "color-mix(in srgb, var(--color-accent) 10%, transparent)",
+          borderColor: "color-mix(in srgb, var(--color-accent) 30%, transparent)",
+          color: "var(--color-accent)",
+        }}
+      >
+        {`{{${name}}}`}
+      </span>
+      {visible && (
+        <span
+          className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[11px] leading-snug shadow-lg"
+          style={{
+            background: "var(--color-bg-primary, #18181b)",
+            color: "var(--color-text-primary)",
+            border: "1px solid var(--color-border)",
+          }}
+        >
+          {hint}
+          {/* Arrow */}
+          <span
+            className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent"
+            style={{ borderTopColor: "var(--color-border)" }}
+          />
+        </span>
+      )}
+    </span>
+  );
+}
+
 // ── Skeleton loader ────────────────────────────────────────────────────────────
 
 function PromptsManagerSkeleton() {
@@ -410,18 +470,7 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
               Placeholders:
             </span>
             {activeVars.map((v) => (
-              <span
-                key={v.name}
-                title={v.hint}
-                className="inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[10px] cursor-help"
-                style={{
-                  background: "color-mix(in srgb, var(--color-accent) 10%, transparent)",
-                  borderColor: "color-mix(in srgb, var(--color-accent) 30%, transparent)",
-                  color: "var(--color-accent)",
-                }}
-              >
-                {`{{${v.name}}}`}
-              </span>
+              <PlaceholderChip key={v.name} name={v.name} hint={v.hint} />
             ))}
             <span
               className="text-[10px] ml-0.5"
