@@ -136,16 +136,10 @@ export async function GET(request: NextRequest) {
         // Cross-link
         await supabase.from('transactions').update({ linked_transaction_id: txnB!.id }).eq('id', txnA.id)
 
-        // Update both account balances
+        // Update both account balances atomically — avoids read-modify-write race condition
         await Promise.all([
-          (async () => {
-            const { data: acct } = await supabase.from('accounts').select('current_balance').eq('id', rule.account_id).single()
-            if (acct) await supabase.from('accounts').update({ current_balance: (acct.current_balance ?? 0) - rule.amount_usd }).eq('id', rule.account_id)
-          })(),
-          (async () => {
-            const { data: acct } = await supabase.from('accounts').select('current_balance').eq('id', rule.target_account_id).single()
-            if (acct) await supabase.from('accounts').update({ current_balance: (acct.current_balance ?? 0) + rule.amount_usd }).eq('id', rule.target_account_id)
-          })(),
+          supabase.rpc('increment_account_balance', { p_account_id: rule.account_id, p_delta: -rule.amount_usd }),
+          supabase.rpc('increment_account_balance', { p_account_id: rule.target_account_id, p_delta: rule.amount_usd }),
         ])
 
         const nextDue = advanceDate(rule.next_due, rule.frequency, rule.day_of_month)
@@ -183,19 +177,9 @@ export async function GET(request: NextRequest) {
         continue
       }
 
-      // Update account balance
-      const { data: acct } = await supabase
-        .from('accounts')
-        .select('current_balance')
-        .eq('id', rule.account_id)
-        .single()
-      if (acct) {
-        const delta = rule.cr_dr === 'credit' ? rule.amount_usd : -rule.amount_usd
-        await supabase
-          .from('accounts')
-          .update({ current_balance: (acct.current_balance ?? 0) + delta })
-          .eq('id', rule.account_id)
-      }
+      // Update account balance atomically — avoids read-modify-write race condition
+      const delta = rule.cr_dr === 'credit' ? rule.amount_usd : -rule.amount_usd
+      await supabase.rpc('increment_account_balance', { p_account_id: rule.account_id, p_delta: delta })
 
       // Advance next_due
       const nextDue = advanceDate(rule.next_due, rule.frequency, rule.day_of_month)

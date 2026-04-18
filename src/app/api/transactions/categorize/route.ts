@@ -74,6 +74,18 @@ No other text.`
 
       if (!name) return NextResponse.json({ categoryId: null }, { status: 200 })
 
+      // Deduplicate: return existing category if one with the same name already exists (case-insensitive)
+      const { data: existing } = await supabase
+        .from('categories')
+        .select('id, name, type')
+        .eq('user_id', user.id)
+        .ilike('name', name)
+        .single()
+
+      if (existing) {
+        return NextResponse.json({ categoryId: existing.id }, { status: 200 })
+      }
+
       const { data: newCat, error: createErr } = await supabase
         .from('categories')
         .insert({ user_id: user.id, name, type })

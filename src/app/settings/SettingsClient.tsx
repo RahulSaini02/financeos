@@ -153,6 +153,7 @@ export default function SettingsClient({
 
   // ── sidebar nav prefs ──
   const [navPrefs, setNavPrefs] = useState<NavPref[]>([]);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // Seed localStorage preferences on mount
   useEffect(() => {
@@ -511,16 +512,22 @@ export default function SettingsClient({
                   draggable
                   onDragStart={() => { dragIndexRef.current = idx; }}
                   onDragOver={(e) => { e.preventDefault(); }}
+                  onDragEnter={() => setDragOverIndex(idx)}
+                  onDragLeave={() => setDragOverIndex(null)}
                   onDrop={() => {
+                    setDragOverIndex(null);
                     if (dragIndexRef.current !== null) {
                       reorderNavItems(dragIndexRef.current, idx);
                       dragIndexRef.current = null;
                     }
                   }}
-                  onDragEnd={() => { dragIndexRef.current = null; }}
+                  onDragEnd={() => { dragIndexRef.current = null; setDragOverIndex(null); }}
                   className="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors cursor-default select-none"
                   style={{
-                    background: pref.visible ? "var(--color-bg-tertiary)" : "transparent",
+                    background: dragOverIndex === idx
+                      ? "color-mix(in srgb, var(--color-accent) 15%, transparent)"
+                      : pref.visible ? "var(--color-bg-tertiary)" : "transparent",
+                    borderTop: dragOverIndex === idx ? "2px solid var(--color-accent)" : "2px solid transparent",
                     opacity: pref.visible ? 1 : 0.5,
                   }}
                 >

@@ -5,7 +5,7 @@ import { X, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
-import type { Transaction, Account, Category, Loan } from "@/lib/types";
+import type { Transaction, Account, Category, Loan, TransactionType } from "@/lib/types";
 
 interface TransactionModalProps {
   txn: Transaction | null;
@@ -69,10 +69,14 @@ export function TransactionModal({
   useEffect(() => {
     // Skip for transfers or if user manually picked a category this session
     if (modeRef.current === "transfer" || categoryManuallySet.current) return;
+    // For edits with an existing category, don't auto-overwrite
+    if (txn && categoryIdRef.current && !categoryManuallySet.current) return;
     if (!description || description.trim().length < 2) return;
 
     const timer = setTimeout(async () => {
       if (modeRef.current === "transfer" || categoryManuallySet.current) return;
+      // For edits with an existing category, don't auto-overwrite
+      if (txn && categoryIdRef.current && !categoryManuallySet.current) return;
       setIsCategorizingAI(true);
       try {
         const res = await fetch("/api/transactions/categorize", {
@@ -83,15 +87,25 @@ export function TransactionModal({
         if (res.ok) {
           const data = await res.json() as {
             categoryId: string | null;
-            newCategory?: { id: string; name: string; type: string };
+            newCategory?: { id: string; user_id: string; name: string; type: TransactionType; created_at: string };
           };
           if (data.categoryId && !categoryManuallySet.current) {
             // If a brand-new category was created, add it to the local list
             if (data.newCategory) {
+              const safeNewCat: Category = {
+                icon: null,
+                monthly_budget: null,
+                is_recurring: false,
+                due_day: null,
+                priority: null,
+                notes: null,
+                ...data.newCategory,
+                type: data.newCategory.type as TransactionType,
+              };
               setCategories((prev) =>
-                prev.some((c) => c.id === data.newCategory!.id)
+                prev.some((c) => c.id === safeNewCat.id)
                   ? prev
-                  : [...prev, data.newCategory as Category]
+                  : [...prev, safeNewCat]
               );
             }
             setCategoryId(data.categoryId);

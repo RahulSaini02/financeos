@@ -205,11 +205,13 @@ const emptyForm: SavingsGoalFormData = {
 function SavingsGoalModal({
   editingGoal,
   accounts,
+  userId,
   onClose,
   onSaved,
 }: {
   editingGoal: SavingsGoal | null;
   accounts: AccountOption[];
+  userId: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -253,11 +255,12 @@ function SavingsGoalModal({
       ({ error: err } = await supabase
         .from("savings_goals")
         .update(payload)
-        .eq("id", editingGoal.id));
+        .eq("id", editingGoal.id)
+        .eq("user_id", userId));
     } else {
       ({ error: err } = await supabase
         .from("savings_goals")
-        .insert(payload));
+        .insert({ ...payload, user_id: userId }));
     }
 
     setSaving(false);
@@ -457,10 +460,12 @@ function SavingsGoalModal({
 function GoalIconPopover({
   goalId,
   currentIcon,
+  userId,
   onIconSaved,
 }: {
   goalId: string;
   currentIcon: string | null;
+  userId: string;
   onIconSaved: (goalId: string, newIcon: string) => void;
 }) {
   const supabase = createClient();
@@ -485,7 +490,8 @@ function GoalIconPopover({
     const { error } = await supabase
       .from("savings_goals")
       .update({ icon: value })
-      .eq("id", goalId);
+      .eq("id", goalId)
+      .eq("user_id", userId);
     setSaving(false);
     if (!error) {
       onIconSaved(goalId, value);
@@ -537,6 +543,15 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
   const [sortBy, setSortBy] = useState<"progress" | "target" | "name">("progress");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [userId, setUserId] = useState<string>("");
+
+  // Fetch the authenticated user's ID once on mount for use in mutations
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) setUserId(data.user.id);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const loadGoals = async () => {
     const { data, error: err } = await supabase
@@ -556,7 +571,8 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
     const { error: err } = await supabase
       .from("savings_goals")
       .delete()
-      .eq("id", confirmDeleteId);
+      .eq("id", confirmDeleteId)
+      .eq("user_id", userId);
     setDeleting(false);
     if (err) {
       setError(err.message);
@@ -606,9 +622,14 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
     return g.status === activeFilter;
   });
 
+  const getEffectiveAmount = (g: SavingsGoal) => {
+    const linked = g.linked_account_id ? accounts.find((a) => a.id === g.linked_account_id) : null;
+    return linked ? linked.current_balance : g.current_amount;
+  };
+
   const sortedGoals = [...filteredGoals].sort((a, b) => {
-    const progressA = a.target_amount > 0 ? a.current_amount / a.target_amount : 0;
-    const progressB = b.target_amount > 0 ? b.current_amount / b.target_amount : 0;
+    const progressA = a.target_amount > 0 ? getEffectiveAmount(a) / a.target_amount : 0;
+    const progressB = b.target_amount > 0 ? getEffectiveAmount(b) / b.target_amount : 0;
 
     switch (sortBy) {
       case "progress":
@@ -777,6 +798,7 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
                     <GoalIconPopover
                       goalId={goal.id}
                       currentIcon={goal.icon}
+                      userId={userId}
                       onIconSaved={handleIconSaved}
                     />
                     <div>
@@ -878,6 +900,7 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
         <SavingsGoalModal
           editingGoal={editingGoal}
           accounts={accounts}
+          userId={userId}
           onClose={() => {
             setModalOpen(false);
             setEditingGoal(null);
