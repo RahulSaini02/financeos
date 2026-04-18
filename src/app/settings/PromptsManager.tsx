@@ -391,12 +391,38 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
         style={{ borderColor: "var(--color-border)" }}
       >
         <div className="flex items-center gap-3 min-w-0">
-          <span
-            className="text-sm font-medium truncate"
-            style={{ color: "var(--color-text-primary)" }}
-          >
-            {activePrompt.label}
-          </span>
+          {/* Prompt switcher — visible only in fullscreen */}
+          {fullscreen ? (
+            <div className="relative">
+              <select
+                value={activeKey ?? ""}
+                onChange={(e) => handleSelectPrompt(e.target.value)}
+                className="appearance-none rounded-lg border pl-2.5 pr-6 py-1 text-xs font-medium outline-none transition-colors focus:ring-1 focus:ring-[var(--color-accent)]"
+                style={{
+                  background: "var(--color-bg-secondary)",
+                  borderColor: "var(--color-border)",
+                  color: "var(--color-text-primary)",
+                }}
+              >
+                {prompts.map((p) => (
+                  <option key={p.key} value={p.key} style={{ background: "var(--color-bg-secondary)" }}>
+                    {p.label}{p.isDefault ? " (default)" : ` (v${p.version})`}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 h-3 w-3"
+                style={{ color: "var(--color-text-muted)" }}
+              />
+            </div>
+          ) : (
+            <span
+              className="text-sm font-medium truncate"
+              style={{ color: "var(--color-text-primary)" }}
+            >
+              {activePrompt.label}
+            </span>
+          )}
           {/* Version dropdown */}
           <div className="relative">
             <select
