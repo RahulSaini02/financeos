@@ -3,12 +3,11 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
 import { getUserPrompt } from '@/lib/get-user-prompt'
+import { formatCurrency } from '@/lib/utils'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n)
-}
+const fmt = (n: number) => formatCurrency(n)
 
 export async function GET(request: Request) {
   try {
@@ -63,7 +62,9 @@ export async function GET(request: Request) {
     let analysis = ''
     let isCached = false
 
-    if (cachedInsight && !force) {
+    // Skip cache if it contains the fallback "no API key" message — key may have been added since
+    const isStubContent = cachedInsight?.content?.includes('Configure `ANTHROPIC_API_KEY`')
+    if (cachedInsight && !force && !isStubContent) {
       analysis = cachedInsight.content
       isCached = true
     }

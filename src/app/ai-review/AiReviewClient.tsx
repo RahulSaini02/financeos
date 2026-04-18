@@ -13,6 +13,7 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { MarkdownContent } from "@/components/ui/markdown-content";
 import { HelpModal } from "@/components/ui/help-modal";
+import { formatCurrency } from "@/lib/utils";
 import {
   BarChart,
   Bar,
@@ -48,14 +49,7 @@ export interface ReviewData {
   analysis: string;
 }
 
-function fmt(n: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(n);
-}
+const fmt = (n: number) => formatCurrency(n, 'USD', 0)
 
 // ── Month-over-month grouped bar chart ────────────────────────────────────────
 function MoMChart({ categories }: { categories: TopCategory[] }) {

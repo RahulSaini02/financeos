@@ -7,25 +7,10 @@ import { MarkdownContent } from "@/components/ui/markdown-content";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { UserPromptVersion, UserPromptWithMeta } from "@/lib/types";
 
-// ── Types ──────────────────────────────────────────────────────────────────────
-
-interface PromptEntry {
-  key: string;
-  label: string;
-  description: string;
-  content: string;
-  version: number;
-  isDefault: boolean;
-}
-
-interface VersionEntry {
-  id: string;
-  version: number;
-  version_label: string | null;
-  created_at: string;
-  content: string;
-}
+type PromptEntry = UserPromptWithMeta;
+type VersionEntry = UserPromptVersion;
 
 // ── Placeholder variable reference per prompt key ──────────────────────────────
 
