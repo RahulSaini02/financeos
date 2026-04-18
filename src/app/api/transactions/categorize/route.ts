@@ -75,11 +75,12 @@ No other text.`
       if (!name) return NextResponse.json({ categoryId: null }, { status: 200 })
 
       // Deduplicate: return existing category if one with the same name already exists (case-insensitive)
+      const escapedName = name.replace(/[%_\\]/g, '\\$&')
       const { data: existing } = await supabase
         .from('categories')
         .select('id, name, type')
         .eq('user_id', user.id)
-        .ilike('name', name)
+        .ilike('name', escapedName)
         .single()
 
       if (existing) {

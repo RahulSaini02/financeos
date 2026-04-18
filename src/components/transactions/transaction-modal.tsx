@@ -70,13 +70,13 @@ export function TransactionModal({
     // Skip for transfers or if user manually picked a category this session
     if (modeRef.current === "transfer" || categoryManuallySet.current) return;
     // For edits with an existing category, don't auto-overwrite
-    if (txn && categoryIdRef.current && !categoryManuallySet.current) return;
+    if (txn && categoryIdRef.current) return;
     if (!description || description.trim().length < 2) return;
 
     const timer = setTimeout(async () => {
       if (modeRef.current === "transfer" || categoryManuallySet.current) return;
       // For edits with an existing category, don't auto-overwrite
-      if (txn && categoryIdRef.current && !categoryManuallySet.current) return;
+      if (txn && categoryIdRef.current) return;
       setIsCategorizingAI(true);
       try {
         const res = await fetch("/api/transactions/categorize", {

@@ -513,7 +513,11 @@ export default function SettingsClient({
                   onDragStart={() => { dragIndexRef.current = idx; }}
                   onDragOver={(e) => { e.preventDefault(); }}
                   onDragEnter={() => setDragOverIndex(idx)}
-                  onDragLeave={() => setDragOverIndex(null)}
+                  onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                      setDragOverIndex(null);
+                    }
+                  }}
                   onDrop={() => {
                     setDragOverIndex(null);
                     if (dragIndexRef.current !== null) {

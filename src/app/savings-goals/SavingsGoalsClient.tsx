@@ -486,6 +486,7 @@ function GoalIconPopover({
   }, [open]);
 
   const handleSelect = async (value: string) => {
+    if (!userId) return;
     setSaving(true);
     const { error } = await supabase
       .from("savings_goals")
@@ -554,9 +555,11 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
   }, []);
 
   const loadGoals = async () => {
+    if (!userId) return;
     const { data, error: err } = await supabase
       .from("savings_goals")
       .select("*, account:accounts(id, name, current_balance)")
+      .eq("user_id", userId)
       .order("created_at", { ascending: false });
     if (err) {
       setError(err.message);
