@@ -21,14 +21,15 @@ function fmt(n: number) {
 
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET
-  if (secret) {
-    const auth =
-      request.headers.get('authorization')?.replace('Bearer ', '') ??
-      request.headers.get('x-cron-secret') ??
-      ''
-    if (auth !== secret) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  if (!secret) {
+    return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 })
+  }
+  const auth =
+    request.headers.get('authorization')?.replace('Bearer ', '') ??
+    request.headers.get('x-cron-secret') ??
+    ''
+  if (auth !== secret) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   if (!process.env.ANTHROPIC_API_KEY) {
