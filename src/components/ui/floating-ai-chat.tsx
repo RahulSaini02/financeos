@@ -1,8 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { createClient } from "@/lib/supabase";
-import { useAuth } from "@/components/auth-provider";
+import { useState, useEffect, useRef } from "react";
 import {
   BotMessageSquare,
   X,
@@ -29,9 +27,6 @@ const SUGGESTED_QUESTIONS = [
 ];
 
 export function FloatingAiChat() {
-  const { user } = useAuth();
-  const supabase = createClient();
-
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");

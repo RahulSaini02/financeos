@@ -354,6 +354,36 @@ export default function AiReviewClient({
             );
           })()}
 
+          {/* ── AI Analysis ────────────────────────────────────── */}
+          {data.analysis ? (
+            <div className="rounded-xl border border-[var(--color-accent)]/30 bg-[var(--color-bg-secondary)] p-4 sm:p-5">
+              <div className="flex items-center justify-between mb-4 pb-3 border-b border-[var(--color-accent)]/20">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--color-accent)]/20 ring-1 ring-[var(--color-accent)]/30">
+                    <Sparkles className="h-4 w-4 text-[var(--color-accent)]" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-[var(--color-text-primary)]">AI Analysis</p>
+                    <p className="text-xs text-[var(--color-text-muted)]">
+                      {data.label} • {data.cached ? "Cached" : "Generated now"}
+                    </p>
+                  </div>
+                </div>
+                {loading && <RefreshCw className="h-3.5 w-3.5 animate-spin text-[var(--color-text-muted)]" />}
+              </div>
+              <MarkdownContent
+                content={data.analysis}
+                className="text-sm text-[var(--color-text-secondary)] leading-relaxed"
+              />
+            </div>
+          ) : (
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 text-sm text-[var(--color-text-muted)]">
+              Configure{" "}
+              <code className="text-xs bg-[var(--color-bg-tertiary)] px-1 rounded">ANTHROPIC_API_KEY</code>{" "}
+              to enable AI analysis.
+            </div>
+          )}
+          
           {/* ── Top Spending Breakdown ─────────────────────────── */}
           {data.topCategories.length > 0 && (
             <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5">
@@ -478,35 +508,7 @@ export default function AiReviewClient({
             </div>
           )}
 
-          {/* ── AI Analysis ────────────────────────────────────── */}
-          {data.analysis ? (
-            <div className="rounded-xl border border-[var(--color-accent)]/30 bg-[var(--color-bg-secondary)] p-4 sm:p-5">
-              <div className="flex items-center justify-between mb-4 pb-3 border-b border-[var(--color-accent)]/20">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--color-accent)]/20 ring-1 ring-[var(--color-accent)]/30">
-                    <Sparkles className="h-4 w-4 text-[var(--color-accent)]" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-[var(--color-text-primary)]">AI Analysis</p>
-                    <p className="text-xs text-[var(--color-text-muted)]">
-                      {data.label} • {data.cached ? "Cached" : "Generated now"}
-                    </p>
-                  </div>
-                </div>
-                {loading && <RefreshCw className="h-3.5 w-3.5 animate-spin text-[var(--color-text-muted)]" />}
-              </div>
-              <MarkdownContent
-                content={data.analysis}
-                className="text-sm text-[var(--color-text-secondary)] leading-relaxed"
-              />
-            </div>
-          ) : (
-            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 text-sm text-[var(--color-text-muted)]">
-              Configure{" "}
-              <code className="text-xs bg-[var(--color-bg-tertiary)] px-1 rounded">ANTHROPIC_API_KEY</code>{" "}
-              to enable AI analysis.
-            </div>
-          )}
+          
         </>
       )}
     </div>

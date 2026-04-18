@@ -78,32 +78,6 @@ function calcNetPay(form: PaycheckFormData): number {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-interface BarProps {
-  label: string;
-  value: number;
-  gross: number;
-  color: string;
-}
-
-function PayBar({ label, value, gross, color }: BarProps) {
-  const pct = gross > 0 ? Math.min((value / gross) * 100, 100) : 0;
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-[var(--color-text-secondary)]">{label}</span>
-        <span className="text-[var(--color-text-primary)] font-medium">
-          {formatCurrency(value)} <span className="text-[var(--color-text-muted)]">({pct.toFixed(1)}%)</span>
-        </span>
-      </div>
-      <div className="h-2 rounded-full bg-[var(--color-bg-primary)]">
-        <div
-          className="h-2 rounded-full transition-all"
-          style={{ width: `${pct}%`, backgroundColor: color }}
-        />
-      </div>
-    </div>
-  );
-}
 
 const inputClass =
   "w-full h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-3 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]";

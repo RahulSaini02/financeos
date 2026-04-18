@@ -68,8 +68,7 @@ export function FormInput({ prefix, className, ...props }: FormInputProps) {
 
 // ── FormSelect ────────────────────────────────────────────────────────────────
 
-interface FormSelectProps
-  extends React.SelectHTMLAttributes<HTMLSelectElement> {}
+type FormSelectProps = React.SelectHTMLAttributes<HTMLSelectElement>;
 
 export function FormSelect({ className, children, ...props }: FormSelectProps) {
   return (
@@ -81,8 +80,7 @@ export function FormSelect({ className, children, ...props }: FormSelectProps) {
 
 // ── FormTextarea ──────────────────────────────────────────────────────────────
 
-interface FormTextareaProps
-  extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {}
+type FormTextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement>;
 
 export function FormTextarea({ className, ...props }: FormTextareaProps) {
   return (

@@ -1,6 +1,5 @@
 // Convenience hooks for common data patterns
 import { createClient } from './supabase'
-import type { Transaction, Account, Budget, Category } from './types'
 
 export async function getDashboardSummary(userId: string) {
   const supabase = createClient()

@@ -90,24 +90,18 @@ export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const { user, isLoading } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [navPrefs, setNavPrefs] = useState<NavPref[]>(() => ALL_NAV_ITEMS.map((n) => ({ href: n.href, visible: true })));
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true"; } catch { return false; }
+  });
+  const [navPrefs, setNavPrefs] = useState<NavPref[]>(() => getNavPrefs());
 
-  // Load nav prefs from localStorage on mount
+  // Listen for nav pref changes from other tabs / same-tab updates
   useEffect(() => {
-    setNavPrefs(getNavPrefs());
-    // Restore sidebar collapsed state
-    try {
-      const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
-      if (stored === "true") setSidebarCollapsed(true);
-    } catch { /* ignore */ }
-    // Listen for storage changes (e.g., settings page updates prefs)
     function handleStorage(e: StorageEvent) {
       if (e.key === NAV_PREFS_KEY) setNavPrefs(getNavPrefs());
     }
-    window.addEventListener("storage", handleStorage);
-    // Also listen for a custom event (same-tab updates)
     function handleNavUpdate() { setNavPrefs(getNavPrefs()); }
+    window.addEventListener("storage", handleStorage);
     window.addEventListener("nav-prefs-updated", handleNavUpdate);
     return () => {
       window.removeEventListener("storage", handleStorage);
@@ -125,6 +119,7 @@ export function AppShell({ children }: AppShellProps) {
 
   // Close sidebar on route change
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSidebarOpen(false);
   }, [pathname]);
 

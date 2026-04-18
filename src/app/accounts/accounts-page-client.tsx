@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, CardHeader, CardTitle, CardValue } from "@/components/ui/card";
+import { Card, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { HelpModal } from "@/components/ui/help-modal";
@@ -19,17 +19,12 @@ import {
   Trash2,
   IndianRupee,
   AlertTriangle,
-  Building2,
-  TrendingDown,
   PackageOpen,
   Loader2,
   ChevronDown,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Modal } from "@/components/ui/modal";
-import { FormField, FormInput, FormSelect } from "@/components/ui/form-field";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type SortOption = "name_asc" | "name_desc" | "balance_high" | "balance_low" | "currency";
 
@@ -88,6 +83,45 @@ interface FormErrors {
   last_four?: string;
 }
 
+function SortIcon({ option }: { option: SortOption }) {
+  switch (option) {
+    case "name_asc":
+      return (
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M3 7h12M3 12h9M3 17h6" strokeLinecap="round" />
+          <path d="M16 8l4-4M20 4l-4-4M20 4v16" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case "name_desc":
+      return (
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M3 7h12M3 12h9M3 17h6" strokeLinecap="round" />
+          <path d="M16 16l4 4M20 20l-4 4M20 20V4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case "balance_high":
+      return (
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M12 20V10M12 10l4 4M12 10l-4 4" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M3 6h18" strokeLinecap="round" />
+        </svg>
+      );
+    case "balance_low":
+      return (
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M12 4v10M12 14l4-4M12 14l-4-4" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M3 18h18" strokeLinecap="round" />
+        </svg>
+      );
+    case "currency":
+      return (
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M7 10h14M7 14h14M3 6h.01M3 12h.01M3 18h.01" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+  }
+}
+
 export default function AccountsClient({
   initialAccounts,
   userId,
@@ -105,8 +139,8 @@ export default function AccountsClient({
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
   const [formData, setFormData] = useState<AccountFormData>(emptyFormData);
-  const [formErrors, setFormErrors] = useState<FormErrors>({});
-  const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set());
+  const [, setFormErrors] = useState<FormErrors>({});
+  const [, setTouchedFields] = useState<Set<string>>(new Set());
   const [sortOption, setSortOption] = useState<SortOption>("name_asc");
   const [showInactive, setShowInactive] = useState(false);
   const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
@@ -177,45 +211,6 @@ export default function AccountsClient({
     balance_high: "Balance (High → Low)",
     balance_low: "Balance (Low → High)",
     currency: "Currency (US first)",
-  };
-
-  const SortIcon = ({ option }: { option: SortOption }) => {
-    switch (option) {
-      case "name_asc":
-        return (
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M3 7h12M3 12h9M3 17h6" strokeLinecap="round" />
-            <path d="M16 8l4-4M20 4l-4-4M20 4v16" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        );
-      case "name_desc":
-        return (
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M3 7h12M3 12h9M3 17h6" strokeLinecap="round" />
-            <path d="M16 16l4 4M20 20l-4 4M20 20V4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        );
-      case "balance_high":
-        return (
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 20V10M12 10l4 4M12 10l-4 4" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M3 6h18" strokeLinecap="round" />
-          </svg>
-        );
-      case "balance_low":
-        return (
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 4v10M12 14l4-4M12 14l-4-4" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M3 18h18" strokeLinecap="round" />
-          </svg>
-        );
-      case "currency":
-        return (
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M7 10h14M7 14h14M3 6h.01M3 12h.01M3 18h.01" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        );
-    }
   };
 
   const validateField = (name: keyof AccountFormData, value: string | boolean): string | undefined => {

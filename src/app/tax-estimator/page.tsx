@@ -2,12 +2,11 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { Card, CardHeader, CardTitle, CardValue } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/components/auth-provider";
 import type { Paycheck } from "@/lib/types";
-import { Loader2, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { GridPageSkeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
@@ -198,6 +197,7 @@ export default function TaxEstimatorPage () {
     }
 
     fetchPaychecks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user] );
 
   const results = useMemo( () => calculateTaxes( inputs ), [inputs] );

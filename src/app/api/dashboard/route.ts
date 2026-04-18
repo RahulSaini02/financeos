@@ -26,7 +26,6 @@ export async function GET() {
     sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
     const sevenDaysStr = sevenDaysFromNow.toISOString().split('T')[0]
 
-    const todayDayOfMonth = now.getDate()
     const pad = (n: number) => String(n).padStart(2, '0')
 
     const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)

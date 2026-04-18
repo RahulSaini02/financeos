@@ -1,19 +1,17 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Card, CardHeader, CardTitle, CardValue } from "@/components/ui/card";
+import { Card, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 import { createClient } from "@/lib/supabase";
 import type { Investment, SavingsGoal } from "@/lib/types";
-import { GridPageSkeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   TrendingUp,
-  TrendingDown,
   Target,
   Loader2,
   AlertTriangle,
@@ -225,7 +223,7 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
 
   const [investments, setInvestments] = useState<Investment[]>(initialInvestments);
   const [goals, setGoals] = useState<SavingsGoal[]>(initialSavingsGoals);
-  const [error, setError] = useState<string | null>(null);
+  const [error] = useState<string | null>(null);
 
   // Modal state
   const [showModal, setShowModal] = useState(false);

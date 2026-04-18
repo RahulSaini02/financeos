@@ -2,7 +2,6 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Card } from "@/components/ui/card";
 import { GridPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
@@ -242,7 +241,6 @@ export default function BudgetsClient({
 
   const pad = (n: number) => String(n).padStart(2, "0");
   const monthParam = `${year}-${pad(month)}-01`;
-  const monthLabel = new Date(year, month - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
   // Re-fetch when month changes (skip first render — server already provided initial data)
   const isInitialMonth = year === initialYear && month === initialMonth;

@@ -1,16 +1,13 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { Card, CardHeader, CardTitle, CardValue } from "@/components/ui/card";
+import { Card, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { GridPageSkeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/utils";
 import { createClient } from "@/lib/supabase";
 import type { Loan, LoanPayment, Account } from "@/lib/types";
 import {
   Landmark,
-  TrendingDown,
-  CalendarClock,
   ChevronDown,
   ChevronUp,
   Loader2,

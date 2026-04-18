@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Eye, EyeOff, GripVertical, RotateCcw } from "lucide-react";
 import { createClient } from "@/lib/supabase";
@@ -65,7 +65,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {}
+type InputProps = React.InputHTMLAttributes<HTMLInputElement>;
 
 function Input({ className = "", ...props }: InputProps) {
   return (
@@ -156,26 +156,19 @@ export default function SettingsClient({
   const [signingOut, setSigningOut] = useState(false);
 
   // ── preferences ──
-  const [payFrequency, setPayFrequency] = useState("biweekly");
-  const [filingStatus, setFilingStatus] = useState("single");
-  const [timezone, setTimezone] = useState("America/Los_Angeles");
+  const [payFrequency, setPayFrequency] = useState<string>(() =>
+    (typeof window !== "undefined" && localStorage.getItem("pref_pay_frequency")) || "biweekly"
+  );
+  const [filingStatus, setFilingStatus] = useState<string>(() =>
+    (typeof window !== "undefined" && localStorage.getItem("pref_filing_status")) || "single"
+  );
+  const [timezone, setTimezone] = useState<string>(() =>
+    (typeof window !== "undefined" && localStorage.getItem("pref_timezone")) || "America/Los_Angeles"
+  );
 
   // ── sidebar nav prefs ──
-  const [navPrefs, setNavPrefs] = useState<NavPref[]>([]);
+  const [navPrefs, setNavPrefs] = useState<NavPref[]>(() => getNavPrefs());
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-
-  // Seed localStorage preferences on mount
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const freq = localStorage.getItem("pref_pay_frequency");
-      if (freq) setPayFrequency(freq);
-      const filing = localStorage.getItem("pref_filing_status");
-      if (filing) setFilingStatus(filing);
-      const tz = localStorage.getItem("pref_timezone");
-      if (tz) setTimezone(tz);
-      setNavPrefs(getNavPrefs());
-    }
-  }, []);
 
   // ── nav prefs helpers ──────────────────────────────────────────────────────
 

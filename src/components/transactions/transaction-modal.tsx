@@ -38,7 +38,7 @@ export function TransactionModal({
   );
   const [description, setDescription] = useState(txn?.description ?? "");
   const [amount, setAmount] = useState(txn ? Math.abs(txn.amount_usd).toString() : "");
-  const [crDr, setCrDr] = useState<"credit" | "debit">(txn?.cr_dr ?? "debit");
+  const [, setCrDr] = useState<"credit" | "debit">(txn?.cr_dr ?? "debit");
   const [accountId, setAccountId] = useState(txn?.account_id ?? accounts[0]?.id ?? "");
   const [targetAccountId, setTargetAccountId] = useState("");
   const [categoryId, setCategoryId] = useState(txn?.category_id ?? "");
@@ -120,6 +120,7 @@ export function TransactionModal({
     }, 400);
 
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [description]);
 
   // Auto-detect transfer when a transfer-type category is selected

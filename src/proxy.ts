@@ -31,7 +31,6 @@ export async function proxy(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
   const isAuthPage = pathname === "/login";
-  const isRoot = pathname === "/";
   const isPublicAsset = pathname.startsWith("/_next") || pathname.startsWith("/favicon");
 
   // Public assets and auth pages pass through

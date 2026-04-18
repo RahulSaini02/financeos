@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardHeader, CardTitle, CardValue } from "@/components/ui/card";
+import { Card, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 import { createClient } from "@/lib/supabase";
@@ -318,7 +318,7 @@ function SubscriptionModal({
               >
                 <option value="">— None (manual only) —</option>
                 {accounts
-                  .filter((a) => a.kind === "asset")
+                  .filter((a) => a.kind === "asset" || a.kind === "liability")
                   .map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name}
