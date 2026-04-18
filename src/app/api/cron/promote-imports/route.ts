@@ -98,6 +98,16 @@ export async function GET(request: NextRequest) {
         .update({ status: 'confirmed', transaction_id: txn.id, reviewed_at: new Date().toISOString() })
         .eq('id', imp.id)
 
+      // Update account balance atomically (debit — amount_usd is negative)
+      try {
+        await supabase.rpc('increment_account_balance', {
+          p_account_id: imp.suggested_account_id,
+          p_delta: -(imp.parsed_amount ?? 0),
+        })
+      } catch (rpcErr) {
+        console.error('promote-imports: balance update failed for account', imp.suggested_account_id, rpcErr)
+      }
+
       results.push({ id: imp.id, promoted: true, txnId: txn.id })
     }
 

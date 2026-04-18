@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
-import { randomUUID } from 'crypto'
+import { createClient } from '@supabase/supabase-js'
 
 /**
  * GET /api/cron/subscription-autopay
@@ -27,7 +26,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const supabase = await createServerSupabaseClient()
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SECRET_KEY!
+    )
     const today = new Date().toISOString().split('T')[0]
 
     // Find active auto-renew subscriptions due today that have an account linked
@@ -54,7 +56,7 @@ export async function GET(request: NextRequest) {
         .eq('account_id', sub.account_id)
         .ilike('description', `%${sub.name}%`)
         .eq('date', today)
-        .eq('source', 'auto')
+        .eq('source', 'manual')
         .limit(1)
 
       if (existing && existing.length > 0) {
@@ -95,7 +97,7 @@ export async function GET(request: NextRequest) {
         original_currency: 'USD',
         cr_dr: 'debit',
         date: today,
-        source: 'auto',
+        source: 'manual',
         import_status: 'confirmed',
         flagged: false,
         is_recurring: true,
@@ -109,20 +111,8 @@ export async function GET(request: NextRequest) {
         continue
       }
 
-      // Deduct from account balance
-      const { data: acct } = await supabase
-        .from('accounts')
-        .select('current_balance')
-        .eq('id', sub.account_id)
-        .eq('user_id', sub.user_id)
-        .single()
-      if (acct) {
-        await supabase
-          .from('accounts')
-          .update({ current_balance: (acct.current_balance ?? 0) + signedAmt })
-          .eq('id', sub.account_id)
-          .eq('user_id', sub.user_id)
-      }
+      // Deduct from account balance atomically
+      await supabase.rpc('increment_account_balance', { p_account_id: sub.account_id, p_delta: signedAmt })
 
       // Advance next_billing_date
       const nextDate = new Date(today + 'T00:00:00')
