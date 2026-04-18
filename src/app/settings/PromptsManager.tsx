@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Loader2, RotateCcw, Save, ChevronDown } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Loader2, Maximize2, Minimize2, RotateCcw, Save, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MarkdownContent } from "@/components/ui/markdown-content";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -26,6 +26,34 @@ interface VersionEntry {
   created_at: string;
 }
 
+// ── Placeholder variable reference per prompt key ──────────────────────────────
+
+const PROMPT_VARIABLES: Record<string, Array<{ name: string; hint: string }>> = {
+  daily_insight: [
+    { name: "net_worth", hint: "Current net worth in USD" },
+    { name: "monthly_income", hint: "Month-to-date income" },
+    { name: "monthly_expenses", hint: "Month-to-date expenses" },
+    { name: "savings_rate", hint: "Savings rate as a % (0–100)" },
+    { name: "flagged_count", hint: "Number of flagged transactions" },
+    { name: "bills_count", hint: "Upcoming bills in the next 7 days" },
+  ],
+  monthly_summary: [
+    { name: "month_label", hint: 'e.g. "April 2026"' },
+    { name: "prev_income", hint: "Last month total income" },
+    { name: "prev_expenses", hint: "Last month total expenses" },
+    { name: "prev_savings_rate", hint: "Last month savings rate %" },
+    { name: "top_categories", hint: "Top spending categories breakdown" },
+  ],
+  ai_review: [],
+  ai_chat: [
+    { name: "context", hint: "Full financial data snapshot injected at runtime" },
+  ],
+  auto_categorize: [
+    { name: "description", hint: "Raw transaction description / merchant name" },
+    { name: "category_list", hint: "List of available categories (ID + name)" },
+  ],
+};
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function formatVersionDate(dateStr: string): string {
@@ -42,13 +70,11 @@ function formatVersionDate(dateStr: string): string {
 function PromptsManagerSkeleton() {
   return (
     <div className="space-y-4">
-      {/* Pill tabs skeleton */}
       <div className="flex flex-wrap gap-2">
         {[...Array(5)].map((_, i) => (
           <Skeleton key={i} className="h-8 w-32 rounded-full" />
         ))}
       </div>
-      {/* Editor area skeleton */}
       <div
         className="rounded-xl border p-4 space-y-3"
         style={{ borderColor: "var(--color-border)" }}
@@ -88,6 +114,24 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
   const [dirty, setDirty] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [versionsLoading, setVersionsLoading] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // ── Escape key to exit fullscreen ────────────────────────────────────────────
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && fullscreen) setFullscreen(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [fullscreen]);
+
+  // Focus textarea when entering fullscreen
+  useEffect(() => {
+    if (fullscreen) textareaRef.current?.focus();
+  }, [fullscreen]);
 
   // ── Load all prompts on mount ────────────────────────────────────────────────
 
@@ -99,7 +143,6 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
         const data = await res.json();
         let fetched: PromptEntry[] = data.prompts ?? [];
 
-        // Merge initialPrompts (SSR pre-load) to override content/version
         if (initialPrompts && initialPrompts.length > 0) {
           fetched = fetched.map((p) => {
             const override = initialPrompts.find((ip) => ip.prompt_key === p.key);
@@ -121,7 +164,7 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Select a prompt card ─────────────────────────────────────────────────────
+  // ── Select a prompt ──────────────────────────────────────────────────────────
 
   async function handleSelectPrompt(key: string) {
     const prompt = prompts.find((p) => p.key === key);
@@ -133,6 +176,7 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
     setSelectedVersionId(null);
     setEditorTab("edit");
     setVersions([]);
+    setFullscreen(false);
     setVersionsLoading(true);
 
     try {
@@ -141,7 +185,7 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
       const data = await res.json();
       setVersions(data.versions ?? []);
     } catch {
-      // Non-critical — versions just won't show
+      // Non-critical
     } finally {
       setVersionsLoading(false);
     }
@@ -151,7 +195,6 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
 
   function handleVersionChange(versionId: string) {
     if (versionId === "") {
-      // "Current" option selected — restore current prompt content
       const prompt = prompts.find((p) => p.key === activeKey);
       if (prompt) {
         setEditorContent(prompt.content);
@@ -160,15 +203,8 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
       }
       return;
     }
-
     const version = versions.find((v) => v.id === versionId);
     if (!version) return;
-
-    // We don't have per-version content in the list response — the user needs to
-    // know they're loading an older version. We set dirty so Save is enabled.
-    // In a real scenario the version content would come from GET /api/prompts/[key]
-    // versions array. For now we load the editor with the current content as a
-    // placeholder and mark dirty so the user can edit/save.
     setSelectedVersionId(versionId);
     setDirty(true);
   }
@@ -188,7 +224,6 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
       if (!res.ok) throw new Error("Save failed");
       const data = await res.json();
 
-      // Update local prompts state
       setPrompts((prev) =>
         prev.map((p) =>
           p.key === activeKey
@@ -197,7 +232,6 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
         )
       );
 
-      // Refresh version list
       const versRes = await fetch(`/api/prompts/${activeKey}`);
       if (versRes.ok) {
         const versData = await versRes.json();
@@ -221,9 +255,7 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
 
     setResetting(true);
     try {
-      const res = await fetch(`/api/prompts/${activeKey}/reset`, {
-        method: "POST",
-      });
+      const res = await fetch(`/api/prompts/${activeKey}/reset`, { method: "POST" });
       if (!res.ok) throw new Error("Reset failed");
       const data = await res.json();
 
@@ -249,10 +281,326 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
   // ── Derived values ────────────────────────────────────────────────────────────
 
   const activePrompt = prompts.find((p) => p.key === activeKey) ?? null;
+  const activeVars = activeKey ? (PROMPT_VARIABLES[activeKey] ?? []) : [];
+
+  // ── Shared textarea ───────────────────────────────────────────────────────────
+
+  function EditorTextarea({ rows, className }: { rows: number; className?: string }) {
+    return (
+      <textarea
+        ref={textareaRef}
+        value={editorContent}
+        onChange={(e) => {
+          setEditorContent(e.target.value);
+          setDirty(true);
+        }}
+        rows={rows}
+        className={`w-full rounded-lg border px-3 py-2.5 text-sm font-mono outline-none resize-y transition-colors focus:ring-1 focus:ring-[var(--color-accent)] ${className ?? ""}`}
+        style={{
+          background: "var(--color-bg-secondary)",
+          borderColor: "var(--color-border)",
+          color: "var(--color-text-primary)",
+          minHeight: "200px",
+        }}
+        placeholder="Enter prompt content…"
+        spellCheck={false}
+      />
+    );
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
   if (loading) return <PromptsManagerSkeleton />;
+
+  // The editor panel is shared between normal and fullscreen layouts
+  const editorPanel = activePrompt !== null && (
+    <div
+      className={
+        fullscreen
+          ? "fixed inset-0 z-50 flex flex-col overflow-hidden"
+          : "rounded-xl border"
+      }
+      style={{
+        borderColor: "var(--color-border)",
+        background: "var(--color-bg-tertiary)",
+      }}
+    >
+      {/* ── Panel header ──────────────────────────────────────────────── */}
+      <div
+        className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 shrink-0"
+        style={{ borderColor: "var(--color-border)" }}
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <span
+            className="text-sm font-medium truncate"
+            style={{ color: "var(--color-text-primary)" }}
+          >
+            {activePrompt.label}
+          </span>
+          {/* Version dropdown */}
+          <div className="relative">
+            <select
+              value={selectedVersionId ?? ""}
+              onChange={(e) => handleVersionChange(e.target.value)}
+              disabled={versionsLoading || versions.length === 0}
+              className="appearance-none rounded-lg border pl-2.5 pr-6 py-1 text-xs outline-none transition-colors focus:ring-1 focus:ring-[var(--color-accent)] disabled:opacity-50"
+              style={{
+                background: "var(--color-bg-secondary)",
+                borderColor: "var(--color-border)",
+                color: "var(--color-text-secondary)",
+              }}
+            >
+              <option value="">Current (v{activePrompt.version})</option>
+              {versions.map((v) => (
+                <option
+                  key={v.id}
+                  value={v.id}
+                  style={{ background: "var(--color-bg-secondary)" }}
+                >
+                  v{v.version} — {v.version_label ?? formatVersionDate(v.created_at)}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 h-3 w-3"
+              style={{ color: "var(--color-text-muted)" }}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* Reset button — desktop */}
+          <button
+            onClick={() => setConfirmReset(true)}
+            disabled={resetting || activePrompt.isDefault}
+            className="hidden sm:inline-flex items-center gap-1.5 text-xs transition-colors hover:opacity-80 disabled:opacity-40 disabled:pointer-events-none"
+            style={{ color: "var(--color-text-muted)" }}
+          >
+            <RotateCcw className="h-3 w-3" />
+            Reset to Default
+          </button>
+
+          {/* Fullscreen toggle */}
+          <button
+            onClick={() => setFullscreen((f) => !f)}
+            className="inline-flex items-center justify-center rounded-lg p-1.5 transition-colors hover:opacity-80"
+            style={{ color: "var(--color-text-muted)" }}
+            title={fullscreen ? "Exit full screen (Esc)" : "Full screen"}
+          >
+            {fullscreen ? (
+              <Minimize2 className="h-3.5 w-3.5" />
+            ) : (
+              <Maximize2 className="h-3.5 w-3.5" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Description + placeholder notes ────────────────────────────── */}
+      <div className="px-4 py-2.5 border-b shrink-0" style={{ borderColor: "var(--color-border)" }}>
+        <p className="text-xs mb-2" style={{ color: "var(--color-text-muted)" }}>
+          {activePrompt.description}
+        </p>
+        {activeVars.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span
+              className="text-[10px] font-semibold uppercase tracking-wider mr-0.5"
+              style={{ color: "var(--color-text-muted)" }}
+            >
+              Placeholders:
+            </span>
+            {activeVars.map((v) => (
+              <span
+                key={v.name}
+                title={v.hint}
+                className="inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[10px] cursor-help"
+                style={{
+                  background: "color-mix(in srgb, var(--color-accent) 10%, transparent)",
+                  borderColor: "color-mix(in srgb, var(--color-accent) 30%, transparent)",
+                  color: "var(--color-accent)",
+                }}
+              >
+                {`{{${v.name}}}`}
+              </span>
+            ))}
+            <span
+              className="text-[10px] ml-0.5"
+              style={{ color: "var(--color-text-muted)" }}
+            >
+              — hover for details. Keep all placeholders present.
+            </span>
+          </div>
+        )}
+        {activeVars.length === 0 && (
+          <p className="text-[10px]" style={{ color: "var(--color-text-muted)" }}>
+            No required placeholders — write the full system prompt freely.
+          </p>
+        )}
+      </div>
+
+      {/* ── Mobile tab toggle ─────────────────────────────────────────── */}
+      <div
+        className="flex sm:hidden gap-0 border-b shrink-0"
+        style={{ borderColor: "var(--color-border)" }}
+      >
+        {(["edit", "preview"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setEditorTab(tab)}
+            className="flex-1 py-2 text-xs font-medium capitalize transition-colors"
+            style={{
+              color: editorTab === tab ? "var(--color-accent)" : "var(--color-text-muted)",
+              borderBottom:
+                editorTab === tab ? "2px solid var(--color-accent)" : "2px solid transparent",
+            }}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Editor + Preview ──────────────────────────────────────────── */}
+      <div className={`p-4 ${fullscreen ? "flex-1 overflow-auto min-h-0" : ""}`}>
+        {/* Desktop: side-by-side */}
+        <div
+          className={`hidden sm:grid grid-cols-2 gap-4 ${fullscreen ? "h-full" : ""}`}
+        >
+          {/* Edit pane */}
+          <div className={`flex flex-col gap-1 ${fullscreen ? "min-h-0" : ""}`}>
+            <span
+              className="text-[10px] font-semibold uppercase tracking-wider shrink-0"
+              style={{ color: "var(--color-text-muted)" }}
+            >
+              Edit
+            </span>
+            <textarea
+              ref={textareaRef}
+              value={editorContent}
+              onChange={(e) => {
+                setEditorContent(e.target.value);
+                setDirty(true);
+              }}
+              rows={fullscreen ? undefined : 14}
+              className={`w-full rounded-lg border px-3 py-2.5 text-sm font-mono outline-none resize-y transition-colors focus:ring-1 focus:ring-[var(--color-accent)] ${fullscreen ? "flex-1 resize-none" : ""}`}
+              style={{
+                background: "var(--color-bg-secondary)",
+                borderColor: "var(--color-border)",
+                color: "var(--color-text-primary)",
+                minHeight: fullscreen ? undefined : "200px",
+                height: fullscreen ? "100%" : undefined,
+              }}
+              placeholder="Enter prompt content…"
+              spellCheck={false}
+            />
+          </div>
+
+          {/* Preview pane */}
+          <div className={`flex flex-col gap-1 ${fullscreen ? "min-h-0" : ""}`}>
+            <span
+              className="text-[10px] font-semibold uppercase tracking-wider shrink-0"
+              style={{ color: "var(--color-text-muted)" }}
+            >
+              Preview
+            </span>
+            <div
+              className={`rounded-lg border px-3 py-2.5 text-sm overflow-auto ${fullscreen ? "flex-1" : ""}`}
+              style={{
+                background: "var(--color-bg-secondary)",
+                borderColor: "var(--color-border)",
+                color: "var(--color-text-secondary)",
+                minHeight: fullscreen ? undefined : "200px",
+              }}
+            >
+              {editorContent.trim() ? (
+                <MarkdownContent content={editorContent} className="text-sm leading-relaxed" />
+              ) : (
+                <p className="text-xs italic" style={{ color: "var(--color-text-muted)" }}>
+                  Nothing to preview yet.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile: single pane */}
+        <div className="sm:hidden">
+          {editorTab === "edit" ? (
+            <textarea
+              value={editorContent}
+              onChange={(e) => {
+                setEditorContent(e.target.value);
+                setDirty(true);
+              }}
+              rows={12}
+              className="w-full rounded-lg border px-3 py-2.5 text-sm font-mono outline-none resize-y transition-colors focus:ring-1 focus:ring-[var(--color-accent)]"
+              style={{
+                background: "var(--color-bg-secondary)",
+                borderColor: "var(--color-border)",
+                color: "var(--color-text-primary)",
+              }}
+              placeholder="Enter prompt content…"
+              spellCheck={false}
+            />
+          ) : (
+            <div
+              className="rounded-lg border px-3 py-2.5 text-sm overflow-auto"
+              style={{
+                background: "var(--color-bg-secondary)",
+                borderColor: "var(--color-border)",
+                color: "var(--color-text-secondary)",
+                minHeight: "200px",
+              }}
+            >
+              {editorContent.trim() ? (
+                <MarkdownContent content={editorContent} className="text-sm leading-relaxed" />
+              ) : (
+                <p className="text-xs italic" style={{ color: "var(--color-text-muted)" }}>
+                  Nothing to preview yet.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Footer ────────────────────────────────────────────────────── */}
+      <div
+        className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-3 shrink-0"
+        style={{ borderColor: "var(--color-border)" }}
+      >
+        {/* Mobile reset */}
+        <button
+          onClick={() => setConfirmReset(true)}
+          disabled={resetting || activePrompt.isDefault}
+          className="sm:hidden inline-flex items-center gap-1.5 text-xs transition-colors hover:opacity-80 disabled:opacity-40 disabled:pointer-events-none"
+          style={{ color: "var(--color-text-muted)" }}
+        >
+          <RotateCcw className="h-3 w-3" />
+          Reset to Default
+        </button>
+
+        <div className="hidden sm:block" />
+
+        {/* Save button */}
+        <Button
+          variant="primary"
+          size="md"
+          onClick={handleSave}
+          disabled={!dirty || saving}
+        >
+          {saving ? (
+            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Save className="mr-1.5 h-3.5 w-3.5" />
+          )}
+          Save Changes
+          {dirty && !saving && (
+            <span className="ml-1.5 h-1.5 w-1.5 rounded-full bg-white/70" aria-hidden="true" />
+          )}
+        </Button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-4">
@@ -267,29 +615,25 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
               onClick={() => handleSelectPrompt(prompt.key)}
               className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
               style={{
-                background: isActive
-                  ? "var(--color-accent)"
-                  : "var(--color-bg-tertiary)",
-                borderColor: isActive
-                  ? "var(--color-accent)"
-                  : "var(--color-border)",
+                background: isActive ? "var(--color-accent)" : "var(--color-bg-tertiary)",
+                borderColor: isActive ? "var(--color-accent)" : "var(--color-border)",
                 color: isActive ? "#fff" : "var(--color-text-primary)",
               }}
             >
               {prompt.label}
-              {/* Badge: custom or default */}
+              {/* Badge: always white text when active so it's readable on accent bg */}
               <span
                 className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none"
                 style={{
-                  background: prompt.isDefault
-                    ? "color-mix(in srgb, var(--color-text-muted) 20%, transparent)"
-                    : isActive
-                      ? "rgba(255,255,255,0.25)"
+                  background: isActive
+                    ? "rgba(255,255,255,0.25)"
+                    : prompt.isDefault
+                      ? "color-mix(in srgb, var(--color-text-muted) 20%, transparent)"
                       : "color-mix(in srgb, var(--color-accent) 20%, transparent)",
-                  color: prompt.isDefault
-                    ? "var(--color-text-muted)"
-                    : isActive
-                      ? "#fff"
+                  color: isActive
+                    ? "#fff"
+                    : prompt.isDefault
+                      ? "var(--color-text-muted)"
                       : "var(--color-accent)",
                 }}
               >
@@ -300,8 +644,8 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
         })}
       </div>
 
-      {/* ── Editor panel ──────────────────────────────────────────────────── */}
-      {activePrompt === null ? (
+      {/* ── Empty state ───────────────────────────────────────────────────── */}
+      {activePrompt === null && (
         <div
           className="rounded-xl border px-6 py-10 text-center"
           style={{ borderColor: "var(--color-border)" }}
@@ -310,223 +654,15 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
             Select a prompt above to view and edit it.
           </p>
         </div>
-      ) : (
-        <div
-          className="rounded-xl border"
-          style={{ borderColor: "var(--color-border)", background: "var(--color-bg-tertiary)" }}
-        >
-          {/* ── Panel header ────────────────────────────────────────────── */}
-          <div
-            className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3"
-            style={{ borderColor: "var(--color-border)" }}
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="text-sm font-medium truncate" style={{ color: "var(--color-text-primary)" }}>
-                {activePrompt.label}
-              </span>
-              {/* Version dropdown */}
-              <div className="relative">
-                <select
-                  value={selectedVersionId ?? ""}
-                  onChange={(e) => handleVersionChange(e.target.value)}
-                  disabled={versionsLoading || versions.length === 0}
-                  className="appearance-none rounded-lg border pl-2.5 pr-6 py-1 text-xs outline-none transition-colors focus:ring-1 focus:ring-[var(--color-accent)] disabled:opacity-50"
-                  style={{
-                    background: "var(--color-bg-secondary)",
-                    borderColor: "var(--color-border)",
-                    color: "var(--color-text-secondary)",
-                  }}
-                >
-                  <option value="">Current (v{activePrompt.version})</option>
-                  {versions.map((v) => (
-                    <option key={v.id} value={v.id} style={{ background: "var(--color-bg-secondary)" }}>
-                      v{v.version} — {v.version_label ?? formatVersionDate(v.created_at)}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown
-                  className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 h-3 w-3"
-                  style={{ color: "var(--color-text-muted)" }}
-                />
-              </div>
-            </div>
-
-            {/* Reset button — desktop */}
-            <button
-              onClick={() => setConfirmReset(true)}
-              disabled={resetting || activePrompt.isDefault}
-              className="hidden sm:inline-flex items-center gap-1.5 text-xs transition-colors hover:opacity-80 disabled:opacity-40 disabled:pointer-events-none"
-              style={{ color: "var(--color-text-muted)" }}
-            >
-              <RotateCcw className="h-3 w-3" />
-              Reset to Default
-            </button>
-          </div>
-
-          {/* ── Description ───────────────────────────────────────────── */}
-          <div className="px-4 py-2 border-b" style={{ borderColor: "var(--color-border)" }}>
-            <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
-              {activePrompt.description}
-            </p>
-          </div>
-
-          {/* ── Mobile tab toggle ─────────────────────────────────────── */}
-          <div
-            className="flex sm:hidden gap-0 border-b"
-            style={{ borderColor: "var(--color-border)" }}
-          >
-            {(["edit", "preview"] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setEditorTab(tab)}
-                className="flex-1 py-2 text-xs font-medium capitalize transition-colors"
-                style={{
-                  color: editorTab === tab ? "var(--color-accent)" : "var(--color-text-muted)",
-                  borderBottom: editorTab === tab ? "2px solid var(--color-accent)" : "2px solid transparent",
-                }}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
-
-          {/* ── Editor + Preview ──────────────────────────────────────── */}
-          <div className="p-4">
-            {/* Desktop: side-by-side */}
-            <div className="hidden sm:grid grid-cols-2 gap-4">
-              {/* Edit pane */}
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-muted)" }}>
-                  Edit
-                </span>
-                <textarea
-                  value={editorContent}
-                  onChange={(e) => {
-                    setEditorContent(e.target.value);
-                    setDirty(true);
-                  }}
-                  rows={14}
-                  className="w-full rounded-lg border px-3 py-2.5 text-sm font-mono outline-none resize-y transition-colors focus:ring-1 focus:ring-[var(--color-accent)]"
-                  style={{
-                    background: "var(--color-bg-secondary)",
-                    borderColor: "var(--color-border)",
-                    color: "var(--color-text-primary)",
-                    minHeight: "200px",
-                  }}
-                  placeholder="Enter prompt content…"
-                  spellCheck={false}
-                />
-              </div>
-
-              {/* Preview pane */}
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--color-text-muted)" }}>
-                  Preview
-                </span>
-                <div
-                  className="flex-1 rounded-lg border px-3 py-2.5 text-sm overflow-auto"
-                  style={{
-                    background: "var(--color-bg-secondary)",
-                    borderColor: "var(--color-border)",
-                    color: "var(--color-text-secondary)",
-                    minHeight: "200px",
-                  }}
-                >
-                  {editorContent.trim() ? (
-                    <MarkdownContent content={editorContent} className="text-sm leading-relaxed" />
-                  ) : (
-                    <p className="text-xs italic" style={{ color: "var(--color-text-muted)" }}>
-                      Nothing to preview yet.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Mobile: single pane based on active tab */}
-            <div className="sm:hidden">
-              {editorTab === "edit" ? (
-                <textarea
-                  value={editorContent}
-                  onChange={(e) => {
-                    setEditorContent(e.target.value);
-                    setDirty(true);
-                  }}
-                  rows={12}
-                  className="w-full rounded-lg border px-3 py-2.5 text-sm font-mono outline-none resize-y transition-colors focus:ring-1 focus:ring-[var(--color-accent)]"
-                  style={{
-                    background: "var(--color-bg-secondary)",
-                    borderColor: "var(--color-border)",
-                    color: "var(--color-text-primary)",
-                  }}
-                  placeholder="Enter prompt content…"
-                  spellCheck={false}
-                />
-              ) : (
-                <div
-                  className="rounded-lg border px-3 py-2.5 text-sm overflow-auto"
-                  style={{
-                    background: "var(--color-bg-secondary)",
-                    borderColor: "var(--color-border)",
-                    color: "var(--color-text-secondary)",
-                    minHeight: "200px",
-                  }}
-                >
-                  {editorContent.trim() ? (
-                    <MarkdownContent content={editorContent} className="text-sm leading-relaxed" />
-                  ) : (
-                    <p className="text-xs italic" style={{ color: "var(--color-text-muted)" }}>
-                      Nothing to preview yet.
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ── Footer ────────────────────────────────────────────────── */}
-          <div
-            className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-3"
-            style={{ borderColor: "var(--color-border)" }}
-          >
-            {/* Mobile reset button */}
-            <button
-              onClick={() => setConfirmReset(true)}
-              disabled={resetting || activePrompt.isDefault}
-              className="sm:hidden inline-flex items-center gap-1.5 text-xs transition-colors hover:opacity-80 disabled:opacity-40 disabled:pointer-events-none"
-              style={{ color: "var(--color-text-muted)" }}
-            >
-              <RotateCcw className="h-3 w-3" />
-              Reset to Default
-            </button>
-
-            <div className="hidden sm:block" />
-
-            {/* Save button */}
-            <Button
-              variant="primary"
-              size="md"
-              onClick={handleSave}
-              disabled={!dirty || saving}
-            >
-              {saving ? (
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Save className="mr-1.5 h-3.5 w-3.5" />
-              )}
-              Save Changes
-              {dirty && !saving && (
-                <span
-                  className="ml-1.5 h-1.5 w-1.5 rounded-full bg-white/70"
-                  aria-hidden="true"
-                />
-              )}
-            </Button>
-          </div>
-        </div>
       )}
 
-      {/* ── Confirm reset dialog ───────────────────────────────────────────── */}
+      {/* ── Editor panel (normal layout) ──────────────────────────────────── */}
+      {!fullscreen && editorPanel}
+
+      {/* ── Fullscreen overlay ────────────────────────────────────────────── */}
+      {fullscreen && editorPanel}
+
+      {/* ── Confirm reset dialog ──────────────────────────────────────────── */}
       <ConfirmDialog
         open={confirmReset}
         onClose={() => setConfirmReset(false)}
