@@ -15,7 +15,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { MarkdownContent } from "@/components/ui/markdown-content";
 import { HelpModal } from "@/components/ui/help-modal";
 import { formatCurrency } from "@/lib/utils";
-import { periodInfo } from "@/lib/review-periods";
+import { getDefaultPeriodKey, getPastPeriodKeys, periodInfo } from "@/lib/review-periods";
 import {
   BarChart,
   Bar,
@@ -117,21 +117,29 @@ export default function AiReviewClient({
   initialData: ReviewData | null
   availablePeriodKeys: string[]
 }) {
-  const defaultKey = initialData?.month ?? availablePeriodKeys[0] ?? "";
+  // If the RPC returned nothing (migration not yet applied or new user),
+  // fall back to generating the last 12 months from today's date.
+  const periodKeys = useMemo(() => {
+    if (availablePeriodKeys.length > 0) return availablePeriodKeys;
+    const base = getDefaultPeriodKey(new Date());
+    return [base, ...getPastPeriodKeys(base, 11)];
+  }, [availablePeriodKeys]);
+
+  const defaultKey = initialData?.month ?? periodKeys[0] ?? "";
 
   // Derive unique years (descending) from available keys
   const availableYears = useMemo(() => {
-    const years = [...new Set(availablePeriodKeys.map((k) => k.slice(0, 4)))];
+    const years = [...new Set(periodKeys.map((k) => k.slice(0, 4)))];
     return years.sort((a, b) => b.localeCompare(a));
-  }, [availablePeriodKeys]);
+  }, [periodKeys]);
 
   const defaultYear = availableYears[0] ?? String(new Date().getFullYear());
   const [selectedYear, setSelectedYear] = useState<string>(defaultKey.slice(0, 4) || defaultYear);
 
   // Months available for the selected year
   const monthsForYear = useMemo(
-    () => availablePeriodKeys.filter((k) => k.startsWith(selectedYear)),
-    [availablePeriodKeys, selectedYear]
+    () => periodKeys.filter((k) => k.startsWith(selectedYear)),
+    [periodKeys, selectedYear]
   );
 
   const [selectedPeriodKey, setSelectedPeriodKey] = useState<string>(defaultKey);
@@ -206,43 +214,6 @@ export default function AiReviewClient({
           />
         }
       >
-        {/* Year filter */}
-        {availableYears.length > 0 && (
-          <div className="relative">
-            <select
-              value={selectedYear}
-              onChange={(e) => handleYearChange(e.target.value)}
-              disabled={loading}
-              className="appearance-none rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5 pr-7 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
-            >
-              {availableYears.map((year) => (
-                <option key={year} value={year}>{year}</option>
-              ))}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--color-text-muted)]" />
-          </div>
-        )}
-
-        {/* Month filter */}
-        {monthsForYear.length > 0 && (
-          <div className="relative">
-            <select
-              value={selectedPeriodKey}
-              onChange={(e) => setSelectedPeriodKey(e.target.value)}
-              disabled={loading}
-              className="appearance-none rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5 pr-7 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
-            >
-              {monthsForYear.map((key) => (
-                <option key={key} value={key}>
-                  {new Date(key).toLocaleDateString("en-US", { month: "long" })}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--color-text-muted)]" />
-          </div>
-        )}
-
-        {/* Refresh button */}
         <button
           onClick={() => load(true, selectedPeriodKey)}
           disabled={loading}
@@ -252,6 +223,43 @@ export default function AiReviewClient({
           Refresh
         </button>
       </PageHeader>
+
+      {/* ── Period filters ─────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-[var(--color-text-muted)]">Period:</span>
+
+        {/* Year */}
+        <div className="relative">
+          <select
+            value={selectedYear}
+            onChange={(e) => handleYearChange(e.target.value)}
+            disabled={loading}
+            className="appearance-none rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5 pr-7 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
+          >
+            {availableYears.map((year) => (
+              <option key={year} value={year}>{year}</option>
+            ))}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--color-text-muted)]" />
+        </div>
+
+        {/* Month */}
+        <div className="relative">
+          <select
+            value={selectedPeriodKey}
+            onChange={(e) => setSelectedPeriodKey(e.target.value)}
+            disabled={loading}
+            className="appearance-none rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5 pr-7 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
+          >
+            {monthsForYear.map((key) => (
+              <option key={key} value={key}>
+                {periodInfo(key).label.split(" ")[0]}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--color-text-muted)]" />
+        </div>
+      </div>
 
       {/* ── Error ──────────────────────────────────────────────── */}
       {error && (
