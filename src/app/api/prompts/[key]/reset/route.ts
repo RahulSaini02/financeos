@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
+import { savePromptVersion } from '@/lib/save-prompt-version'
 
 type Params = { params: Promise<{ key: string }> }
 
@@ -22,51 +23,13 @@ export async function POST(_req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: 'Unknown prompt key' }, { status: 404 })
     }
 
-    const defaultContent = DEFAULT_PROMPTS[key].content
-
-    // Deactivate the current active version
-    const { error: deactivateErr } = await supabase
-      .from('user_prompts')
-      .update({ is_active: false })
-      .eq('user_id', user.id)
-      .eq('prompt_key', key)
-      .eq('is_active', true)
-
-    if (deactivateErr) {
-      console.error('prompt reset deactivate error:', deactivateErr)
-      return NextResponse.json({ error: 'Failed to reset prompt' }, { status: 500 })
-    }
-
-    // Get max version
-    const { data: maxRow } = await supabase
-      .from('user_prompts')
-      .select('version')
-      .eq('user_id', user.id)
-      .eq('prompt_key', key)
-      .order('version', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    const nextVersion = (maxRow?.version ?? 0) + 1
-
-    // Insert new active version with default content
-    const { data: inserted, error: insertErr } = await supabase
-      .from('user_prompts')
-      .insert({
-        user_id: user.id,
-        prompt_key: key,
-        content: defaultContent,
-        version: nextVersion,
-        is_active: true,
-        version_label: 'Default reset',
-      })
-      .select()
-      .single()
-
-    if (insertErr || !inserted) {
-      console.error('prompt reset insert error:', insertErr)
-      return NextResponse.json({ error: 'Failed to reset prompt' }, { status: 500 })
-    }
+    const inserted = await savePromptVersion(
+      supabase,
+      user.id,
+      key,
+      DEFAULT_PROMPTS[key].content,
+      'Default reset',
+    )
 
     return NextResponse.json({
       content: inserted.content,

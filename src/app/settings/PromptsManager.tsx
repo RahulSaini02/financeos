@@ -24,6 +24,7 @@ interface VersionEntry {
   version: number;
   version_label: string | null;
   created_at: string;
+  content: string;
 }
 
 // ── Placeholder variable reference per prompt key ──────────────────────────────
@@ -255,6 +256,7 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
 
   function handleVersionChange(versionId: string) {
     if (versionId === "") {
+      // Restore the current active prompt content
       const prompt = prompts.find((p) => p.key === activeKey);
       if (prompt) {
         setEditorContent(prompt.content);
@@ -265,6 +267,8 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
     }
     const version = versions.find((v) => v.id === versionId);
     if (!version) return;
+    // Load the historical version's content into the editor
+    setEditorContent(version.content);
     setSelectedVersionId(versionId);
     setDirty(true);
   }
@@ -342,31 +346,6 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
 
   const activePrompt = prompts.find((p) => p.key === activeKey) ?? null;
   const activeVars = activeKey ? (PROMPT_VARIABLES[activeKey] ?? []) : [];
-
-  // ── Shared textarea ───────────────────────────────────────────────────────────
-
-  function EditorTextarea({ rows, className }: { rows: number; className?: string }) {
-    return (
-      <textarea
-        ref={textareaRef}
-        value={editorContent}
-        onChange={(e) => {
-          setEditorContent(e.target.value);
-          setDirty(true);
-        }}
-        rows={rows}
-        className={`w-full rounded-lg border px-3 py-2.5 text-sm font-mono outline-none resize-y transition-colors focus:ring-1 focus:ring-[var(--color-accent)] ${className ?? ""}`}
-        style={{
-          background: "var(--color-bg-secondary)",
-          borderColor: "var(--color-border)",
-          color: "var(--color-text-primary)",
-          minHeight: "200px",
-        }}
-        placeholder="Enter prompt content…"
-        spellCheck={false}
-      />
-    );
-  }
 
   // ── Render ────────────────────────────────────────────────────────────────────
 

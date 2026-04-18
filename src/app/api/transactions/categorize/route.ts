@@ -47,8 +47,8 @@ export async function POST(request: NextRequest) {
     if (cats && cats.length > 0) {
       const catList = cats.map((c) => `${c.id} | ${c.name} (${c.type})`).join('\n')
       prompt = categorizeTemplate
-        .replace('{{description}}', description.trim())
-        .replace('{{category_list}}', catList)
+        .replaceAll('{{description}}', description.trim())
+        .replaceAll('{{category_list}}', catList)
     } else {
       // No categories — fall back to a simple suggestion prompt
       prompt = `Suggest a category for this transaction: "${description.trim()}"

@@ -290,6 +290,7 @@ export interface UserPromptVersion {
   version: number
   version_label: string | null
   created_at: string
+  content: string
 }
 
 export interface UserPromptWithMeta {

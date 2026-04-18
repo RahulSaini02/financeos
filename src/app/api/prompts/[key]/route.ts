@@ -1,9 +1,12 @@
-// GET  /api/prompts/[key]  — get active prompt + version history
+// GET  /api/prompts/[key]  — get active prompt + version history (with content)
 // POST /api/prompts/[key]  — save new version (deactivates current active)
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
+import { savePromptVersion } from '@/lib/save-prompt-version'
+
+const MAX_PROMPT_LENGTH = 10_000
 
 type Params = { params: Promise<{ key: string }> }
 
@@ -32,10 +35,10 @@ export async function GET(_req: NextRequest, { params }: Params) {
       .eq('is_active', true)
       .maybeSingle()
 
-    // All versions (history), most recent first
+    // All versions (history), most recent first — include content so UI can restore old versions
     const { data: allVersions } = await supabase
       .from('user_prompts')
-      .select('id, version, version_label, created_at')
+      .select('id, version, version_label, created_at, content')
       .eq('user_id', user.id)
       .eq('prompt_key', key)
       .order('version', { ascending: false })
@@ -76,49 +79,14 @@ export async function POST(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: 'content is required' }, { status: 400 })
     }
 
-    // Deactivate the current active version
-    const { error: deactivateErr } = await supabase
-      .from('user_prompts')
-      .update({ is_active: false })
-      .eq('user_id', user.id)
-      .eq('prompt_key', key)
-      .eq('is_active', true)
-
-    if (deactivateErr) {
-      console.error('prompt deactivate error:', deactivateErr)
-      return NextResponse.json({ error: 'Failed to update prompt' }, { status: 500 })
+    if (content.trim().length > MAX_PROMPT_LENGTH) {
+      return NextResponse.json(
+        { error: `Prompt content exceeds ${MAX_PROMPT_LENGTH.toLocaleString()} character limit` },
+        { status: 400 },
+      )
     }
 
-    // Get max version for this key
-    const { data: maxRow } = await supabase
-      .from('user_prompts')
-      .select('version')
-      .eq('user_id', user.id)
-      .eq('prompt_key', key)
-      .order('version', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    const nextVersion = (maxRow?.version ?? 0) + 1
-
-    // Insert new active version
-    const { data: inserted, error: insertErr } = await supabase
-      .from('user_prompts')
-      .insert({
-        user_id: user.id,
-        prompt_key: key,
-        content: content.trim(),
-        version: nextVersion,
-        is_active: true,
-        version_label: version_label ?? null,
-      })
-      .select()
-      .single()
-
-    if (insertErr || !inserted) {
-      console.error('prompt insert error:', insertErr)
-      return NextResponse.json({ error: 'Failed to save prompt' }, { status: 500 })
-    }
+    const inserted = await savePromptVersion(supabase, user.id, key, content, version_label)
 
     return NextResponse.json(
       {

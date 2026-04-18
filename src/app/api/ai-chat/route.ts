@@ -141,7 +141,7 @@ ${savingsGoals.length === 0 ? '- No savings goals' : savingsGoals.map(g => `- ${
       'ai_chat',
       DEFAULT_PROMPTS.ai_chat.content,
     )
-    const chatSystemPrompt = chatPromptTemplate.replace('{{context}}', context)
+    const chatSystemPrompt = chatPromptTemplate.replaceAll('{{context}}', context)
 
     // Call Claude
     const message = await anthropic.messages.create({

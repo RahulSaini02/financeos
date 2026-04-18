@@ -201,12 +201,12 @@ export async function GET() {
         )
 
         const prompt = dailyPromptTemplate
-          .replace('{{net_worth}}', net_worth.toFixed(2))
-          .replace('{{monthly_income}}', monthly_income.toFixed(2))
-          .replace('{{monthly_expenses}}', monthly_expenses.toFixed(2))
-          .replace('{{savings_rate}}', savingsRate)
-          .replace('{{flagged_count}}', String(flagged_count))
-          .replace('{{bills_count}}', String(bills.length))
+          .replaceAll('{{net_worth}}', net_worth.toFixed(2))
+          .replaceAll('{{monthly_income}}', monthly_income.toFixed(2))
+          .replaceAll('{{monthly_expenses}}', monthly_expenses.toFixed(2))
+          .replaceAll('{{savings_rate}}', savingsRate)
+          .replaceAll('{{flagged_count}}', String(flagged_count))
+          .replaceAll('{{bills_count}}', String(bills.length))
 
         const message = await anthropic.messages.create({
           model: 'claude-haiku-4-5-20251001',
@@ -258,11 +258,11 @@ export async function GET() {
             )
 
             const summaryPrompt = monthlyPromptTemplate
-              .replace('{{month_label}}', prevMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }))
-              .replace('{{prev_income}}', prevIncome.toFixed(2))
-              .replace('{{prev_expenses}}', prevExpenses.toFixed(2))
-              .replace('{{prev_savings_rate}}', prevSavingsRate)
-              .replace('{{top_categories}}', topCats || 'none')
+              .replaceAll('{{month_label}}', prevMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }))
+              .replaceAll('{{prev_income}}', prevIncome.toFixed(2))
+              .replaceAll('{{prev_expenses}}', prevExpenses.toFixed(2))
+              .replaceAll('{{prev_savings_rate}}', prevSavingsRate)
+              .replaceAll('{{top_categories}}', topCats || 'none')
 
             const summaryMsg = await anthropic.messages.create({
               model: 'claude-haiku-4-5-20251001',
