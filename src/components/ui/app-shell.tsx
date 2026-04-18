@@ -22,6 +22,8 @@ import {
   Menu,
   X,
   Sparkles,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FloatingAiChat } from "@/components/ui/floating-ai-chat";
@@ -82,15 +84,23 @@ interface AppShellProps {
   children: React.ReactNode;
 }
 
+const SIDEBAR_COLLAPSED_KEY = "pref_sidebar_collapsed";
+
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const { user, isLoading } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [navPrefs, setNavPrefs] = useState<NavPref[]>(() => ALL_NAV_ITEMS.map((n) => ({ href: n.href, visible: true })));
 
   // Load nav prefs from localStorage on mount
   useEffect(() => {
     setNavPrefs(getNavPrefs());
+    // Restore sidebar collapsed state
+    try {
+      const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+      if (stored === "true") setSidebarCollapsed(true);
+    } catch { /* ignore */ }
     // Listen for storage changes (e.g., settings page updates prefs)
     function handleStorage(e: StorageEvent) {
       if (e.key === NAV_PREFS_KEY) setNavPrefs(getNavPrefs());
@@ -104,6 +114,14 @@ export function AppShell({ children }: AppShellProps) {
       window.removeEventListener("nav-prefs-updated", handleNavUpdate);
     };
   }, []);
+
+  const toggleCollapsed = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   // Close sidebar on route change
   useEffect(() => {
@@ -137,22 +155,19 @@ export function AppShell({ children }: AppShellProps) {
     .map((p) => ALL_NAV_ITEMS.find((n) => n.href === p.href))
     .filter(Boolean) as typeof ALL_NAV_ITEMS;
 
-  const sidebar = (
+  // Mobile sidebar — always fully expanded
+  const mobileSidebar = (
     <aside className="flex w-64 flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-secondary)] h-full">
-      {/* Logo */}
       <div className="flex h-14 items-center justify-between border-b border-[var(--color-border)] px-4">
         <span className="text-lg font-semibold tracking-tight">FinanceOS</span>
-        {/* Close button — mobile only */}
         <button
           onClick={() => setSidebarOpen(false)}
-          className="lg:hidden -mr-1 p-1 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+          className="-mr-1 p-1 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
           aria-label="Close menu"
         >
           <X className="h-5 w-5" />
         </button>
       </div>
-
-      {/* Nav */}
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
         {visibleNavItems.map((item) => {
           const isActive = pathname === item.href || pathname?.startsWith(item.href + "/");
@@ -173,8 +188,6 @@ export function AppShell({ children }: AppShellProps) {
           );
         })}
       </nav>
-
-      {/* Bottom */}
       <div className="border-t border-[var(--color-border)] p-2">
         <Link
           href="/settings"
@@ -195,6 +208,85 @@ export function AppShell({ children }: AppShellProps) {
     </aside>
   );
 
+  // Desktop sidebar — collapsible
+  const desktopSidebar = (
+    <aside
+      className={cn(
+        "flex flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-secondary)] h-full overflow-hidden",
+        "transition-[width] duration-300 ease-in-out",
+        sidebarCollapsed ? "w-14" : "w-64"
+      )}
+    >
+      {/* Logo / collapse toggle */}
+      <div className="flex h-14 shrink-0 items-center border-b border-[var(--color-border)] px-2">
+        {!sidebarCollapsed && (
+          <span className="flex-1 truncate pl-1 text-lg font-semibold tracking-tight">FinanceOS</span>
+        )}
+        <button
+          onClick={toggleCollapsed}
+          className={cn(
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors",
+            sidebarCollapsed && "mx-auto"
+          )}
+          aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        </button>
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden px-2 py-3">
+        {visibleNavItems.map((item) => {
+          const isActive = pathname === item.href || pathname?.startsWith(item.href + "/");
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              title={sidebarCollapsed ? item.label : undefined}
+              className={cn(
+                "flex items-center rounded-lg px-2 py-2 text-sm font-medium transition-colors",
+                sidebarCollapsed ? "justify-center" : "gap-3 px-3",
+                isActive
+                  ? "bg-[var(--color-accent)] text-white"
+                  : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
+              )}
+            >
+              <item.icon className="h-4 w-4 shrink-0" />
+              {!sidebarCollapsed && (
+                <span className="truncate">{item.label}</span>
+              )}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Bottom */}
+      <div className="border-t border-[var(--color-border)] p-2">
+        <Link
+          href="/settings"
+          title={sidebarCollapsed ? displayName : undefined}
+          className={cn(
+            "flex w-full items-center rounded-lg px-2 py-2 text-sm transition-colors",
+            sidebarCollapsed ? "justify-center" : "gap-3 px-3",
+            pathname === "/settings"
+              ? "bg-[var(--color-accent)] text-white"
+              : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
+          )}
+        >
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--color-accent)]/80 text-xs font-medium text-white">
+            {initials}
+          </div>
+          {!sidebarCollapsed && (
+            <>
+              <span className="flex-1 truncate text-left font-medium">{displayName}</span>
+              <Settings className="h-3.5 w-3.5 shrink-0 opacity-50" />
+            </>
+          )}
+        </Link>
+      </div>
+    </aside>
+  );
+
   // Don't show sidebar until auth resolves, or if user is not authenticated
   if (isLoading || !user) {
     return <>{children}</>;
@@ -204,7 +296,7 @@ export function AppShell({ children }: AppShellProps) {
     <div className="flex h-full flex-col lg:flex-row">
       {/* ── Desktop sidebar ───────────────────────── */}
       <div className="hidden lg:flex lg:shrink-0">
-        {sidebar}
+        {desktopSidebar}
       </div>
 
       {/* ── Mobile: Backdrop ─────────────────────── */}
@@ -223,7 +315,7 @@ export function AppShell({ children }: AppShellProps) {
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        {sidebar}
+        {mobileSidebar}
       </div>
 
       {/* ── Right side: top bar + content ────────── */}

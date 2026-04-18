@@ -117,7 +117,7 @@ export function FloatingAiChat() {
 
       {/* Chat panel */}
       {open && (
-        <div className="fixed bottom-20 right-4 z-40 flex flex-col w-[calc(100vw-2rem)] max-w-[380px] h-[480px] sm:h-[540px] rounded-2xl shadow-2xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] overflow-hidden lg:bottom-6 lg:right-6">
+        <div className="fixed z-40 flex flex-col shadow-2xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] overflow-hidden inset-x-0 bottom-0 top-0 rounded-none sm:inset-auto sm:bottom-20 sm:right-4 sm:w-[calc(100vw-2rem)] sm:max-w-[380px] sm:h-[540px] sm:rounded-2xl lg:bottom-6 lg:right-6 lg:max-w-[420px] lg:h-[680px]">
           {/* Header */}
           <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-accent)]/10">

@@ -401,6 +401,49 @@ export async function POST(request: NextRequest) {
       } catch { /* non-fatal */ }
     }
 
+    // Update subscription due date if a transaction matches a subscription name/date
+    // This prevents "overdue" status when the user has already paid for the month
+    if (cr_dr === 'debit' && account_id) {
+      try {
+        const txnDate = new Date(date)
+        const txnMonth = txnDate.getMonth()
+        const txnYear = txnDate.getFullYear()
+
+        // Find active subscriptions that should have been billed this month
+        const { data: subs } = await supabase
+          .from('subscriptions')
+          .select('id, name, next_billing_date, billing_cost, billing_cycle_months')
+          .eq('user_id', user.id)
+          .eq('status', 'active')
+
+        if (subs) {
+          for (const sub of subs) {
+            if (!sub.next_billing_date) continue
+
+            const subDate = new Date(sub.next_billing_date)
+            const subMonth = subDate.getMonth()
+            const subYear = subDate.getFullYear()
+
+            // Check if subscription is for the same month as transaction
+            // and the transaction amount is close to the subscription cost (within 10%)
+            const amountMatch = Math.abs(Math.abs(data.amount_usd) - sub.billing_cost) <= (sub.billing_cost * 0.1)
+            const nameMatch = sub.name.toLowerCase().includes(description.toLowerCase()) ||
+                             description.toLowerCase().includes(sub.name.toLowerCase())
+
+            if (txnMonth === subMonth && txnYear === subYear && amountMatch && nameMatch) {
+              // Move subscription to next billing cycle
+              const nextMonth = new Date(subDate)
+              nextMonth.setMonth(nextMonth.getMonth() + sub.billing_cycle_months)
+              await supabase
+                .from('subscriptions')
+                .update({ next_billing_date: nextMonth.toISOString().split('T')[0] })
+                .eq('id', sub.id)
+            }
+          }
+        }
+      } catch { /* non-fatal */ }
+    }
+
     return NextResponse.json(data, { status: 201 })
   } catch (err) {
     console.error('Transactions POST error:', err)

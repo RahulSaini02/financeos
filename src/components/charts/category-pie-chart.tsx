@@ -64,6 +64,7 @@ export function CategoryPieChart({ data }: CategoryPieChartProps) {
                 borderRadius: 8,
                 fontSize: 12,
               }}
+              separator=""
               formatter={(v: unknown) => [
                 `${formatCurrency(v as number)} (${(
                   ((v as number) / total) *

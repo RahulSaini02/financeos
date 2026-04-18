@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useId, useRef, useEffect } from "react";
+import { useState, useId, useRef, useEffect, useCallback } from "react";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
@@ -16,14 +16,23 @@ interface NetWorthChartProps {
 
 export function NetWorthChart({ points }: NetWorthChartProps) {
   const [hovered, setHovered] = useState<number | null>(null);
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const uid = useId().replace(/:/g, "");
   const lineRef = useRef<SVGPathElement>(null);
   const areaRef = useRef<SVGPathElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    }
+  }, []);
 
   const W = 800;
   const H = 340;
-  const PAD_L = 8;
-  const PAD_R = 8;
+  const PAD_L = 80;
+  const PAD_R = 12;
   const PAD_T = 28;
   const PAD_B = 40;
 
@@ -137,7 +146,40 @@ export function NetWorthChart({ points }: NetWorthChartProps) {
         </div>
       </CardHeader>
 
-      <div className="relative mt-2" onMouseLeave={() => setHovered(null)}>
+      <div
+        ref={containerRef}
+        className="relative mt-2"
+        onMouseLeave={() => { setHovered(null); setMousePos(null); }}
+        onMouseMove={handleMouseMove}
+      >
+        {/* HTML tooltip — rendered in real pixels, not SVG units */}
+        {hovered !== null && mousePos && (() => {
+          const val = points[hovered].net_worth;
+          const prevVal = hovered > 0 ? points[hovered - 1].net_worth : null;
+          const mom = prevVal !== null ? val - prevVal : null;
+          const containerWidth = containerRef.current?.getBoundingClientRect().width ?? 400;
+          const tooltipWidth = 170;
+          let left = mousePos.x + 14;
+          if (left + tooltipWidth > containerWidth) left = mousePos.x - tooltipWidth - 14;
+          return (
+            <div
+              style={{ position: "absolute", left, top: mousePos.y - 16, pointerEvents: "none", zIndex: 10 }}
+              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 shadow-xl"
+            >
+              <p className="text-xs text-[var(--color-text-muted)] mb-0.5">
+                {new Date(points[hovered].month + "T00:00:00Z").toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })}
+              </p>
+              <p className="text-sm font-bold text-[var(--color-text-primary)]">
+                {formatCurrency(val)}
+              </p>
+              {mom !== null && (
+                <p className={`text-xs mt-0.5 ${mom >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}`}>
+                  {mom >= 0 ? "▲" : "▼"} {formatCurrency(Math.abs(mom))} MoM
+                </p>
+              )}
+            </div>
+          );
+        })()}
         <svg
           viewBox={`0 0 ${W} ${H}`}
           className="w-full overflow-visible"
@@ -166,11 +208,11 @@ export function NetWorthChart({ points }: NetWorthChartProps) {
                 strokeDasharray="4 4"
               />
               <text
-                x={PAD_L + 4}
-                y={y - 5}
-                fontSize="10"
+                x={PAD_L - 8}
+                y={y + 4}
+                fontSize="13"
                 fill="var(--color-text-muted)"
-                textAnchor="start"
+                textAnchor="end"
               >
                 {new Intl.NumberFormat("en-US", {
                   style: "currency",
@@ -289,75 +331,6 @@ export function NetWorthChart({ points }: NetWorthChartProps) {
             </g>
           ))}
 
-          {hovered !== null &&
-            (() => {
-              const c = coords[hovered];
-              const val = points[hovered].net_worth;
-              const prevVal = hovered > 0 ? points[hovered - 1].net_worth : null;
-              const mom = prevVal !== null ? val - prevVal : null;
-              const TW = 150;
-              const TH = mom !== null ? 52 : 36;
-              const TX = Math.min(
-                Math.max(c.x - TW / 2, PAD_L + 4),
-                W - PAD_R - TW - 4
-              );
-              const TY = Math.max(c.y - TH - 12, PAD_T);
-              return (
-                <g style={{ pointerEvents: "none" }}>
-                  <rect
-                    x={TX}
-                    y={TY}
-                    width={TW}
-                    height={TH}
-                    rx="7"
-                    fill="var(--color-bg-secondary)"
-                    stroke="var(--color-border)"
-                    strokeWidth="1"
-                    filter="drop-shadow(0 2px 8px rgba(0,0,0,0.12))"
-                  />
-                  <text
-                    x={TX + TW / 2}
-                    y={TY + 15}
-                    textAnchor="middle"
-                    fontSize="10.5"
-                    fill="var(--color-text-muted)"
-                  >
-                    {new Date(
-                      points[hovered].month + "T00:00:00Z"
-                    ).toLocaleDateString("en-US", {
-                      month: "long",
-                      year: "numeric",
-                      timeZone: "UTC",
-                    })}
-                  </text>
-                  <text
-                    x={TX + TW / 2}
-                    y={TY + 31}
-                    textAnchor="middle"
-                    fontSize="13"
-                    fontWeight="700"
-                    fill="var(--color-text-primary)"
-                  >
-                    {formatCurrency(val)}
-                  </text>
-                  {mom !== null && (
-                    <text
-                      x={TX + TW / 2}
-                      y={TY + 47}
-                      textAnchor="middle"
-                      fontSize="10"
-                      fill={
-                        mom >= 0
-                          ? "var(--color-success)"
-                          : "var(--color-danger)"
-                      }
-                    >
-                      {mom >= 0 ? "▲" : "▼"} {formatCurrency(Math.abs(mom))} mom
-                    </text>
-                  )}
-                </g>
-              );
-            })()}
         </svg>
       </div>
     </Card>

@@ -24,7 +24,6 @@ import {
   PackageOpen,
   Loader2,
   ChevronDown,
-  RefreshCw,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -111,7 +110,6 @@ export default function AccountsClient({
   const [sortOption, setSortOption] = useState<SortOption>("name_asc");
   const [showInactive, setShowInactive] = useState(false);
   const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
-  const [recalculating, setRecalculating] = useState<string | null>(null); // account id or 'all'
 
   // Re-fetch when showInactive changes (server gave us active-only initially)
   useEffect(() => {
@@ -338,40 +336,6 @@ export default function AccountsClient({
     }
   };
 
-  const handleRecalculate = async (accountId?: string) => {
-    const key = accountId ?? 'all';
-    setRecalculating(key);
-    try {
-      const res = await fetch('/api/accounts/recalculate-balances', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(accountId ? { account_id: accountId } : {}),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        toastError(json.error ?? 'Failed to recalculate balance');
-        return;
-      }
-      // Update local state with new balances
-      const updated = json.results as { id: string; new_balance: number }[];
-      setAccounts((prev) =>
-        prev.map((a) => {
-          const match = updated.find((u) => u.id === a.id);
-          return match ? { ...a, current_balance: match.new_balance } : a;
-        })
-      );
-      toastSuccess(
-        accountId
-          ? 'Balance recalculated'
-          : `${json.updated} account${json.updated !== 1 ? 's' : ''} recalculated`
-      );
-    } catch {
-      toastError('Network error — could not recalculate');
-    } finally {
-      setRecalculating(null);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setTouchedFields(new Set(Object.keys(formData)));
@@ -488,7 +452,7 @@ export default function AccountsClient({
           {isSortDropdownOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setIsSortDropdownOpen(false)} />
-              <div className="absolute right-0 mt-2 w-56 max-w-[calc(100vw-2rem)] rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-xl z-50 py-2">
+              <div className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-56 max-w-[calc(100vw-3rem)] rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-xl z-50 py-2 overflow-hidden">
                 <div className="px-3 py-1.5 text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wide">Sort by</div>
                 {(Object.keys(sortLabels) as SortOption[]).map((option) => {
                   const isActive = sortOption === option;
@@ -524,15 +488,6 @@ export default function AccountsClient({
         >
           {showInactive ? "Hide inactive" : "Show inactive"}
         </button>
-        <Button
-          variant="secondary"
-          onClick={() => handleRecalculate()}
-          disabled={recalculating !== null}
-          title="Recalculate all account balances from transaction history"
-        >
-          <RefreshCw className={cn("h-3.5 w-3.5 mr-1.5", recalculating === 'all' && "animate-spin")} />
-          <span className="hidden sm:inline">Recalculate All</span>
-        </Button>
         <Button onClick={openAddModal}>
           <Plus className="h-3.5 w-3.5 mr-1.5" />
           Add Account
@@ -604,9 +559,9 @@ export default function AccountsClient({
                     )}
                   >
                     <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
                         <div className={cn(
-                          "flex h-10 w-10 items-center justify-center rounded-lg",
+                          "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
                           inactive
                             ? "bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)]"
                             : kind === "liability"
@@ -615,9 +570,9 @@ export default function AccountsClient({
                         )}>
                           <Icon className="h-5 w-5" />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <p className="font-medium text-[var(--color-text-primary)]">{account.name}</p>
+                            <p className="font-medium text-[var(--color-text-primary)] truncate">{account.name}</p>
                             {inactive && (
                               <span className="inline-flex items-center rounded-md px-1.5 py-0.5 text-xs font-medium bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)]">
                                 Inactive
@@ -630,16 +585,6 @@ export default function AccountsClient({
                         </div>
                       </div>
                       <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                        {!inactive && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleRecalculate(account.id); }}
-                            className="p-1.5 rounded-md hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-accent)]"
-                            title="Recalculate balance from transactions"
-                            disabled={recalculating !== null}
-                          >
-                            <RefreshCw className={cn("h-3.5 w-3.5", recalculating === account.id && "animate-spin")} />
-                          </button>
-                        )}
                         {!inactive && (
                           <button
                             onClick={(e) => { e.stopPropagation(); openEditModal(account); }}

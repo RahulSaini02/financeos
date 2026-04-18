@@ -384,6 +384,10 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
   const [activeFilter, setActiveFilter] = useState<FilterTab>("active");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSub, setEditingSub] = useState<Subscription | null>(null);
+  const [loggingPayment, setLoggingPayment] = useState<string | null>(null);
+  const [logPaymentError, setLogPaymentError] = useState<{ id: string; message: string } | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadSubscriptions = async () => {
     const { data, error: err } = await supabase
@@ -397,17 +401,20 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this subscription?")) return;
+  const handleDelete = async () => {
+    if (!confirmDeleteId) return;
+    setDeleting(true);
     const { error: err } = await supabase
       .from("subscriptions")
       .delete()
-      .eq("id", id);
+      .eq("id", confirmDeleteId);
+    setDeleting(false);
     if (err) {
-      alert(err.message);
+      setError(err.message);
     } else {
-      setSubscriptions((prev) => prev.filter((s) => s.id !== id));
+      setSubscriptions((prev) => prev.filter((s) => s.id !== confirmDeleteId));
     }
+    setConfirmDeleteId(null);
   };
 
   const openAdd = () => {
@@ -424,6 +431,26 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
     setModalOpen(false);
     setEditingSub(null);
     loadSubscriptions();
+  };
+
+  const handleLogPayment = async (subId: string) => {
+    setLoggingPayment(subId);
+    setLogPaymentError(null);
+    try {
+      const res = await fetch("/api/subscriptions/log-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription_id: subId }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setLogPaymentError({ id: subId, message: data.error ?? "Failed to log payment" });
+      } else {
+        await loadSubscriptions();
+      }
+    } finally {
+      setLoggingPayment(null);
+    }
   };
 
   const activeSubscriptions = subscriptions.filter((s) => s.status === "active");
@@ -598,7 +625,7 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
                       <Pencil className="h-3.5 w-3.5 text-[var(--color-text-muted)]" />
                     </button>
                     <button
-                      onClick={() => handleDelete(sub.id)}
+                      onClick={() => setConfirmDeleteId(sub.id)}
                       className="rounded-lg p-1.5 hover:bg-[var(--color-danger)]/10 transition-colors"
                     >
                       <Trash2 className="h-3.5 w-3.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)]" />
@@ -658,6 +685,26 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
                     Auto-renews
                   </div>
                 )}
+
+                {sub.status === "active" && days !== null && days <= 0 && (
+                  <>
+                    <button
+                      onClick={() => handleLogPayment(sub.id)}
+                      disabled={loggingPayment === sub.id}
+                      className="flex items-center justify-center gap-1.5 w-full rounded-lg py-1.5 text-xs font-medium bg-[var(--color-accent)]/10 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/20 transition-colors disabled:opacity-60"
+                    >
+                      {loggingPayment === sub.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="h-3 w-3" />
+                      )}
+                      Log Payment
+                    </button>
+                    {loggingPayment !== sub.id && logPaymentError?.id === sub.id && (
+                      <p className="text-xs text-[var(--color-danger)] text-center">{logPaymentError.message}</p>
+                    )}
+                  </>
+                )}
               </Card>
             );
           })}
@@ -675,6 +722,16 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
           onSaved={handleSaved}
         />
       )}
+
+      <ConfirmDialog
+        open={!!confirmDeleteId}
+        onClose={() => setConfirmDeleteId(null)}
+        onConfirm={handleDelete}
+        title="Delete subscription?"
+        description="This will permanently remove the subscription. This action cannot be undone."
+        confirmLabel="Delete"
+        loading={deleting}
+      />
     </div>
   );
 }

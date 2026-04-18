@@ -126,7 +126,7 @@ async function getDashboardData ( userId: string ) {
     supabase.from( 'transactions' ).select( '*, category:categories(name, id)' ).eq( 'user_id', userId ).gte( 'date', firstDay ).lte( 'date', lastDay ),
     supabase.from( 'transactions' ).select( '*', { count: 'exact', head: true } ).eq( 'user_id', userId ).eq( 'flagged', true ),
     supabase.from( 'networth_snapshots' ).select( '*' ).eq( 'user_id', userId ).order( 'month', { ascending: false } ).limit( 12 ),
-    supabase.from( 'ai_insights' ).select( '*' ).eq( 'user_id', userId ).eq( 'is_read', false ).order( 'created_at', { ascending: false } ).limit( 1 ),
+    supabase.from( 'ai_insights' ).select( '*' ).eq( 'user_id', userId ).eq( 'type', 'daily' ).gte( 'created_at', todayStr ).order( 'created_at', { ascending: false } ).limit( 1 ),
     supabase.from( 'subscriptions' ).select( 'name, next_billing_date, billing_cost' ).eq( 'user_id', userId ).eq( 'status', 'active' ).not( 'next_billing_date', 'is', null ).gte( 'next_billing_date', todayStr ).lte( 'next_billing_date', sevenDaysStr ).order( 'next_billing_date', { ascending: true } ),
     supabase.from( 'transactions' ).select( 'amount_usd, cr_dr, is_internal_transfer' ).eq( 'user_id', userId ).gte( 'date', prevMonthFirstDay ).lte( 'date', prevMonthLastDay ),
     supabase.from( 'transactions' ).select( 'amount_usd, cr_dr, date' ).eq( 'user_id', userId ).eq( 'is_internal_transfer', false ).gte( 'date', twelveMonthsAgoStr ).lte( 'date', lastDay ),
@@ -422,60 +422,6 @@ export default async function DashboardPage () {
         </Card>
       )}
 
-      {/* Alerts */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Alerts</CardTitle>
-          <span className="text-xs text-[var(--color-text-muted)]">
-            {data.alerts.length} active
-          </span>
-        </CardHeader>
-        {data.alerts.length === 0 ? (
-          <p className="text-sm text-[var(--color-text-muted)]">No alerts — everything looks good.</p>
-        ) : (
-          <div className="space-y-3">
-            {data.alerts.map( ( alert ) => {
-              const isOver = alert.type === 'budget_100';
-              const isRisk = alert.type === 'budget_80';
-              const isAnomaly = alert.type === 'anomaly';
-              const isBill = alert.type === 'upcoming_bill';
-
-              const iconBg = isOver
-                ? 'bg-[var(--color-danger)]/10 text-[var(--color-danger)]'
-                : isRisk
-                  ? 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]'
-                  : isBill
-                    ? 'bg-[var(--color-accent)]/10 text-[var(--color-accent)]'
-                    : 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]';
-
-              return (
-                <div
-                  key={alert.id}
-                  className="flex items-start justify-between gap-3 py-2 border-b border-[var(--color-border)] last:border-0"
-                >
-                  <div className="flex items-start gap-3 min-w-0">
-                    <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${ iconBg }`}>
-                      {( isOver || isRisk ) && <TrendingDown className="h-3.5 w-3.5" />}
-                      {isAnomaly && <AlertTriangle className="h-3.5 w-3.5" />}
-                      {isBill && <Bell className="h-3.5 w-3.5" />}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{alert.title}</p>
-                      <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{alert.body}</p>
-                    </div>
-                  </div>
-                  <Link
-                    href={alert.actionUrl}
-                    className="shrink-0 text-xs text-[var(--color-accent)] hover:underline underline-offset-2 whitespace-nowrap"
-                  >
-                    {alert.actionLabel} →
-                  </Link>
-                </div>
-              );
-            } )}
-          </div>
-        )}
-      </Card>
 
       {/* Charts row — Category pie + Month comparison + Net Worth Trend */}
       <div className="grid gap-4 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3">

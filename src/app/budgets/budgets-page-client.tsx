@@ -397,19 +397,19 @@ export default function BudgetsClient({
       </PageHeader>
 
       {/* Summary strip */}
-      <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-5 space-y-4">
+      <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 sm:p-5 space-y-4">
         <div className="grid grid-cols-3 divide-x divide-[var(--color-border)]">
-          <div className="pr-6">
-            <p className="text-xs text-[var(--color-text-muted)]">Total Budgeted</p>
-            <p className="text-xl font-bold text-[var(--color-text-primary)] mt-0.5">{formatCurrency(totalBudgeted)}</p>
+          <div className="pr-3 sm:pr-6 min-w-0">
+            <p className="text-[10px] sm:text-xs text-[var(--color-text-muted)] truncate">Total Budgeted</p>
+            <p className="text-sm sm:text-xl font-bold text-[var(--color-text-primary)] mt-0.5 truncate">{formatCurrency(totalBudgeted)}</p>
           </div>
-          <div className="px-6">
-            <p className="text-xs text-[var(--color-text-muted)]">Spent So Far</p>
-            <p className="text-xl font-bold text-[var(--color-text-primary)] mt-0.5">{formatCurrency(totalSpent)}</p>
+          <div className="px-3 sm:px-6 min-w-0">
+            <p className="text-[10px] sm:text-xs text-[var(--color-text-muted)] truncate">Spent So Far</p>
+            <p className="text-sm sm:text-xl font-bold text-[var(--color-text-primary)] mt-0.5 truncate">{formatCurrency(totalSpent)}</p>
           </div>
-          <div className="pl-6">
-            <p className="text-xs text-[var(--color-text-muted)]">{totalRemaining >= 0 ? "Remaining" : "Over by"}</p>
-            <p className={`text-xl font-bold mt-0.5 ${totalRemaining >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}`}>
+          <div className="pl-3 sm:pl-6 min-w-0">
+            <p className="text-[10px] sm:text-xs text-[var(--color-text-muted)] truncate">{totalRemaining >= 0 ? "Remaining" : "Over"}</p>
+            <p className={`text-sm sm:text-xl font-bold mt-0.5 truncate ${totalRemaining >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}`}>
               {formatCurrency(Math.abs(totalRemaining))}
             </p>
           </div>

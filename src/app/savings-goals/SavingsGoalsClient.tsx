@@ -18,10 +18,19 @@ import {
   CheckCircle2,
   PauseCircle,
   PackageOpen,
+  House,
+  Car,
+  Plane,
+  GraduationCap,
+  Heart,
+  Gift,
+  Camera,
+  Dumbbell,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type FilterTab = "all" | GoalStatus;
 
@@ -48,8 +57,20 @@ const ICON_OPTIONS = [
   { value: "dumbbell", label: "Fitness" },
 ];
 
-function getIconComponent(_iconName: string | null) {
-  return <Target className="h-5 w-5" />;
+const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  house: House,
+  car: Car,
+  plane: Plane,
+  "graduation-cap": GraduationCap,
+  heart: Heart,
+  gift: Gift,
+  camera: Camera,
+  dumbbell: Dumbbell,
+};
+
+function getIconComponent(iconName: string | null) {
+  const Icon = (iconName && ICON_MAP[iconName]) ? ICON_MAP[iconName] : Target;
+  return <Icon className="h-5 w-5" />;
 }
 
 function statusBadge(status: GoalStatus) {
@@ -376,6 +397,8 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
   const [modalOpen, setModalOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<SavingsGoal | null>(null);
   const [sortBy, setSortBy] = useState<"progress" | "target" | "name">("progress");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadGoals = async () => {
     const { data, error: err } = await supabase
@@ -389,17 +412,20 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this savings goal?")) return;
+  const handleDelete = async () => {
+    if (!confirmDeleteId) return;
+    setDeleting(true);
     const { error: err } = await supabase
       .from("savings_goals")
       .delete()
-      .eq("id", id);
+      .eq("id", confirmDeleteId);
+    setDeleting(false);
     if (err) {
-      alert(err.message);
+      setError(err.message);
     } else {
-      setGoals((prev) => prev.filter((g) => g.id !== id));
+      setGoals((prev) => prev.filter((g) => g.id !== confirmDeleteId));
     }
+    setConfirmDeleteId(null);
   };
 
   const openAdd = () => {
@@ -581,9 +607,7 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
             const linkedAccount = goal.linked_account_id
               ? accounts.find((a) => a.id === goal.linked_account_id)
               : null;
-            const effectiveCurrent = linkedAccount
-              ? Math.max(linkedAccount.current_balance, 0)
-              : goal.current_amount;
+            const effectiveCurrent = goal.current_amount;
             const progress = goal.target_amount > 0
               ? (effectiveCurrent / goal.target_amount) * 100
               : 0;
@@ -618,7 +642,7 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
                       <Pencil className="h-3.5 w-3.5 text-[var(--color-text-muted)]" />
                     </button>
                     <button
-                      onClick={() => handleDelete(goal.id)}
+                      onClick={() => setConfirmDeleteId(goal.id)}
                       className="rounded-lg p-1.5 hover:bg-[var(--color-danger)]/10 transition-colors"
                     >
                       <Trash2 className="h-3.5 w-3.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)]" />
@@ -709,6 +733,16 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
           onSaved={handleSaved}
         />
       )}
+
+      <ConfirmDialog
+        open={!!confirmDeleteId}
+        onClose={() => setConfirmDeleteId(null)}
+        onConfirm={handleDelete}
+        title="Delete savings goal?"
+        description="This will permanently remove the goal. This action cannot be undone."
+        confirmLabel="Delete"
+        loading={deleting}
+      />
     </div>
   );
 }

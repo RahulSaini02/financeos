@@ -146,14 +146,6 @@ ${context}`,
 
     const answer = message.content[0].type === 'text' ? message.content[0].text : 'Sorry, I could not generate a response.'
 
-    // Save insight
-    await supabase.from('ai_insights').insert({
-      user_id: user.id,
-      type: 'daily',
-      content: `Q: ${question}\n\nA: ${answer}`,
-      is_read: false,
-    })
-
     return NextResponse.json({ answer })
   } catch (err) {
     console.error('AI Chat error:', err)

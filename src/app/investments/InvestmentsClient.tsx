@@ -217,13 +217,14 @@ function getTypeStyle(type: string) {
 interface InvestmentsClientProps {
   initialInvestments: Investment[];
   accounts: AccountOption[];
+  initialSavingsGoals?: SavingsGoal[];
 }
 
-export function InvestmentsClient({ initialInvestments, accounts }: InvestmentsClientProps) {
+export function InvestmentsClient({ initialInvestments, accounts, initialSavingsGoals = [] }: InvestmentsClientProps) {
   const supabase = createClient();
 
   const [investments, setInvestments] = useState<Investment[]>(initialInvestments);
-  const [goals, setGoals] = useState<SavingsGoal[]>([]);
+  const [goals, setGoals] = useState<SavingsGoal[]>(initialSavingsGoals);
   const [error, setError] = useState<string | null>(null);
 
   // Modal state
@@ -241,7 +242,7 @@ export function InvestmentsClient({ initialInvestments, accounts }: InvestmentsC
         .order("current_value", { ascending: false }),
       supabase
         .from("savings_goals")
-        .select("*, account:accounts!savings_goals_linked_account_id_fkey(id, name, current_balance)")
+        .select("*, account:accounts(id, name, current_balance)")
         .order("created_at"),
     ]);
     setInvestments(inv ?? []);
