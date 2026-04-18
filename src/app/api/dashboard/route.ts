@@ -211,7 +211,7 @@ Be specific, actionable, and encouraging. Respond in 2–3 sentences using markd
             user_id: user.id,
             type: 'daily',
             content: insightText,
-            month: firstDay,
+            month: todayStr,
             is_read: false,
           }).select().single()
 
