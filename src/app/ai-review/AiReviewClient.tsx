@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import {
   Sparkles,
   TrendingDown,
@@ -9,11 +9,17 @@ import {
   ArrowDownRight,
   Minus,
   BarChart2,
+  ChevronDown,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { MarkdownContent } from "@/components/ui/markdown-content";
 import { HelpModal } from "@/components/ui/help-modal";
 import { formatCurrency } from "@/lib/utils";
+import {
+  getDefaultPeriodKey,
+  getPastPeriodKeys,
+  periodInfo,
+} from "@/lib/review-periods";
 import {
   BarChart,
   Bar,
@@ -93,11 +99,11 @@ function MoMChart({ categories }: { categories: TopCategory[] }) {
           }}
           formatter={(v: unknown, name: unknown) => [
             fmt(v as number),
-            name === "thisMonth" ? "This Month" : "Last Month",
+            name === "thisMonth" ? "This Period" : "Prior Period",
           ]}
         />
         <Legend
-          formatter={(v) => (v === "thisMonth" ? "This Month" : "Last Month")}
+          formatter={(v) => (v === "thisMonth" ? "This Period" : "Prior Period")}
           wrapperStyle={{ fontSize: 11, color: "#c0c0d0", paddingTop: 8 }}
         />
         <Bar dataKey="lastMonth" fill="#374151" radius={[4, 4, 0, 0]} maxBarSize={28} />
@@ -109,15 +115,33 @@ function MoMChart({ categories }: { categories: TopCategory[] }) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function AiReviewClient({ initialData }: { initialData: ReviewData | null }) {
+  // Compute the canonical "current" period key once (stable across renders)
+  const defaultKey = useMemo(
+    () => initialData?.month ?? getDefaultPeriodKey(new Date()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  // Build the ordered list of selectable periods: current + 11 prior
+  const periodOptions = useMemo(
+    () => [defaultKey, ...getPastPeriodKeys(defaultKey, 11)],
+    [defaultKey]
+  );
+
+  const [selectedPeriodKey, setSelectedPeriodKey] = useState<string>(defaultKey);
   const [data, setData] = useState<ReviewData | null>(initialData);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (force = false) => {
+  const load = useCallback(async (force = false, periodKey?: string) => {
+    const key = periodKey ?? selectedPeriodKey;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(force ? "/api/ai-review?force=true" : "/api/ai-review");
+      const params = new URLSearchParams();
+      if (force) params.set("force", "true");
+      if (key) params.set("period", key);
+      const res = await fetch(`/api/ai-review?${params}`);
       if (!res.ok) throw new Error("Failed to load review");
       setData(await res.json());
     } catch (e) {
@@ -125,14 +149,24 @@ export default function AiReviewClient({ initialData }: { initialData: ReviewDat
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedPeriodKey]);
 
+  // On mount: fetch only if SSR didn't provide analysis
+  const mountedRef = useRef(false);
   useEffect(() => {
     if (!initialData || !initialData.analysis) {
-      load();
+      load(false, defaultKey);
     }
+    mountedRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // When the period selection changes (skip initial mount)
+  useEffect(() => {
+    if (!mountedRef.current) return;
+    load(false, selectedPeriodKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPeriodKey]);
 
   return (
     <div className="p-4 md:p-6 space-y-5 max-w-5xl mx-auto">
@@ -150,8 +184,9 @@ export default function AiReviewClient({ initialData }: { initialData: ReviewDat
                 heading: "How it works",
                 items: [
                   "Each month is split into two 15-day windows: day 1–15 and day 16–end",
-                  "Auto-generates a TLDR review for the current 15-day period",
-                  "Compares current period vs the prior 15-day window for trend context",
+                  "Always shows the most recently completed period",
+                  "Use the period selector to browse past reviews",
+                  "Compares each period vs the prior 15-day window for trend context",
                   "Hit Refresh to regenerate with the latest data at any time",
                 ],
               },
@@ -159,8 +194,26 @@ export default function AiReviewClient({ initialData }: { initialData: ReviewDat
           />
         }
       >
+        {/* Period selector */}
+        <div className="relative">
+          <select
+            value={selectedPeriodKey}
+            onChange={(e) => setSelectedPeriodKey(e.target.value)}
+            disabled={loading}
+            className="appearance-none rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5 pr-7 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
+          >
+            {periodOptions.map((key, i) => (
+              <option key={key} value={key}>
+                {periodInfo(key).label}{i === 0 ? " (latest)" : ""}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--color-text-muted)]" />
+        </div>
+
+        {/* Refresh button */}
         <button
-          onClick={() => load(true)}
+          onClick={() => load(true, selectedPeriodKey)}
           disabled={loading}
           className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors disabled:opacity-50"
         >
@@ -180,7 +233,7 @@ export default function AiReviewClient({ initialData }: { initialData: ReviewDat
       {loading && data && (
         <div className="flex items-center gap-2 rounded-lg border border-[var(--color-accent)]/20 bg-[var(--color-accent)]/5 px-4 py-2.5 text-sm text-[var(--color-accent)]">
           <RefreshCw className="h-3.5 w-3.5 animate-spin shrink-0" />
-          <span>Regenerating analysis with latest data…</span>
+          <span>Loading analysis…</span>
         </div>
       )}
 
@@ -282,7 +335,7 @@ export default function AiReviewClient({ initialData }: { initialData: ReviewDat
                       <th className="text-right pb-2 pr-3 text-xs font-medium text-[var(--color-text-muted)]">Amount</th>
                       <th className="text-right pb-2 pr-3 text-xs font-medium text-[var(--color-text-muted)]">% of Total</th>
                       {data.hasPriorMonth && (
-                        <th className="text-right pb-2 text-xs font-medium text-[var(--color-text-muted)]">vs Prior Month</th>
+                        <th className="text-right pb-2 text-xs font-medium text-[var(--color-text-muted)]">vs Prior Period</th>
                       )}
                     </tr>
                   </thead>
@@ -379,7 +432,7 @@ export default function AiReviewClient({ initialData }: { initialData: ReviewDat
               <div className="flex items-center gap-2 pb-3 mb-4 border-b border-[var(--color-border)]">
                 <BarChart2 className="h-4 w-4 text-[var(--color-accent)]" />
                 <span className="text-sm font-semibold text-[var(--color-text-primary)]">
-                  Month-over-Month Comparison
+                  Period-over-Period Comparison
                 </span>
               </div>
               <MoMChart categories={data.topCategories} />

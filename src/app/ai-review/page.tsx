@@ -1,5 +1,10 @@
 import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import {
+  getDefaultPeriodKey,
+  periodInfo,
+  priorPeriodInfo,
+} from "@/lib/review-periods";
 import AiReviewClient, { type ReviewData } from "./AiReviewClient";
 
 export default async function AiReviewPage() {
@@ -11,34 +16,10 @@ export default async function AiReviewPage() {
 
   try {
     const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const dayOfMonth = now.getDate();
-    const isFirstHalf = dayOfMonth <= 15;
-
-    // Current period bounds
-    const periodStart = isFirstHalf
-      ? new Date(now.getFullYear(), now.getMonth(), 1)
-      : new Date(now.getFullYear(), now.getMonth(), 16);
-    const periodEnd = isFirstHalf
-      ? new Date(now.getFullYear(), now.getMonth(), 15)
-      : new Date(now.getFullYear(), now.getMonth() + 1, 0);
-
-    // Cache key
-    const periodKey = isFirstHalf
-      ? `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`
-      : `${now.getFullYear()}-${pad(now.getMonth() + 1)}-16`;
-
-    // Label for display
-    const endDay = periodEnd.getDate();
-    const label = isFirstHalf
-      ? `${periodStart.toLocaleDateString("en-US", { month: "long" })} 1–15, ${now.getFullYear()}`
-      : `${periodStart.toLocaleDateString("en-US", { month: "long" })} 16–${endDay}, ${now.getFullYear()}`;
-
-    // Prior period bounds
-    const priorPeriodEnd = new Date(periodStart.getTime() - 86400000);
-    const priorPeriodStart = isFirstHalf
-      ? new Date(now.getFullYear(), now.getMonth() - 1, 16)
-      : new Date(now.getFullYear(), now.getMonth(), 1);
+    const periodKey = getDefaultPeriodKey(now);
+    const { periodStart, periodEnd, label } = periodInfo(periodKey);
+    const { periodStart: priorPeriodStart, periodEnd: priorPeriodEnd } =
+      priorPeriodInfo(periodKey);
 
     const { data: cachedInsight } = await supabase
       .from("ai_insights")
@@ -82,7 +63,9 @@ export default async function AiReviewPage() {
       if (t.cr_dr === "debit") {
         const catRaw = t.category as unknown;
         const catName =
-          catRaw != null && !Array.isArray(catRaw) && typeof (catRaw as { name?: string }).name === "string"
+          catRaw != null &&
+          !Array.isArray(catRaw) &&
+          typeof (catRaw as { name?: string }).name === "string"
             ? (catRaw as { name: string }).name
             : "Uncategorized";
         if (!byCategory[catName]) byCategory[catName] = { amount: 0, count: 0 };
@@ -96,10 +79,13 @@ export default async function AiReviewPage() {
       if (t.cr_dr === "debit") {
         const catRaw = t.category as unknown;
         const catName =
-          catRaw != null && !Array.isArray(catRaw) && typeof (catRaw as { name?: string }).name === "string"
+          catRaw != null &&
+          !Array.isArray(catRaw) &&
+          typeof (catRaw as { name?: string }).name === "string"
             ? (catRaw as { name: string }).name
             : "Uncategorized";
-        priorByCategory[catName] = (priorByCategory[catName] ?? 0) + Math.abs(t.amount_usd ?? 0);
+        priorByCategory[catName] =
+          (priorByCategory[catName] ?? 0) + Math.abs(t.amount_usd ?? 0);
       }
     }
 

@@ -4,6 +4,11 @@ import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
 import { getUserPrompt } from '@/lib/get-user-prompt'
 import { formatCurrency } from '@/lib/utils'
+import {
+  getDefaultPeriodKey,
+  periodInfo,
+  priorPeriodInfo,
+} from '@/lib/review-periods'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -15,40 +20,17 @@ export async function GET(request: Request) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // ── Force param ───────────────────────────────────────────────
     const url = new URL(request.url)
     const force = url.searchParams.get('force') === 'true'
 
-    // ── Date ranges (15-day periods) ─────────────────────────────
+    // Accept an explicit period key; validate format; fall back to the last completed period
+    const periodParam = url.searchParams.get('period') ?? ''
+    const isValidKey = /^\d{4}-\d{2}-(01|16)$/.test(periodParam)
     const now = new Date()
-    const pad = (n: number) => String(n).padStart(2, '0')
-    const dayOfMonth = now.getDate()
-    const isFirstHalf = dayOfMonth <= 15
+    const periodKey = isValidKey ? periodParam : getDefaultPeriodKey(now)
 
-    // Current period bounds
-    const periodStart = isFirstHalf
-      ? new Date(now.getFullYear(), now.getMonth(), 1)
-      : new Date(now.getFullYear(), now.getMonth(), 16)
-    const periodEnd = isFirstHalf
-      ? new Date(now.getFullYear(), now.getMonth(), 15)
-      : new Date(now.getFullYear(), now.getMonth() + 1, 0) // last day of month
-
-    // Cache key
-    const periodKey = isFirstHalf
-      ? `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`
-      : `${now.getFullYear()}-${pad(now.getMonth() + 1)}-16`
-
-    // Label for display
-    const endDay = periodEnd.getDate()
-    const label = isFirstHalf
-      ? `${periodStart.toLocaleDateString('en-US', { month: 'long' })} 1–15, ${now.getFullYear()}`
-      : `${periodStart.toLocaleDateString('en-US', { month: 'long' })} 16–${endDay}, ${now.getFullYear()}`
-
-    // Prior period bounds (the 15-day window before this one)
-    const priorPeriodEnd = new Date(periodStart.getTime() - 86400000)
-    const priorPeriodStart = isFirstHalf
-      ? new Date(now.getFullYear(), now.getMonth() - 1, 16) // second half of previous month
-      : new Date(now.getFullYear(), now.getMonth(), 1) // first half of this month
+    const { periodStart, periodEnd, label } = periodInfo(periodKey)
+    const { periodStart: priorPeriodStart, periodEnd: priorPeriodEnd } = priorPeriodInfo(periodKey)
 
     // ── Cache check ───────────────────────────────────────────────
     const { data: cachedInsight } = await supabase
@@ -92,7 +74,7 @@ export async function GET(request: Request) {
     const transactions = lastMonthRes.data ?? []
     const priorTransactions = priorMonthRes.data ?? []
 
-    // ── Aggregate last month ──────────────────────────────────────
+    // ── Aggregate last period ─────────────────────────────────────
     const income = transactions
       .filter(t => t.cr_dr === 'credit')
       .reduce((s, t) => s + Math.abs(t.amount_usd ?? 0), 0)
@@ -111,7 +93,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // ── Prior month category map ──────────────────────────────────
+    // ── Prior period category map ─────────────────────────────────
     const priorByCategory: Record<string, number> = {}
     for (const t of priorTransactions) {
       if (t.cr_dr === 'debit') {
@@ -178,7 +160,6 @@ ${hasPriorMonth ? `Prior 15 days: Income ${fmt(priorIncome)}, Expenses ${fmt(pri
         is_read: false,
       }, { onConflict: 'user_id,type,month' })
     } else if (!isCached) {
-      // No API key — return a simple fallback
       analysis = `${income >= expenses ? 'Positive' : 'Negative'} cash flow of **${fmt(Math.abs(income - expenses))}** for ${label} — ${fmt(income)} income vs ${fmt(expenses)} expenses. Configure \`ANTHROPIC_API_KEY\` to enable full AI analysis.`
     }
 
