@@ -15,11 +15,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { MarkdownContent } from "@/components/ui/markdown-content";
 import { HelpModal } from "@/components/ui/help-modal";
 import { formatCurrency } from "@/lib/utils";
-import {
-  getDefaultPeriodKey,
-  getPastPeriodKeys,
-  periodInfo,
-} from "@/lib/review-periods";
+import { periodInfo } from "@/lib/review-periods";
 import {
   BarChart,
   Bar,
@@ -114,18 +110,28 @@ function MoMChart({ categories }: { categories: TopCategory[] }) {
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export default function AiReviewClient({ initialData }: { initialData: ReviewData | null }) {
-  // Compute the canonical "current" period key once (stable across renders)
-  const defaultKey = useMemo(
-    () => initialData?.month ?? getDefaultPeriodKey(new Date()),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
+export default function AiReviewClient({
+  initialData,
+  availablePeriodKeys,
+}: {
+  initialData: ReviewData | null
+  availablePeriodKeys: string[]
+}) {
+  const defaultKey = initialData?.month ?? availablePeriodKeys[0] ?? "";
 
-  // Build the ordered list of selectable periods: current + 11 prior
-  const periodOptions = useMemo(
-    () => [defaultKey, ...getPastPeriodKeys(defaultKey, 11)],
-    [defaultKey]
+  // Derive unique years (descending) from available keys
+  const availableYears = useMemo(() => {
+    const years = [...new Set(availablePeriodKeys.map((k) => k.slice(0, 4)))];
+    return years.sort((a, b) => b.localeCompare(a));
+  }, [availablePeriodKeys]);
+
+  const defaultYear = availableYears[0] ?? String(new Date().getFullYear());
+  const [selectedYear, setSelectedYear] = useState<string>(defaultKey.slice(0, 4) || defaultYear);
+
+  // Months available for the selected year
+  const monthsForYear = useMemo(
+    () => availablePeriodKeys.filter((k) => k.startsWith(selectedYear)),
+    [availablePeriodKeys, selectedYear]
   );
 
   const [selectedPeriodKey, setSelectedPeriodKey] = useState<string>(defaultKey);
@@ -150,6 +156,13 @@ export default function AiReviewClient({ initialData }: { initialData: ReviewDat
       setLoading(false);
     }
   }, [selectedPeriodKey]);
+
+  // When year changes, reset month to the latest available in that year
+  const handleYearChange = useCallback((year: string) => {
+    setSelectedYear(year);
+    const firstInYear = availablePeriodKeys.find((k) => k.startsWith(year));
+    if (firstInYear) setSelectedPeriodKey(firstInYear);
+  }, [availablePeriodKeys]);
 
   // On mount: fetch only if SSR didn't provide analysis
   const mountedRef = useRef(false);
@@ -193,22 +206,41 @@ export default function AiReviewClient({ initialData }: { initialData: ReviewDat
           />
         }
       >
-        {/* Period selector */}
-        <div className="relative">
-          <select
-            value={selectedPeriodKey}
-            onChange={(e) => setSelectedPeriodKey(e.target.value)}
-            disabled={loading}
-            className="appearance-none rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5 pr-7 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
-          >
-            {periodOptions.map((key, i) => (
-              <option key={key} value={key}>
-                {periodInfo(key).label}{i === 0 ? " (current)" : ""}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--color-text-muted)]" />
-        </div>
+        {/* Year filter */}
+        {availableYears.length > 0 && (
+          <div className="relative">
+            <select
+              value={selectedYear}
+              onChange={(e) => handleYearChange(e.target.value)}
+              disabled={loading}
+              className="appearance-none rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5 pr-7 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
+            >
+              {availableYears.map((year) => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--color-text-muted)]" />
+          </div>
+        )}
+
+        {/* Month filter */}
+        {monthsForYear.length > 0 && (
+          <div className="relative">
+            <select
+              value={selectedPeriodKey}
+              onChange={(e) => setSelectedPeriodKey(e.target.value)}
+              disabled={loading}
+              className="appearance-none rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5 pr-7 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
+            >
+              {monthsForYear.map((key) => (
+                <option key={key} value={key}>
+                  {new Date(key).toLocaleDateString("en-US", { month: "long" })}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--color-text-muted)]" />
+          </div>
+        )}
 
         {/* Refresh button */}
         <button

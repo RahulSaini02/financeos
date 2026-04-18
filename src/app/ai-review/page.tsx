@@ -16,20 +16,29 @@ export default async function AiReviewPage() {
 
   try {
     const now = new Date();
-    const periodKey = getDefaultPeriodKey(now);
-    const { periodStart, periodEnd, label } = periodInfo(periodKey);
+
+    // Fetch available months (months with confirmed transactions) in parallel
+    // with the default-period data
+    const availableMonthsPromise = supabase
+      .rpc("get_available_review_months", { p_user_id: user.id })
+      .then((res) => (res.data ?? []).map((r: { month_key: string }) => r.month_key) as string[]);
+
+    // Default to most recent month that has data; fall back to last completed month
+    const availableKeys = await availableMonthsPromise;
+    const defaultKey = availableKeys[0] ?? getDefaultPeriodKey(now);
+
+    const { periodStart, periodEnd, label } = periodInfo(defaultKey);
     const { periodStart: priorPeriodStart, periodEnd: priorPeriodEnd } =
-      priorPeriodInfo(periodKey);
+      priorPeriodInfo(defaultKey);
 
-    const { data: cachedInsight } = await supabase
-      .from("ai_insights")
-      .select("content")
-      .eq("user_id", user.id)
-      .eq("type", "monthly_review")
-      .eq("month", periodKey)
-      .maybeSingle();
-
-    const [lastMonthRes, priorMonthRes] = await Promise.all([
+    const [cachedInsightRes, lastMonthRes, priorMonthRes] = await Promise.all([
+      supabase
+        .from("ai_insights")
+        .select("content")
+        .eq("user_id", user.id)
+        .eq("type", "monthly_review")
+        .eq("month", defaultKey)
+        .maybeSingle(),
       supabase
         .from("transactions")
         .select("description, amount_usd, cr_dr, date, category:categories(id, name)")
@@ -48,6 +57,7 @@ export default async function AiReviewPage() {
         .lte("date", priorPeriodEnd.toISOString().split("T")[0]),
     ]);
 
+    const cachedInsight = cachedInsightRes.data;
     const transactions = lastMonthRes.data ?? [];
     const priorTransactions = priorMonthRes.data ?? [];
 
@@ -103,7 +113,7 @@ export default async function AiReviewPage() {
 
     const initialData: ReviewData = {
       label,
-      month: periodKey,
+      month: defaultKey,
       cached: !!cachedInsight,
       hasPriorMonth,
       summary: {
@@ -116,8 +126,8 @@ export default async function AiReviewPage() {
       analysis: cachedInsight?.content ?? "",
     };
 
-    return <AiReviewClient initialData={initialData} />;
+    return <AiReviewClient initialData={initialData} availablePeriodKeys={availableKeys} />;
   } catch {
-    return <AiReviewClient initialData={null} />;
+    return <AiReviewClient initialData={null} availablePeriodKeys={[]} />;
   }
 }
