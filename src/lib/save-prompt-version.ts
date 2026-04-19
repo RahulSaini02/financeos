@@ -11,6 +11,7 @@ export async function savePromptVersion(
   key: string,
   content: string,
   versionLabel?: string | null,
+  model?: string | null,
 ) {
   // Deactivate the current active version (if any)
   const { error: deactivateErr } = await supabase
@@ -44,6 +45,7 @@ export async function savePromptVersion(
       version: nextVersion,
       is_active: true,
       version_label: versionLabel ?? null,
+      model: model ?? 'claude-haiku-4-5-20251001',
     })
     .select()
     .single()

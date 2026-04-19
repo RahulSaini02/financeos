@@ -19,6 +19,15 @@ import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
 import { MarkdownContent } from "@/components/ui/markdown-content";
 
+const CHAT_MODEL_KEY = "pref_chat_model";
+const DEFAULT_CHAT_MODEL = "claude-sonnet-4-6";
+
+const MODEL_OPTIONS = [
+  { value: "claude-haiku-4-5-20251001", short: "Haiku", label: "Fast & Cheap" },
+  { value: "claude-sonnet-4-6", short: "Sonnet", label: "Balanced" },
+  { value: "claude-opus-4-6", short: "Opus", label: "Most Capable" },
+] as const;
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface ChatMessage {
@@ -74,6 +83,13 @@ export default function AiChatClient({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    try {
+      return (typeof window !== "undefined" && localStorage.getItem(CHAT_MODEL_KEY)) || DEFAULT_CHAT_MODEL;
+    } catch {
+      return DEFAULT_CHAT_MODEL;
+    }
+  });
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -125,7 +141,7 @@ export default function AiChatClient({
       const res = await fetch("/api/ai-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, model: selectedModel }),
       });
 
       const data = await res.json();
@@ -174,36 +190,64 @@ export default function AiChatClient({
     <div className="p-6 h-full flex flex-col">
       {/* Header */}
       <div className="mb-6">
-        <PageHeader
-          title="AI Finance Assistant"
-          subtitle="Ask questions about your finances"
-          tooltip={
-            <HelpModal
-              title="AI Chat"
-              description="Have a free-form conversation with an AI financial assistant that knows your data. Ask questions, get advice, run hypotheticals, or explore your spending patterns."
-              sections={[
-                {
-                  heading: "How to use",
-                  items: [
-                    "Type any financial question in the chat box and press Enter",
-                    "The AI has access to your transactions, budgets, and account balances",
-                    "Ask things like 'How much did I spend on dining last month?' or 'Am I on track to save $10k this year?'",
-                    "Start a new session with the clear button to reset context",
-                  ],
-                },
-                {
-                  heading: "Example questions",
-                  items: [
-                    "What are my top spending categories this month?",
-                    "How does my spending compare to last month?",
-                    "How long until I pay off my car loan at current payments?",
-                    "What would happen to my savings rate if I cut dining by 20%?",
-                  ],
-                },
-              ]}
-            />
-          }
-        />
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <PageHeader
+            title="AI Finance Assistant"
+            subtitle="Ask questions about your finances"
+            tooltip={
+              <HelpModal
+                title="AI Chat"
+                description="Have a free-form conversation with an AI financial assistant that knows your data. Ask questions, get advice, run hypotheticals, or explore your spending patterns."
+                sections={[
+                  {
+                    heading: "How to use",
+                    items: [
+                      "Type any financial question in the chat box and press Enter",
+                      "The AI has access to your transactions, budgets, and account balances",
+                      "Ask things like 'How much did I spend on dining last month?' or 'Am I on track to save $10k this year?'",
+                      "Start a new session with the clear button to reset context",
+                    ],
+                  },
+                  {
+                    heading: "Example questions",
+                    items: [
+                      "What are my top spending categories this month?",
+                      "How does my spending compare to last month?",
+                      "How long until I pay off my car loan at current payments?",
+                      "What would happen to my savings rate if I cut dining by 20%?",
+                    ],
+                  },
+                ]}
+              />
+            }
+          />
+          {/* Model Switcher */}
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs font-medium" style={{ color: "var(--color-text-muted)" }}>
+              Model:
+            </span>
+            <div className="flex gap-1">
+              {MODEL_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  title={opt.label}
+                  onClick={() => {
+                    setSelectedModel(opt.value);
+                    try { localStorage.setItem(CHAT_MODEL_KEY, opt.value); } catch { /* ignore */ }
+                  }}
+                  className="rounded-full px-3 py-1 text-xs font-medium transition-colors"
+                  style={{
+                    background: selectedModel === opt.value ? "var(--color-accent)" : "var(--color-bg-tertiary)",
+                    color: selectedModel === opt.value ? "#fff" : "var(--color-text-secondary)",
+                    border: `1px solid ${selectedModel === opt.value ? "var(--color-accent)" : "var(--color-border)"}`,
+                  }}
+                >
+                  {opt.short}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Body: two panels */}

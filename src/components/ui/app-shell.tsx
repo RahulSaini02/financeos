@@ -24,6 +24,7 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FloatingAiChat } from "@/components/ui/floating-ai-chat";
@@ -46,6 +47,7 @@ export const ALL_NAV_ITEMS = [
   { href: "/tax-estimator", label: "Taxes", icon: ArrowRightLeft },
   { href: "/ai-review", label: "AI Review", icon: Sparkles },
   { href: "/import", label: "Import", icon: Upload },
+  { href: "/admin", label: "Admin", icon: ShieldCheck },
 ];
 
 export const NAV_PREFS_KEY = "pref_nav_items";
@@ -94,6 +96,7 @@ export function AppShell({ children }: AppShellProps) {
     try { return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true"; } catch { return false; }
   });
   const [navPrefs, setNavPrefs] = useState<NavPref[]>(() => getNavPrefs());
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // Listen for nav pref changes from other tabs / same-tab updates
   useEffect(() => {
@@ -108,6 +111,17 @@ export function AppShell({ children }: AppShellProps) {
       window.removeEventListener("nav-prefs-updated", handleNavUpdate);
     };
   }, []);
+
+  // Fetch user profile to determine admin status (for Admin nav item)
+  useEffect(() => {
+    if (!user) return;
+    fetch("/api/user-profile")
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (data?.data?.role === "admin") setIsAdmin(true);
+      })
+      .catch(() => { /* ignore */ });
+  }, [user]);
 
   const toggleCollapsed = () => {
     setSidebarCollapsed((prev) => {
@@ -145,8 +159,10 @@ export function AppShell({ children }: AppShellProps) {
     .join("");
 
   // Build ordered, filtered nav items from prefs
+  // Admin item only shows for admin users
   const visibleNavItems = navPrefs
     .filter((p) => p.visible)
+    .filter((p) => p.href !== "/admin" || isAdmin)
     .map((p) => ALL_NAV_ITEMS.find((n) => n.href === p.href))
     .filter(Boolean) as typeof ALL_NAV_ITEMS;
 

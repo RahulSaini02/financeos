@@ -124,8 +124,11 @@ export async function POST(request: NextRequest) {
       target_account_id,
     } = body
 
+    // Convention: amount_usd (= final_amount) is SIGNED — positive for credits, negative for debits.
+    // amount_original is ALWAYS the raw positive magnitude entered by the user.
+    // All balance calculations must use amount_usd (signed). Never sum amount_original for totals.
     const final_amount = cr_dr === 'credit' ? amount_usd : -amount_usd
-    const amount_original = amount_usd
+    const amount_original = amount_usd // raw positive input magnitude
 
     // ── Inter-account transfer detection ─────────────────────────────────────
     // If target_account_id is provided, this is an internal transfer.

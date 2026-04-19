@@ -13,6 +13,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { MarkdownContent } from "@/components/ui/markdown-content";
 
+const CHAT_MODEL_KEY = "pref_chat_model";
+const DEFAULT_CHAT_MODEL = "claude-sonnet-4-6";
+
+const MODEL_OPTIONS = [
+  { value: "claude-haiku-4-5-20251001", short: "Haiku" },
+  { value: "claude-sonnet-4-6", short: "Sonnet" },
+  { value: "claude-opus-4-6", short: "Opus" },
+] as const;
+
 interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "loading";
@@ -31,6 +40,13 @@ export function FloatingAiChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    try {
+      return (typeof window !== "undefined" && localStorage.getItem(CHAT_MODEL_KEY)) || DEFAULT_CHAT_MODEL;
+    } catch {
+      return DEFAULT_CHAT_MODEL;
+    }
+  });
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -63,7 +79,7 @@ export function FloatingAiChat() {
       const res = await fetch("/api/ai-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, model: selectedModel }),
       });
 
       const data = await res.json();
@@ -114,21 +130,48 @@ export function FloatingAiChat() {
       {open && (
         <div className="fixed z-40 flex flex-col shadow-2xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] overflow-hidden inset-x-0 bottom-0 top-0 rounded-none sm:inset-auto sm:bottom-20 sm:right-4 sm:w-[calc(100vw-2rem)] sm:max-w-[380px] sm:h-[540px] sm:rounded-2xl lg:bottom-6 lg:right-6 lg:max-w-[420px] lg:h-[680px]">
           {/* Header */}
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-accent)]/10">
-              <BrainCircuit className="h-4 w-4 text-[var(--color-accent)]" />
+          <div className="border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
+            <div className="flex items-center gap-2 px-4 py-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-accent)]/10">
+                <BrainCircuit className="h-4 w-4 text-[var(--color-accent)]" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold leading-tight">AI Finance Assistant</p>
+                <p className="text-[0.65rem] text-[var(--color-text-muted)]">Ask about your finances</p>
+              </div>
+              <button
+                onClick={() => setOpen(false)}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
-            <div className="flex-1">
-              <p className="text-sm font-semibold leading-tight">AI Finance Assistant</p>
-              <p className="text-[0.65rem] text-[var(--color-text-muted)]">Ask about your finances</p>
+            {/* Model switcher */}
+            <div className="flex items-center gap-1.5 px-4 pb-2.5">
+              <span className="text-[10px] font-medium shrink-0" style={{ color: "var(--color-text-muted)" }}>
+                Model:
+              </span>
+              <div className="flex gap-1">
+                {MODEL_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => {
+                      setSelectedModel(opt.value);
+                      try { localStorage.setItem(CHAT_MODEL_KEY, opt.value); } catch { /* ignore */ }
+                    }}
+                    className="rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors"
+                    style={{
+                      background: selectedModel === opt.value ? "var(--color-accent)" : "var(--color-bg-tertiary)",
+                      color: selectedModel === opt.value ? "#fff" : "var(--color-text-muted)",
+                      border: `1px solid ${selectedModel === opt.value ? "var(--color-accent)" : "var(--color-border)"}`,
+                    }}
+                  >
+                    {opt.short}
+                  </button>
+                ))}
+              </div>
             </div>
-            <button
-              onClick={() => setOpen(false)}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors"
-              aria-label="Close"
-            >
-              <X className="h-4 w-4" />
-            </button>
           </div>
 
           {/* Messages */}

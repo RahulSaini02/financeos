@@ -18,7 +18,15 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const aiModel = await getUserModel(supabase, user.id)
+    // Check ai_enabled — used later to gate insight generation (non-AI parts always run)
+    const { data: profileRow } = await supabase
+      .from('profiles')
+      .select('ai_enabled')
+      .eq('id', user.id)
+      .maybeSingle()
+    const aiEnabled = profileRow?.ai_enabled ?? false
+
+    const aiModel = aiEnabled ? await getUserModel(supabase, user.id) : ''
 
     const now = new Date()
     const firstDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
@@ -191,7 +199,7 @@ export async function GET() {
     // ── Daily Insight — generate one per day if none exists yet ─────────────
     const hasInsightToday = latest_insight && latest_insight.created_at.startsWith(todayStr)
 
-    if (!hasInsightToday && process.env.ANTHROPIC_API_KEY) {
+    if (!hasInsightToday && aiEnabled && process.env.ANTHROPIC_API_KEY) {
       try {
         const savingsRate = monthly_income > 0 ? ((monthly_income - monthly_expenses) / monthly_income * 100).toFixed(1) : '0'
 
@@ -237,7 +245,7 @@ export async function GET() {
     }
 
     // ── Monthly Summary — generate once on first load of a new month ─────────
-    if (process.env.ANTHROPIC_API_KEY) {
+    if (aiEnabled && process.env.ANTHROPIC_API_KEY) {
       try {
         const { data: monthlySummary } = await supabase
           .from('ai_insights')
