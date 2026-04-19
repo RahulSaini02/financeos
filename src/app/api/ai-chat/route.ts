@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
     const sevenDaysStr = sevenDaysFromNow.toISOString().split('T')[0]
 
-    // Fetch all financial context in parallel
+    // Fetch all financial context + calendar integration in parallel
     const [
       accountsRes,
       transactionsRes,
@@ -69,6 +69,7 @@ export async function POST(request: NextRequest) {
       subscriptionsRes,
       savingsGoalsRes,
       calendarEventsRes,
+      gcalIntegrationRes,
     ] = await Promise.all([
       supabase.from('accounts').select('name, kind, type, current_balance, currency').eq('user_id', user.id).eq('is_active', true),
       supabase.from('transactions').select('description, amount_usd, cr_dr, date, category:categories(name)').eq('user_id', user.id).gte('date', firstDay).lt('date', nextMonth),
@@ -84,6 +85,12 @@ export async function POST(request: NextRequest) {
         .gte('start_date', todayStr)
         .lte('start_date', sevenDaysStr)
         .order('start_date', { ascending: true }),
+      supabase
+        .from('user_integrations')
+        .select('access_token, refresh_token, token_expires_at')
+        .eq('user_id', user.id)
+        .eq('provider', 'google_calendar')
+        .maybeSingle(),
     ])
 
     const accounts = accountsRes.data ?? []
@@ -93,6 +100,7 @@ export async function POST(request: NextRequest) {
     const rawBudgets = budgetsRes.data ?? []
     const subscriptions = subscriptionsRes.data ?? []
     const savingsGoals = savingsGoalsRes.data ?? []
+    const gcalIntegration = gcalIntegrationRes.data ?? null
     const calendarEvents = calendarEventsRes.data ?? []
 
     // Compute derived values for context
@@ -219,13 +227,6 @@ Use these tools whenever the user asks to view, check, add, schedule, create, or
     }
 
     // ── Google Calendar tool (only if user has connected it) ─────────────────
-    const { data: gcalIntegration } = await supabase
-      .from('user_integrations')
-      .select('access_token, refresh_token, token_expires_at')
-      .eq('user_id', user.id)
-      .eq('provider', 'google_calendar')
-      .maybeSingle()
-
     const tools: Anthropic.Tool[] = []
     if (gcalIntegration) {
       tools.push({
