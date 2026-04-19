@@ -1,13 +1,15 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Eye, EyeOff, GripVertical, RotateCcw } from "lucide-react";
+import { Loader2, Eye, EyeOff, GripVertical, RotateCcw, CalendarDays, CheckCircle2 } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { ALL_NAV_ITEMS, NAV_PREFS_KEY, getNavPrefs, type NavPref } from "@/components/ui/app-shell";
 import PromptsManager from "./PromptsManager";
 import { AI_MODELS, DEFAULT_AI_MODEL } from "@/lib/get-user-model";
@@ -143,6 +145,7 @@ export default function SettingsClient({
 }) {
   const router = useRouter();
   const supabase = createClient();
+  const { success: toastSuccess, error: toastError } = useToast();
 
   // ── profile ──
   const [displayName, setDisplayName] = useState(initialName);
@@ -173,6 +176,16 @@ export default function SettingsClient({
   const [aiModel, setAiModel] = useState(initialModel);
   const [modelSaving, setModelSaving] = useState(false);
   const [modelAlert, setModelAlert] = useState<InlineAlert | null>(null);
+
+  // ── google calendar integration ──
+  const [gcalConnected, setGcalConnected] = useState(false);
+  const [gcalEmail, setGcalEmail] = useState<string | null>(null);
+  const [gcalLastSynced, setGcalLastSynced] = useState<string | null>(null);
+  const [gcalStatusLoading, setGcalStatusLoading] = useState(true);
+  const [gcalConnecting, setGcalConnecting] = useState(false);
+  const [gcalSyncing, setGcalSyncing] = useState(false);
+  const [gcalDisconnectConfirm, setGcalDisconnectConfirm] = useState(false);
+  const [gcalDisconnecting, setGcalDisconnecting] = useState(false);
 
   // ── sidebar nav prefs ──
   const [navPrefs, setNavPrefs] = useState<NavPref[]>(() => getNavPrefs());
@@ -211,6 +224,87 @@ export default function SettingsClient({
     const next = ALL_NAV_ITEMS.map((n) => ({ href: n.href, visible: DEFAULT_HREFS.includes(n.href) }));
     setNavPrefs(next);
     saveNavPrefs(next);
+  }
+
+  // ── google calendar effects + handlers ───────────────────────────────────
+
+  useEffect(() => {
+    // Handle OAuth return query params
+    const params = new URLSearchParams(window.location.search);
+    const integration = params.get("integration");
+    if (integration === "google_calendar_connected") {
+      toastSuccess("Google Calendar connected successfully");
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (integration === "google_calendar_error") {
+      toastError("Failed to connect Google Calendar");
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
+    // Fetch current connection status
+    async function fetchGcalStatus() {
+      setGcalStatusLoading(true);
+      try {
+        const res = await fetch("/api/integrations/google-calendar/status");
+        if (res.ok) {
+          const data = await res.json() as { connected: boolean; email: string | null; last_synced: string | null };
+          setGcalConnected(data.connected);
+          setGcalEmail(data.email ?? null);
+          setGcalLastSynced(data.last_synced ?? null);
+        }
+      } catch {
+        // silently ignore — status check failure shouldn't block settings page
+      } finally {
+        setGcalStatusLoading(false);
+      }
+    }
+    fetchGcalStatus();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleConnectGcal() {
+    setGcalConnecting(true);
+    try {
+      const res = await fetch("/api/integrations/google-calendar/auth");
+      if (!res.ok) throw new Error("Failed to get auth URL");
+      const data = await res.json() as { url: string };
+      window.location.href = data.url;
+    } catch {
+      toastError("Failed to initiate Google Calendar connection");
+      setGcalConnecting(false);
+    }
+  }
+
+  async function handleSyncGcal() {
+    setGcalSyncing(true);
+    try {
+      const res = await fetch("/api/integrations/google-calendar/sync", { method: "POST" });
+      if (!res.ok) throw new Error("Sync failed");
+      const data = await res.json() as { synced?: number; financial?: number; message?: string };
+      const total = data.synced ?? 0;
+      const financial = data.financial ?? 0;
+      toastSuccess(`Synced ${total} events (${financial} financial)`);
+      setGcalLastSynced(new Date().toISOString());
+    } catch {
+      toastError("Failed to sync Google Calendar");
+    } finally {
+      setGcalSyncing(false);
+    }
+  }
+
+  async function handleDisconnectGcal() {
+    setGcalDisconnecting(true);
+    try {
+      const res = await fetch("/api/integrations/google-calendar/status", { method: "DELETE" });
+      if (!res.ok) throw new Error("Disconnect failed");
+      setGcalConnected(false);
+      setGcalEmail(null);
+      setGcalLastSynced(null);
+      toastSuccess("Google Calendar disconnected");
+    } catch {
+      toastError("Failed to disconnect Google Calendar");
+    } finally {
+      setGcalDisconnecting(false);
+      setGcalDisconnectConfirm(false);
+    }
   }
 
   // ── handlers ──────────────────────────────────────────────────────────────
@@ -659,6 +753,107 @@ export default function SettingsClient({
             </Button>
           </div>
         </Card>
+
+        {/* ── Integrations ──────────────────────────────────────────────── */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Integrations</CardTitle>
+          </CardHeader>
+          <p className="text-sm mb-5" style={{ color: "var(--color-text-secondary)" }}>
+            Connect external services to extend FinanceOS with automatic syncing and reminders.
+          </p>
+
+          {/* Google Calendar */}
+          <div className="border border-white/10 bg-white/5 rounded-xl p-5">
+            <div className="flex items-start gap-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/15">
+                <CalendarDays className="h-5 w-5 text-blue-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>
+                      Google Calendar
+                    </h3>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
+                      Sync bill reminders and financial events to your Google Calendar
+                    </p>
+                  </div>
+
+                  {gcalStatusLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin shrink-0" style={{ color: "var(--color-text-muted)" }} />
+                  ) : gcalConnected ? (
+                    <div className="flex items-center gap-1.5 text-sm text-emerald-400 shrink-0">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Connected
+                    </div>
+                  ) : null}
+                </div>
+
+                {!gcalStatusLoading && gcalConnected && (
+                  <div className="mt-3 space-y-3">
+                    {gcalEmail && (
+                      <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                        Signed in as <span className="font-medium" style={{ color: "var(--color-text-secondary)" }}>{gcalEmail}</span>
+                      </p>
+                    )}
+                    {gcalLastSynced && (
+                      <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                        Last synced:{" "}
+                        {new Intl.DateTimeFormat("en-US", {
+                          timeZone: "America/Los_Angeles",
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        }).format(new Date(gcalLastSynced))}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button
+                        onClick={handleSyncGcal}
+                        disabled={gcalSyncing}
+                        className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors disabled:opacity-60"
+                      >
+                        {gcalSyncing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                        Sync Now
+                      </button>
+                      <button
+                        onClick={() => setGcalDisconnectConfirm(true)}
+                        className="text-sm text-red-400 hover:text-red-300 transition-colors"
+                      >
+                        Disconnect
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {!gcalStatusLoading && !gcalConnected && (
+                  <div className="mt-3">
+                    <button
+                      onClick={handleConnectGcal}
+                      disabled={gcalConnecting}
+                      className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors disabled:opacity-60"
+                    >
+                      {gcalConnecting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      Connect Google Calendar
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <ConfirmDialog
+          open={gcalDisconnectConfirm}
+          onClose={() => setGcalDisconnectConfirm(false)}
+          onConfirm={handleDisconnectGcal}
+          title="Disconnect Google Calendar?"
+          description="This will remove the connection to your Google Calendar. Bill reminders will no longer sync automatically."
+          confirmLabel="Disconnect"
+          loading={gcalDisconnecting}
+        />
 
         {/* ── About ─────────────────────────────────────────────────────── */}
         <Card>

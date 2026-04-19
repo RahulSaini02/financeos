@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
@@ -15,6 +15,7 @@ import {
   Loader2,
   RefreshCw,
   Calendar,
+  CalendarPlus,
   DollarSign,
   CheckCircle2,
   PackageOpen,
@@ -23,6 +24,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 
 type FilterTab = "all" | BillingStatus;
 
@@ -378,6 +380,7 @@ interface SubscriptionsClientProps {
 
 export function SubscriptionsClient({ initialSubscriptions, accounts }: SubscriptionsClientProps) {
   const supabase = createClient();
+  const { success: toastSuccess, error: toastError } = useToast();
 
   const [subscriptions, setSubscriptions] = useState<Subscription[]>(initialSubscriptions);
   const [error, setError] = useState<string | null>(null);
@@ -388,6 +391,45 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
   const [logPaymentError, setLogPaymentError] = useState<{ id: string; message: string } | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // ── Google Calendar integration ──
+  const [isGcalConnected, setIsGcalConnected] = useState(false);
+  const [calendarLoading, setCalendarLoading] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/integrations/google-calendar/status")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: { connected: boolean } | null) => {
+        if (data?.connected) setIsGcalConnected(true);
+      })
+      .catch(() => {/* silently ignore */});
+  }, []);
+
+  async function handleAddToCalendar(sub: Subscription) {
+    if (!sub.next_billing_date) {
+      toastError("No billing date set for this subscription");
+      return;
+    }
+    setCalendarLoading(sub.id);
+    try {
+      const res = await fetch("/api/integrations/google-calendar/create-event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `\u{1F4B3} ${sub.name} payment due`,
+          date: sub.next_billing_date,
+          description: `FinanceOS subscription: ${sub.name} - $${sub.billing_cost}`,
+          subscription_id: sub.id,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to create event");
+      toastSuccess("Bill reminder added to Google Calendar");
+    } catch {
+      toastError("Failed to add to calendar");
+    } finally {
+      setCalendarLoading(null);
+    }
+  }
 
   const loadSubscriptions = async () => {
     const { data, error: err } = await supabase
@@ -618,6 +660,20 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
                     <div className="mt-1">{statusBadge(sub.status)}</div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
+                    {isGcalConnected && (
+                      <button
+                        onClick={() => handleAddToCalendar(sub)}
+                        disabled={calendarLoading === sub.id}
+                        title="Add bill reminder to Google Calendar"
+                        className="rounded-lg p-1.5 hover:bg-[var(--color-bg-tertiary)] transition-colors disabled:opacity-50"
+                      >
+                        {calendarLoading === sub.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-white/40" />
+                        ) : (
+                          <CalendarPlus className="h-4 w-4 text-white/40 hover:text-blue-400" />
+                        )}
+                      </button>
+                    )}
                     <button
                       onClick={() => openEdit(sub)}
                       className="rounded-lg p-1.5 hover:bg-[var(--color-bg-tertiary)] transition-colors"

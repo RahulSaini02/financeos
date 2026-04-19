@@ -1,0 +1,68 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { exchangeCodeForTokens, getGoogleUserEmail } from '@/lib/google-oauth'
+
+function createServiceRoleClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) throw new Error('Missing Supabase service role config')
+  return createClient(url, key)
+}
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url)
+  const code = searchParams.get('code')
+  const state = searchParams.get('state')
+
+  const settingsBase = `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/settings`
+
+  if (!code || !state) {
+    return NextResponse.redirect(`${settingsBase}?integration=google_calendar_error`)
+  }
+
+  // Extract userId from state: format is `{userId}:{randomUUID}`
+  const colonIndex = state.indexOf(':')
+  if (colonIndex === -1) {
+    return NextResponse.redirect(`${settingsBase}?integration=google_calendar_error`)
+  }
+  const userId = state.substring(0, colonIndex)
+
+  if (!userId) {
+    return NextResponse.redirect(`${settingsBase}?integration=google_calendar_error`)
+  }
+
+  try {
+    const tokens = await exchangeCodeForTokens(code)
+
+    const connectedEmail = await getGoogleUserEmail(tokens.access_token)
+
+    const tokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+
+    const supabase = createServiceRoleClient()
+
+    const { error } = await supabase
+      .from('user_integrations')
+      .upsert(
+        {
+          user_id: userId,
+          provider: 'google_calendar',
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token ?? null,
+          token_expires_at: tokenExpiresAt,
+          connected_email: connectedEmail,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,provider' },
+      )
+
+    if (error) {
+      console.error('Failed to upsert user_integrations:', error.message)
+      return NextResponse.redirect(`${settingsBase}?integration=google_calendar_error`)
+    }
+
+    return NextResponse.redirect(`${settingsBase}?integration=google_calendar_connected`)
+  } catch (err) {
+    console.error('Google Calendar callback error:', err)
+    return NextResponse.redirect(`${settingsBase}?integration=google_calendar_error`)
+  }
+}

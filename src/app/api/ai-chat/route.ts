@@ -53,6 +53,10 @@ export async function POST(request: NextRequest) {
     const firstDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
     const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
     const nextMonth = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}-01`
+    const todayStr = now.toISOString().split('T')[0]
+    const sevenDaysFromNow = new Date(now)
+    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
+    const sevenDaysStr = sevenDaysFromNow.toISOString().split('T')[0]
 
     // Fetch all financial context in parallel
     const [
@@ -63,6 +67,7 @@ export async function POST(request: NextRequest) {
       budgetsRes,
       subscriptionsRes,
       savingsGoalsRes,
+      calendarEventsRes,
     ] = await Promise.all([
       supabase.from('accounts').select('name, kind, type, current_balance, currency').eq('user_id', user.id).eq('is_active', true),
       supabase.from('transactions').select('description, amount_usd, cr_dr, date, category:categories(name)').eq('user_id', user.id).gte('date', firstDay).lt('date', nextMonth),
@@ -71,6 +76,13 @@ export async function POST(request: NextRequest) {
       supabase.from('budgets').select('amount_usd, category:categories(name)').eq('user_id', user.id).eq('month', firstDay),
       supabase.from('subscriptions').select('name, billing_cost, billing_cycle_months, status, next_billing_date').eq('user_id', user.id),
       supabase.from('savings_goals').select('name, target_amount, current_amount, monthly_contribution, status').eq('user_id', user.id),
+      supabase
+        .from('calendar_events')
+        .select('title, start_date, estimated_cost, is_bill_reminder')
+        .eq('user_id', user.id)
+        .gte('start_date', todayStr)
+        .lte('start_date', sevenDaysStr)
+        .order('start_date', { ascending: true }),
     ])
 
     const accounts = accountsRes.data ?? []
@@ -80,6 +92,7 @@ export async function POST(request: NextRequest) {
     const rawBudgets = budgetsRes.data ?? []
     const subscriptions = subscriptionsRes.data ?? []
     const savingsGoals = savingsGoalsRes.data ?? []
+    const calendarEvents = calendarEventsRes.data ?? []
 
     // Compute derived values for context
     const totalAssets = accounts.filter(a => a.kind === 'asset' || a.kind === 'investment').reduce((s, a) => s + (a.current_balance ?? 0), 0)
@@ -151,6 +164,13 @@ ${activeSubs.length === 0 ? '- No active subscriptions' : `- Total: ${fmt(monthl
 
 ### Savings Goals
 ${savingsGoals.length === 0 ? '- No savings goals' : savingsGoals.map(g => `- ${g.name}: ${fmt(g.current_amount)} / ${fmt(g.target_amount)} (${g.status})`).join('\n')}
+
+### Upcoming Calendar Events (next 7 days)
+${calendarEvents.length === 0 ? '- No upcoming financial events' : calendarEvents.map(e => {
+  const costPart = e.estimated_cost ? ` - $${e.estimated_cost}` : ''
+  const billPart = e.is_bill_reminder ? ' [bill reminder]' : ''
+  return `- ${e.title} on ${e.start_date}${costPart}${billPart}`
+}).join('\n')}
 `.trim()
 
     // Fetch user's custom chat system prompt (or fall back to default)

@@ -47,6 +47,10 @@ export async function GET() {
     const twelveMonthsAgoDate = new Date(now.getFullYear(), now.getMonth() - 11, 1)
     const twelveMonthsAgoStr = `${twelveMonthsAgoDate.getFullYear()}-${pad(twelveMonthsAgoDate.getMonth() + 1)}-01`
 
+    const thirtyDaysFromNow = new Date(now)
+    thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30)
+    const thirtyDaysStr = thirtyDaysFromNow.toISOString().split('T')[0]
+
     const [
       accountsRes,
       transactionsRes,
@@ -56,6 +60,7 @@ export async function GET() {
       billsRes,
       prevTransactionsRes,
       twelveMonthTxnsRes,
+      calendarEventsRes,
     ] = await Promise.all([
       supabase
         .from('accounts')
@@ -110,6 +115,16 @@ export async function GET() {
         .eq('is_internal_transfer', false)
         .gte('date', twelveMonthsAgoStr)
         .lte('date', lastDay),
+      // upcoming financial calendar events (next 30 days)
+      supabase
+        .from('calendar_events')
+        .select('title, start_date, estimated_cost, is_bill_reminder')
+        .eq('user_id', user.id)
+        .gte('start_date', todayStr)
+        .lte('start_date', thirtyDaysStr)
+        .or('is_bill_reminder.eq.true,estimated_cost.not.is.null')
+        .order('start_date', { ascending: true })
+        .limit(5),
     ])
 
     const accounts = accountsRes.data ?? []
@@ -118,6 +133,7 @@ export async function GET() {
     const snapshots = networthRes.data ?? []
     let latest_insight = insightRes.data?.[0] ?? null
     const bills = billsRes.data ?? []
+    const upcomingCalendarEvents = calendarEventsRes.data ?? []
 
     const total_assets = accounts
       .filter((a) => a.kind === 'asset' || a.kind === 'investment')
@@ -210,7 +226,18 @@ export async function GET() {
           DEFAULT_PROMPTS.daily_insight.content,
         )
 
-        const prompt = dailyPromptTemplate
+        const calendarContext =
+          upcomingCalendarEvents.length > 0
+            ? '\nUpcoming financial calendar events: ' +
+              upcomingCalendarEvents
+                .map((e) => {
+                  const costPart = e.estimated_cost ? ` - $${e.estimated_cost}` : ''
+                  return `${e.title} on ${e.start_date}${costPart}`
+                })
+                .join('; ')
+            : ''
+
+        const prompt = (dailyPromptTemplate + calendarContext)
           .replaceAll('{{net_worth}}', net_worth.toFixed(2))
           .replaceAll('{{monthly_income}}', monthly_income.toFixed(2))
           .replaceAll('{{monthly_expenses}}', monthly_expenses.toFixed(2))
