@@ -158,6 +158,10 @@ export default function SettingsClient({
   // ── sign-out ──
   const [signingOut, setSigningOut] = useState(false);
 
+  // ── delete account ──
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   // ── preferences ──
   const [payFrequency, setPayFrequency] = useState<string>(() =>
     (typeof window !== "undefined" && localStorage.getItem("pref_pay_frequency")) || "biweekly"
@@ -352,6 +356,21 @@ export default function SettingsClient({
     setSigningOut(true);
     await supabase.auth.signOut();
     router.push("/login");
+  }
+
+  async function handleDeleteAccount() {
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/user/delete", { method: "DELETE" });
+      const json = await res.json() as { error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed to delete account");
+      await supabase.auth.signOut();
+      router.push("/login");
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Failed to delete account");
+      setDeleting(false);
+      setDeleteConfirmOpen(false);
+    }
   }
 
   function handlePayFrequencyChange(value: string) {
@@ -786,6 +805,44 @@ export default function SettingsClient({
           description="This will remove the connection to your Google Calendar. Bill reminders will no longer sync automatically."
           confirmLabel="Disconnect"
           loading={gcalDisconnecting}
+        />
+
+        {/* ── Danger Zone ───────────────────────────────────────────────── */}
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <span style={{ color: "var(--color-danger)" }}>Danger Zone</span>
+            </CardTitle>
+          </CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium" style={{ color: "var(--color-text-primary)" }}>
+                Delete account
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
+                Permanently delete your account and all associated data. This cannot be undone.
+              </p>
+            </div>
+            <Button
+              variant="danger"
+              size="md"
+              onClick={() => setDeleteConfirmOpen(true)}
+            >
+              Delete Account
+            </Button>
+          </div>
+        </Card>
+
+        {/* Delete account confirmation modal */}
+        <ConfirmDialog
+          open={deleteConfirmOpen}
+          onClose={() => setDeleteConfirmOpen(false)}
+          onConfirm={handleDeleteAccount}
+          title="Delete your account?"
+          description={`This will permanently delete your account and all associated data for ${emailDisplay} — transactions, budgets, categories, and everything else. This cannot be undone.`}
+          confirmLabel="Permanently Delete"
+          dangerous
+          loading={deleting}
         />
 
         {/* ── About ─────────────────────────────────────────────────────── */}
