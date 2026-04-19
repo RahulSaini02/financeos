@@ -62,7 +62,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.redirect(`${settingsBase}?integration=google_calendar_connected`)
   } catch (err) {
-    console.error('Google Calendar callback error:', err)
-    return NextResponse.redirect(`${settingsBase}?integration=google_calendar_error`)
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('Google Calendar callback error:', msg)
+    return NextResponse.redirect(`${settingsBase}?integration=google_calendar_error&reason=${encodeURIComponent(msg)}`)
   }
 }

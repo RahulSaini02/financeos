@@ -17,7 +17,8 @@ export async function GET() {
 
     return NextResponse.json({ url })
   } catch (err) {
-    console.error('Google Calendar auth error:', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    const msg = err instanceof Error ? err.message : 'Internal server error'
+    console.error('Google Calendar auth error:', msg)
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

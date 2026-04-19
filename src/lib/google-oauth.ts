@@ -37,13 +37,16 @@ interface GoogleCreatedEvent {
 }
 
 function getRedirectUri(): string {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (!appUrl) throw new Error('NEXT_PUBLIC_APP_URL env var is not set')
   return `${appUrl}/api/integrations/google-calendar/callback`
 }
 
 export function getGoogleAuthUrl(state: string): string {
+  const clientId = process.env.GOOGLE_CLIENT_ID
+  if (!clientId) throw new Error('GOOGLE_CLIENT_ID env var is not set')
   const params = new URLSearchParams({
-    client_id: process.env.GOOGLE_CLIENT_ID ?? '',
+    client_id: clientId,
     redirect_uri: getRedirectUri(),
     response_type: 'code',
     scope: GOOGLE_SCOPES.join(' '),

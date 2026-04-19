@@ -180,7 +180,10 @@ export default function SettingsClient({
   const [gcalDisconnecting, setGcalDisconnecting] = useState(false);
 
   // ── sidebar nav prefs ──
-  const [navPrefs, setNavPrefs] = useState<NavPref[]>(() => getNavPrefs());
+  // Initialize with server-safe defaults; sync from localStorage after mount to avoid hydration mismatch
+  const [navPrefs, setNavPrefs] = useState<NavPref[]>(() =>
+    ALL_NAV_ITEMS.map((n) => ({ href: n.href, visible: true }))
+  );
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // ── nav prefs helpers ──────────────────────────────────────────────────────
@@ -220,6 +223,11 @@ export default function SettingsClient({
 
   // ── google calendar effects + handlers ───────────────────────────────────
 
+  // Sync nav prefs from localStorage after mount (avoids SSR hydration mismatch)
+  useEffect(() => {
+    setNavPrefs(getNavPrefs());
+  }, []);
+
   useEffect(() => {
     // Handle OAuth return query params
     const params = new URLSearchParams(window.location.search);
@@ -228,7 +236,8 @@ export default function SettingsClient({
       toastSuccess("Google Calendar connected successfully");
       window.history.replaceState({}, "", window.location.pathname);
     } else if (integration === "google_calendar_error") {
-      toastError("Failed to connect Google Calendar");
+      const reason = params.get("reason");
+      toastError(reason ? `Google Calendar error: ${reason}` : "Failed to connect Google Calendar");
       window.history.replaceState({}, "", window.location.pathname);
     }
 
@@ -256,11 +265,11 @@ export default function SettingsClient({
     setGcalConnecting(true);
     try {
       const res = await fetch("/api/integrations/google-calendar/auth");
-      if (!res.ok) throw new Error("Failed to get auth URL");
-      const data = await res.json() as { url: string };
-      window.location.href = data.url;
-    } catch {
-      toastError("Failed to initiate Google Calendar connection");
+      const data = await res.json() as { url?: string; error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Failed to get auth URL");
+      window.location.href = data.url!;
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Failed to initiate Google Calendar connection");
       setGcalConnecting(false);
     }
   }

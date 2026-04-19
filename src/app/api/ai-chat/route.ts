@@ -5,6 +5,7 @@ import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
 import { getUserPrompt } from '@/lib/get-user-prompt'
 import { getUserModel } from '@/lib/get-user-model'
 import { formatCurrency } from '@/lib/utils'
+import { getCalendarEvents, refreshAccessToken } from '@/lib/google-oauth'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -211,17 +212,130 @@ ${calendarEvents.length === 0 ? '- No upcoming financial events' : calendarEvent
       })
     }
 
-    // Call Claude
-    const message = await anthropic.messages.create({
+    // ── Google Calendar tool (only if user has connected it) ─────────────────
+    const { data: gcalIntegration } = await supabase
+      .from('user_integrations')
+      .select('access_token, refresh_token, token_expires_at')
+      .eq('user_id', user.id)
+      .eq('provider', 'google_calendar')
+      .maybeSingle()
+
+    const tools: Anthropic.Tool[] = []
+    if (gcalIntegration) {
+      tools.push({
+        name: 'get_calendar_events',
+        description: `Fetch events directly from the user's Google Calendar. Use this tool whenever the user asks about their schedule, upcoming events, meetings, appointments, reminders, bills due, or anything calendar-related. Always use today's date (${todayStr}) as the default start_date if the user doesn't specify one. Default end_date to 7 days from start if unspecified.`,
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            start_date: {
+              type: 'string',
+              description: `Start date in YYYY-MM-DD format. Default: today (${todayStr}).`,
+            },
+            end_date: {
+              type: 'string',
+              description: 'End date in YYYY-MM-DD format (inclusive). Default: 7 days after start_date.',
+            },
+          },
+          required: ['start_date', 'end_date'],
+        },
+      })
+    }
+
+    // ── Agentic loop — handles tool use ──────────────────────────────────────
+    const messages: Anthropic.MessageParam[] = [
+      { role: 'user', content: question },
+    ]
+
+    let response = await anthropic.messages.create({
       model: aiModel,
       max_tokens: 1024,
       system: safetyPrefix + chatSystemPrompt,
-      messages: [
-        { role: 'user', content: question },
-      ],
+      tools: tools.length > 0 ? tools : undefined,
+      messages,
     })
 
-    const answer = message.content[0].type === 'text' ? message.content[0].text : 'Sorry, I could not generate a response.'
+    // Claude may call get_calendar_events one or more times before giving a final answer
+    while (response.stop_reason === 'tool_use' && gcalIntegration) {
+      const toolUseBlocks = response.content.filter(
+        (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
+      )
+
+      messages.push({ role: 'assistant', content: response.content })
+
+      const toolResults: Anthropic.ToolResultBlockParam[] = []
+
+      for (const toolUse of toolUseBlocks) {
+        if (toolUse.name !== 'get_calendar_events') continue
+
+        const input = toolUse.input as { start_date: string; end_date: string }
+
+        try {
+          // Refresh token if expiring within 5 minutes
+          let accessToken = gcalIntegration.access_token
+          if (
+            gcalIntegration.refresh_token &&
+            gcalIntegration.token_expires_at &&
+            new Date(gcalIntegration.token_expires_at) < new Date(Date.now() + 5 * 60 * 1000)
+          ) {
+            const refreshed = await refreshAccessToken(gcalIntegration.refresh_token)
+            accessToken = refreshed.access_token
+            await supabase
+              .from('user_integrations')
+              .update({
+                access_token: refreshed.access_token,
+                token_expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
+                updated_at: new Date().toISOString(),
+              })
+              .eq('user_id', user.id)
+              .eq('provider', 'google_calendar')
+          }
+
+          const timeMin = new Date(`${input.start_date}T00:00:00`).toISOString()
+          const timeMax = new Date(`${input.end_date}T23:59:59`).toISOString()
+          const events = await getCalendarEvents(accessToken, timeMin, timeMax)
+
+          const eventList = events.length === 0
+            ? 'No events found for this date range.'
+            : events.map(e => {
+                const start = e.start.date ?? e.start.dateTime?.split('T')[0] ?? 'unknown'
+                const end = e.end.date ?? e.end.dateTime?.split('T')[0] ?? ''
+                const timeStr = e.start.dateTime
+                  ? ` at ${new Date(e.start.dateTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+                  : ' (all day)'
+                const desc = e.description ? ` — ${e.description.slice(0, 120)}` : ''
+                return `• ${e.summary}${timeStr} on ${start}${end && end !== start ? ` to ${end}` : ''}${desc}`
+              }).join('\n')
+
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content: eventList,
+          })
+        } catch (err) {
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content: `Error fetching calendar: ${err instanceof Error ? err.message : 'unknown error'}`,
+            is_error: true,
+          })
+        }
+      }
+
+      messages.push({ role: 'user', content: toolResults })
+
+      response = await anthropic.messages.create({
+        model: aiModel,
+        max_tokens: 1024,
+        system: safetyPrefix + chatSystemPrompt,
+        tools: tools.length > 0 ? tools : undefined,
+        messages,
+      })
+    }
+
+    const answer =
+      response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text ??
+      'Sorry, I could not generate a response.'
 
     return NextResponse.json({ answer })
   } catch (err) {
