@@ -79,7 +79,7 @@ export function FloatingAiChat() {
       const res = await fetch("/api/ai-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, model: selectedModel }),
+        body: JSON.stringify({ question, model: selectedModel, timezone: localStorage.getItem('pref_timezone') ?? 'America/Los_Angeles' }),
       });
 
       const data = await res.json();

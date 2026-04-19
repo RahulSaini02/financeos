@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     const userDefaultModel = await getUserModel(supabase, user.id)
 
     const body = await request.json()
-    const { question, model: requestModel } = body as { question: string; model?: string }
+    const { question, model: requestModel, timezone: clientTimezone } = body as { question: string; model?: string; timezone?: string }
 
     if (!question || typeof question !== 'string') {
       return NextResponse.json({ error: 'question is required' }, { status: 400 })
@@ -50,14 +50,28 @@ export async function POST(request: NextRequest) {
         ? requestModel
         : userDefaultModel
 
+    // Use client timezone so dates match the user's local day, not UTC
+    const tz = (typeof clientTimezone === 'string' && clientTimezone.length > 0)
+      ? clientTimezone
+      : 'America/Los_Angeles'
+
+    // Helper: format a Date as YYYY-MM-DD in the user's timezone
+    const toLocalDate = (d: Date) =>
+      new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+
     const now = new Date()
-    const firstDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-    const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-    const nextMonth = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}-01`
-    const todayStr = now.toISOString().split('T')[0]
+    const todayStr = toLocalDate(now)
+
+    // Derive first day of current month and first day of next month in user's TZ
+    const [todayYear, todayMonth] = todayStr.split('-').map(Number)
+    const firstDay = `${todayYear}-${String(todayMonth).padStart(2, '0')}-01`
+    const nextMonthNum = todayMonth === 12 ? 1 : todayMonth + 1
+    const nextMonthYear = todayMonth === 12 ? todayYear + 1 : todayYear
+    const nextMonth = `${nextMonthYear}-${String(nextMonthNum).padStart(2, '0')}-01`
+
     const sevenDaysFromNow = new Date(now)
     sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
-    const sevenDaysStr = sevenDaysFromNow.toISOString().split('T')[0]
+    const sevenDaysStr = toLocalDate(sevenDaysFromNow)
 
     // Fetch all financial context + calendar integration in parallel
     const [
