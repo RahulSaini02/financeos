@@ -5,7 +5,7 @@ import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
 import { getUserPrompt } from '@/lib/get-user-prompt'
 import { getUserModel } from '@/lib/get-user-model'
 import { formatCurrency } from '@/lib/utils'
-import { getCalendarEvents, refreshAccessToken } from '@/lib/google-oauth'
+import { getCalendarEvents, createCalendarEvent, refreshAccessToken } from '@/lib/google-oauth'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -240,6 +240,36 @@ ${calendarEvents.length === 0 ? '- No upcoming financial events' : calendarEvent
           required: ['start_date', 'end_date'],
         },
       })
+      tools.push({
+        name: 'create_calendar_event',
+        description: `Create a new event on the user's Google Calendar. Use this when the user asks to add, schedule, create, or remind them about something on a specific date. For timed events include start_time and end_time; for all-day events omit them. Always confirm with the user what was created after the tool runs.`,
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            title: {
+              type: 'string',
+              description: 'Event title / summary.',
+            },
+            date: {
+              type: 'string',
+              description: 'Date of the event in YYYY-MM-DD format.',
+            },
+            start_time: {
+              type: 'string',
+              description: 'Optional start time in HH:MM (24-hour) format. Omit for all-day events.',
+            },
+            end_time: {
+              type: 'string',
+              description: 'Optional end time in HH:MM (24-hour) format. Defaults to 1 hour after start_time if omitted.',
+            },
+            description: {
+              type: 'string',
+              description: 'Optional event description or notes.',
+            },
+          },
+          required: ['title', 'date'],
+        },
+      })
     }
 
     // ── Agentic loop — handles tool use ──────────────────────────────────────
@@ -266,9 +296,7 @@ ${calendarEvents.length === 0 ? '- No upcoming financial events' : calendarEvent
       const toolResults: Anthropic.ToolResultBlockParam[] = []
 
       for (const toolUse of toolUseBlocks) {
-        if (toolUse.name !== 'get_calendar_events') continue
-
-        const input = toolUse.input as { start_date: string; end_date: string }
+        if (toolUse.name !== 'get_calendar_events' && toolUse.name !== 'create_calendar_event') continue
 
         try {
           // Refresh token if expiring within 5 minutes
@@ -291,32 +319,75 @@ ${calendarEvents.length === 0 ? '- No upcoming financial events' : calendarEvent
               .eq('provider', 'google_calendar')
           }
 
-          const timeMin = new Date(`${input.start_date}T00:00:00`).toISOString()
-          const timeMax = new Date(`${input.end_date}T23:59:59`).toISOString()
-          const events = await getCalendarEvents(accessToken, timeMin, timeMax)
+          if (toolUse.name === 'get_calendar_events') {
+            const input = toolUse.input as { start_date: string; end_date: string }
+            const timeMin = new Date(`${input.start_date}T00:00:00`).toISOString()
+            const timeMax = new Date(`${input.end_date}T23:59:59`).toISOString()
+            const events = await getCalendarEvents(accessToken, timeMin, timeMax)
 
-          const eventList = events.length === 0
-            ? 'No events found for this date range.'
-            : events.map(e => {
-                const start = e.start.date ?? e.start.dateTime?.split('T')[0] ?? 'unknown'
-                const end = e.end.date ?? e.end.dateTime?.split('T')[0] ?? ''
-                const timeStr = e.start.dateTime
-                  ? ` at ${new Date(e.start.dateTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
-                  : ' (all day)'
-                const desc = e.description ? ` — ${e.description.slice(0, 120)}` : ''
-                return `• ${e.summary}${timeStr} on ${start}${end && end !== start ? ` to ${end}` : ''}${desc}`
-              }).join('\n')
+            const eventList = events.length === 0
+              ? 'No events found for this date range.'
+              : events.map(e => {
+                  const start = e.start.date ?? e.start.dateTime?.split('T')[0] ?? 'unknown'
+                  const end = e.end.date ?? e.end.dateTime?.split('T')[0] ?? ''
+                  const timeStr = e.start.dateTime
+                    ? ` at ${new Date(e.start.dateTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+                    : ' (all day)'
+                  const desc = e.description ? ` — ${e.description.slice(0, 120)}` : ''
+                  return `• ${e.summary}${timeStr} on ${start}${end && end !== start ? ` to ${end}` : ''}${desc}`
+                }).join('\n')
 
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: toolUse.id,
-            content: eventList,
-          })
+            toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: eventList })
+
+          } else if (toolUse.name === 'create_calendar_event') {
+            const input = toolUse.input as {
+              title: string
+              date: string
+              start_time?: string
+              end_time?: string
+              description?: string
+            }
+
+            let eventBody: Parameters<typeof createCalendarEvent>[1]
+
+            if (input.start_time) {
+              const startDT = `${input.date}T${input.start_time}:00`
+              const endTime = input.end_time ?? (() => {
+                const [h, m] = input.start_time!.split(':').map(Number)
+                return `${String(h + 1).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+              })()
+              const endDT = `${input.date}T${endTime}:00`
+              eventBody = {
+                summary: input.title,
+                description: input.description,
+                start: { dateTime: startDT, timeZone: 'America/Los_Angeles' },
+                end: { dateTime: endDT, timeZone: 'America/Los_Angeles' },
+              }
+            } else {
+              // All-day event
+              const nextDay = new Date(input.date)
+              nextDay.setDate(nextDay.getDate() + 1)
+              const nextDayStr = nextDay.toISOString().split('T')[0]
+              eventBody = {
+                summary: input.title,
+                description: input.description,
+                start: { date: input.date },
+                end: { date: nextDayStr },
+              }
+            }
+
+            const created = await createCalendarEvent(accessToken, eventBody)
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: toolUse.id,
+              content: `Event created successfully. Title: "${input.title}", Date: ${input.date}${input.start_time ? ` at ${input.start_time}` : ' (all day)'}. Link: ${created.htmlLink}`,
+            })
+          }
         } catch (err) {
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolUse.id,
-            content: `Error fetching calendar: ${err instanceof Error ? err.message : 'unknown error'}`,
+            content: `Error with calendar operation: ${err instanceof Error ? err.message : 'unknown error'}`,
             is_error: true,
           })
         }
