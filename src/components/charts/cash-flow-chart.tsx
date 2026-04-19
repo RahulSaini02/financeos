@@ -14,7 +14,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatCurrency } from "@/lib/utils";
+import { compactCurrency, ChartTooltip } from "@/components/charts/chart-utils";
 
 interface CashFlowDataPoint {
   month: string;
@@ -36,40 +36,6 @@ const PERIODS: { value: Period; label: string; count: number | null }[] = [
   { value: "12M", label: "12M", count: 12 },
   { value: "All", label: "All", count: null },
 ];
-
-const compactCurrency = (v: number) => {
-  if (Math.abs(v) >= 1000) return `$${(v / 1000).toFixed(0)}k`;
-  return `$${Math.round(v)}`;
-};
-
-interface TooltipPayloadItem {
-  name: string;
-  value: number;
-  color: string;
-}
-
-interface CustomTooltipProps {
-  active?: boolean;
-  payload?: TooltipPayloadItem[];
-  label?: string;
-}
-
-function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
-  if (!active || !payload || payload.length === 0) return null;
-  return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 shadow-xl text-xs">
-      <p className="font-semibold text-[var(--color-text-primary)] mb-1.5">{label}</p>
-      {payload.map((entry) => (
-        <div key={entry.name} className="flex items-center justify-between gap-4 mb-0.5">
-          <span style={{ color: entry.color }}>{entry.name}</span>
-          <span className="font-medium text-[var(--color-text-primary)]">
-            {formatCurrency(entry.value)}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export function CashFlowChart({ data }: CashFlowChartProps) {
   const [period, setPeriod] = useState<Period>("6M");
@@ -136,7 +102,7 @@ export function CashFlowChart({ data }: CashFlowChartProps) {
               tickFormatter={compactCurrency}
               width={48}
             />
-            <Tooltip content={<CustomTooltip />} cursor={{ fill: "#222230" }} />
+            <Tooltip content={<ChartTooltip />} cursor={{ fill: "#222230" }} />
             <Legend wrapperStyle={{ fontSize: 11, color: "#9090a0", paddingTop: 8 }} />
             <ReferenceLine y={0} stroke="#2a2a3d" strokeWidth={1} />
             {projectedStart > 0 && (

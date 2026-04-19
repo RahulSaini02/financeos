@@ -12,6 +12,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import type { CustomTooltipProps } from "@/components/charts/chart-utils";
 
 interface SavingsRateDataPoint {
   label: string;
@@ -28,17 +29,6 @@ const PERIODS: { value: Period; label: string; count: number }[] = [
   { value: "6M", label: "6M", count: 6 },
   { value: "12M", label: "12M", count: 12 },
 ];
-
-interface TooltipPayloadItem {
-  value: number;
-  color: string;
-}
-
-interface CustomTooltipProps {
-  active?: boolean;
-  payload?: TooltipPayloadItem[];
-  label?: string;
-}
 
 function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   if (!active || !payload || payload.length === 0) return null;

@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatCurrency } from "@/lib/utils";
+import { compactCurrency, ChartTooltip } from "@/components/charts/chart-utils";
 
 interface CategoryTrendsChartProps {
   data: Array<{
@@ -22,40 +22,6 @@ interface CategoryTrendsChartProps {
 }
 
 const CATEGORY_COLORS = ["#6366f1", "#f59e0b", "#ef4444", "#22c55e", "#06b6d4"];
-
-const compactCurrency = (v: number) => {
-  if (Math.abs(v) >= 1000) return `$${(v / 1000).toFixed(0)}k`;
-  return `$${Math.round(v)}`;
-};
-
-interface TooltipPayloadItem {
-  name: string;
-  value: number;
-  color: string;
-}
-
-interface CustomTooltipProps {
-  active?: boolean;
-  payload?: TooltipPayloadItem[];
-  label?: string;
-}
-
-function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
-  if (!active || !payload || payload.length === 0) return null;
-  return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 shadow-xl text-xs min-w-[160px]">
-      <p className="font-semibold text-[var(--color-text-primary)] mb-1.5">{label}</p>
-      {payload.map((entry) => (
-        <div key={entry.name} className="flex items-center justify-between gap-3 mb-0.5">
-          <span style={{ color: entry.color }}>{entry.name}</span>
-          <span className="font-medium text-[var(--color-text-primary)]">
-            {formatCurrency(entry.value)}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export function CategoryTrendsChart({ data, categories }: CategoryTrendsChartProps) {
   const chartData = data.map((d) => ({ ...d, name: d.label }));
@@ -86,7 +52,7 @@ export function CategoryTrendsChart({ data, categories }: CategoryTrendsChartPro
               tickFormatter={compactCurrency}
               width={48}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<ChartTooltip />} />
             <Legend wrapperStyle={{ fontSize: 11, color: "#9090a0", paddingTop: 8 }} />
             {displayCategories.map((cat, i) => (
               <Line

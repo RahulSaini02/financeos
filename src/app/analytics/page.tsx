@@ -19,9 +19,10 @@ type AnalyticsData = {
   summary: { avgMonthlyIncome: number; avgMonthlyExpenses: number; avgSavingsRate: number; projectedNetCashFlow3Mo: number; currentNetWorth: number };
 } | null;
 
-async function loadAnalyticsData(userId: string): Promise<{ data: AnalyticsData; hasEnoughData: boolean }> {
-  const { createServerSupabaseClient: createClient } = await import("@/lib/supabase-server");
-  const supabase = await createClient();
+async function loadAnalyticsData(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  userId: string,
+): Promise<{ data: AnalyticsData; hasEnoughData: boolean }> {
 
   const pad = (n: number) => String(n).padStart(2, "0");
   const now = new Date();
@@ -165,7 +166,7 @@ export default async function AnalyticsPage() {
   let analyticsData: AnalyticsData = null;
 
   try {
-    const result = await loadAnalyticsData(user.id);
+    const result = await loadAnalyticsData(supabase, user.id);
     hasEnoughData = result.hasEnoughData;
     analyticsData = result.data;
   } catch {
