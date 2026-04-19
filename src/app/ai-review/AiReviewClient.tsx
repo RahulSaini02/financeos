@@ -190,7 +190,7 @@ export default function AiReviewClient({
   }, [selectedPeriodKey]);
 
   return (
-    <div className="p-4 md:p-6 space-y-5 max-w-5xl mx-auto">
+    <div className="p-4 md:p-6 space-y-5 md:space-y-6">
 
       {/* ── Header ─────────────────────────────────────────────── */}
       <PageHeader

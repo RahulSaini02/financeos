@@ -398,8 +398,8 @@ export default function AdminClient({
   ];
 
   return (
-    <div className="p-4 sm:p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <div className="p-4 md:p-6 space-y-5 md:space-y-6">
+      <div>
         {/* Header */}
         <PageHeader
           title="Admin Panel"

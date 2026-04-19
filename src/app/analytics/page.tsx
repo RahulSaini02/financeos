@@ -180,7 +180,7 @@ export default async function AnalyticsPage() {
     // Guard: require at least 2 months of data to render charts
     if (activeMonths.length < 2) {
       return (
-        <div className="space-y-6">
+        <div className="p-4 md:p-6 space-y-5 md:space-y-6">
           <PageHeader
             title="Analytics"
             subtitle="Cash flow trends, spending patterns & forecasts"
@@ -199,7 +199,7 @@ export default async function AnalyticsPage() {
     }
 
     return (
-      <div className="space-y-6">
+      <div className="p-4 md:p-6 space-y-5 md:space-y-6">
         <PageHeader
           title="Analytics"
           subtitle="Cash flow trends, spending patterns & forecasts"
@@ -224,7 +224,7 @@ export default async function AnalyticsPage() {
     );
   } catch {
     return (
-      <div className="space-y-6">
+      <div className="p-4 md:p-6 space-y-5 md:space-y-6">
         <PageHeader
           title="Analytics"
           subtitle="Cash flow trends, spending patterns & forecasts"
