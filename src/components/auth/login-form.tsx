@@ -96,6 +96,7 @@ export function LoginForm () {
                   value={fullName}
                   onChange={( e ) => setFullName( e.target.value )}
                   required={isSignUp}
+                  suppressHydrationWarning
                 />
               </div>
             )}
@@ -109,6 +110,7 @@ export function LoginForm () {
                 value={email}
                 onChange={( e ) => setEmail( e.target.value )}
                 required
+                suppressHydrationWarning
               />
             </div>
 
@@ -123,6 +125,7 @@ export function LoginForm () {
                   onChange={( e ) => setPassword( e.target.value )}
                   required
                   minLength={6}
+                  suppressHydrationWarning
                 />
                 <button
                   type="button"
