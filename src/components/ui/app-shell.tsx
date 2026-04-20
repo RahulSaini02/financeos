@@ -300,8 +300,9 @@ export function AppShell({ children }: AppShellProps) {
     </aside>
   );
 
-  // Don't show sidebar until auth resolves, or if user is not authenticated
-  if (isLoading || !user) {
+  // Don't show sidebar on auth pages, while loading, or if unauthenticated
+  const isAuthPage = pathname === "/login";
+  if (isLoading || !user || isAuthPage) {
     return <>{children}</>;
   }
 

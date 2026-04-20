@@ -213,11 +213,13 @@ export function NetWorthChart({ points }: NetWorthChartProps) {
                 fontSize="13"
                 fill="var(--color-text-muted)"
                 textAnchor="end"
+                suppressHydrationWarning
               >
                 {new Intl.NumberFormat("en-US", {
                   style: "currency",
                   currency: "USD",
                   notation: "compact",
+                  minimumFractionDigits: 0,
                   maximumFractionDigits: 1,
                 }).format(val)}
               </text>

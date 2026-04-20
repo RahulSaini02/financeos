@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -23,10 +23,20 @@ export function LoginForm () {
   const [showPassword, setShowPassword] = useState( false );
   const [isLoading, setIsLoading] = useState( false );
   const [isGoogleLoading, setIsGoogleLoading] = useState( false );
+  const [isNavigating, setIsNavigating] = useState( false );
   const [isSignUp, setIsSignUp] = useState( false );
   const [fullName, setFullName] = useState( "" );
   const [error, setError] = useState<string | null>( null );
   const [message, setMessage] = useState<string | null>( null );
+
+  // Show overlay for at least 400ms so it's visible, then navigate
+  useEffect( () => {
+    if ( !isNavigating ) return;
+    const id = setTimeout( () => {
+      window.location.href = "/dashboard";
+    }, 400 );
+    return () => clearTimeout( id );
+  }, [isNavigating] );
 
   async function handleGoogleSignIn() {
     setIsGoogleLoading( true );
@@ -42,7 +52,8 @@ export function LoginForm () {
       setError( error.message );
       setIsGoogleLoading( false );
     }
-    // on success, browser is redirected by Supabase — no further action needed
+    // On success, Supabase immediately redirects the browser to Google's consent page —
+    // keep isGoogleLoading=true (spinner stays) and let Supabase handle the redirect
   }
 
   async function handleSubmit ( e: React.FormEvent ) {
@@ -62,16 +73,25 @@ export function LoginForm () {
         } );
         if ( error ) throw error;
         setMessage( "Check your email for a confirmation link." );
+        setIsLoading( false );
       } else {
         const { error } = await supabase.auth.signInWithPassword( { email, password } );
         if ( error ) throw error;
-        window.location.href = "/dashboard";
+        setIsNavigating( true );
       }
     } catch ( err: unknown ) {
       setError( err instanceof Error ? err.message : "An error occurred" );
-    } finally {
       setIsLoading( false );
     }
+  }
+
+  if ( isNavigating ) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-[var(--color-bg-primary)]">
+        <Loader2 className="h-8 w-8 animate-spin text-[var(--color-accent)]" />
+        <p className="text-sm text-[var(--color-text-secondary)]">Signing you in…</p>
+      </div>
+    );
   }
 
   return (
