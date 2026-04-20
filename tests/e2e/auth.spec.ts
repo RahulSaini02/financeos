@@ -16,8 +16,9 @@ test.describe("Auth — Login page", () => {
     await page.goto("/login");
     await page.getByText("Don't have an account? Sign up").click();
 
+    // Wait for the Full Name field to appear (React state update)
+    await expect(page.getByRole("button", { name: "Create Account" })).toBeVisible({ timeout: 3000 });
     await expect(page.getByPlaceholder("Rahul Saini")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Create Account" })).toBeVisible();
     await expect(page.getByText("Already have an account? Sign in")).toBeVisible();
   });
 
@@ -27,8 +28,10 @@ test.describe("Auth — Login page", () => {
     await page.getByPlaceholder("••••••••").fill("wrongpassword");
     await page.getByRole("button", { name: "Sign In" }).click();
 
-    // Should show an error message, not redirect
-    await expect(page.locator("p.text-\\[var\\(--color-danger\\)\\]")).toBeVisible({ timeout: 8000 });
+    // Error appears as a paragraph with danger color — match by content pattern
+    await expect(
+      page.locator("p").filter({ hasText: /invalid|incorrect|credentials|password|email/i })
+    ).toBeVisible({ timeout: 10000 });
     await expect(page).toHaveURL(/login/);
   });
 

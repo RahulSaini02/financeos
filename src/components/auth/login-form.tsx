@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
@@ -19,7 +18,6 @@ function GoogleIcon() {
 }
 
 export function LoginForm () {
-  const router = useRouter();
   const [email, setEmail] = useState( "" );
   const [password, setPassword] = useState( "" );
   const [showPassword, setShowPassword] = useState( false );
@@ -67,8 +65,7 @@ export function LoginForm () {
       } else {
         const { error } = await supabase.auth.signInWithPassword( { email, password } );
         if ( error ) throw error;
-        router.push( "/dashboard" );
-        router.refresh();
+        window.location.href = "/dashboard";
       }
     } catch ( err: unknown ) {
       setError( err instanceof Error ? err.message : "An error occurred" );
