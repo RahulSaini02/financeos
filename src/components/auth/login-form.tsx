@@ -87,7 +87,7 @@ export function LoginForm () {
         <Card>
           <form onSubmit={handleSubmit} className="space-y-4">
             {isSignUp && (
-              <div>
+              <div suppressHydrationWarning>
                 <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Full Name</label>
                 <input
                   type="text"
@@ -101,7 +101,7 @@ export function LoginForm () {
               </div>
             )}
 
-            <div>
+            <div suppressHydrationWarning>
               <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Email</label>
               <input
                 type="email"
@@ -114,9 +114,9 @@ export function LoginForm () {
               />
             </div>
 
-            <div>
+            <div suppressHydrationWarning>
               <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Password</label>
-              <div className="relative">
+              <div className="relative" suppressHydrationWarning>
                 <input
                   type={showPassword ? "text" : "password"}
                   className="w-full h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-3 pr-10 text-sm"
