@@ -12,6 +12,16 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { count } = await supabase
+      .from('user_integrations')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .eq('provider', 'google_calendar')
+
+    if ((count ?? 0) >= 2) {
+      return NextResponse.json({ error: 'Maximum 2 Google Calendars allowed' }, { status: 409 })
+    }
+
     const state = `${user.id}:${randomUUID()}`
     const url = getGoogleAuthUrl(state)
 

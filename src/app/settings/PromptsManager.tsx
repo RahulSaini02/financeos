@@ -552,13 +552,14 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
                 setEditorContent(e.target.value);
                 setDirty(true);
               }}
-              rows={fullscreen ? undefined : 14}
+              rows={fullscreen ? undefined : 8}
               className={`w-full rounded-lg border px-3 py-2.5 text-sm font-mono outline-none resize-y transition-colors focus:ring-1 focus:ring-[var(--color-accent)] ${fullscreen ? "flex-1 resize-none" : ""}`}
               style={{
                 background: "var(--color-bg-secondary)",
                 borderColor: "var(--color-border)",
                 color: "var(--color-text-primary)",
                 minHeight: fullscreen ? undefined : "200px",
+                maxHeight: fullscreen ? undefined : "200px",
                 height: fullscreen ? "100%" : undefined,
               }}
               placeholder="Enter prompt content…"
@@ -581,6 +582,7 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
                 borderColor: "var(--color-border)",
                 color: "var(--color-text-secondary)",
                 minHeight: fullscreen ? undefined : "200px",
+                maxHeight: fullscreen ? undefined : "200px",
               }}
             >
               {editorContent.trim() ? (
@@ -603,7 +605,7 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
                 setEditorContent(e.target.value);
                 setDirty(true);
               }}
-              rows={12}
+              rows={8}
               className="w-full rounded-lg border px-3 py-2.5 text-sm font-mono outline-none resize-y transition-colors focus:ring-1 focus:ring-[var(--color-accent)]"
               style={{
                 background: "var(--color-bg-secondary)",
@@ -621,6 +623,7 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
                 borderColor: "var(--color-border)",
                 color: "var(--color-text-secondary)",
                 minHeight: "200px",
+                maxHeight: "200px",
               }}
             >
               {editorContent.trim() ? (

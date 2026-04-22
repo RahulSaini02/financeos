@@ -27,12 +27,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'date is required (YYYY-MM-DD)' }, { status: 400 })
     }
 
-    const { data: integration, error: integrationError } = await supabase
+    const { data: integrations, error: integrationError } = await supabase
       .from('user_integrations')
       .select('*')
       .eq('user_id', user.id)
       .eq('provider', 'google_calendar')
-      .maybeSingle()
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    const integration = integrations?.[0] ?? null
 
     if (integrationError || !integration) {
       return NextResponse.json({ error: 'Google Calendar not connected' }, { status: 404 })
@@ -52,8 +55,7 @@ export async function POST(request: NextRequest) {
         await supabase
           .from('user_integrations')
           .update({ access_token: accessToken, token_expires_at: newExpiry, updated_at: new Date().toISOString() })
-          .eq('user_id', user.id)
-          .eq('provider', 'google_calendar')
+          .eq('id', integration.id)
       }
     }
 

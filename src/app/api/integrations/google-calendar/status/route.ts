@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 
 export async function GET() {
@@ -10,21 +10,19 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: integration } = await supabase
+    const { data: integrations } = await supabase
       .from('user_integrations')
-      .select('connected_email, updated_at')
+      .select('id, connected_email, updated_at')
       .eq('user_id', user.id)
       .eq('provider', 'google_calendar')
-      .maybeSingle()
-
-    if (!integration) {
-      return NextResponse.json({ connected: false, email: null, last_synced: null })
-    }
+      .order('created_at', { ascending: true })
 
     return NextResponse.json({
-      connected: true,
-      email: integration.connected_email ?? null,
-      last_synced: integration.updated_at ?? null,
+      connections: (integrations ?? []).map((i) => ({
+        id: i.id,
+        email: i.connected_email ?? null,
+        last_synced: i.updated_at ?? null,
+      })),
     })
   } catch (err) {
     console.error('Google Calendar status error:', err)
@@ -32,7 +30,7 @@ export async function GET() {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
   try {
     const supabase = await createServerSupabaseClient()
 
@@ -41,11 +39,19 @@ export async function DELETE() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { error } = await supabase
+    const email = request.nextUrl.searchParams.get('email')
+
+    let query = supabase
       .from('user_integrations')
       .delete()
       .eq('user_id', user.id)
       .eq('provider', 'google_calendar')
+
+    if (email) {
+      query = query.eq('connected_email', email)
+    }
+
+    const { error } = await query
 
     if (error) {
       return NextResponse.json({ error: 'Failed to disconnect' }, { status: 500 })

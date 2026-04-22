@@ -125,6 +125,8 @@ function Divider() {
 
 // ─── component ────────────────────────────────────────────────────────────────
 
+type GcalConnection = { id: string; email: string | null; last_synced: string | null };
+
 interface InitialPrompt {
   prompt_key: string;
   content: string;
@@ -174,13 +176,11 @@ export default function SettingsClient({
   );
 
   // ── google calendar integration ──
-  const [gcalConnected, setGcalConnected] = useState(false);
-  const [gcalEmail, setGcalEmail] = useState<string | null>(null);
-  const [gcalLastSynced, setGcalLastSynced] = useState<string | null>(null);
+  const [gcalConnections, setGcalConnections] = useState<GcalConnection[]>([]);
   const [gcalStatusLoading, setGcalStatusLoading] = useState(true);
   const [gcalConnecting, setGcalConnecting] = useState(false);
   const [gcalSyncing, setGcalSyncing] = useState(false);
-  const [gcalDisconnectConfirm, setGcalDisconnectConfirm] = useState(false);
+  const [gcalDisconnectEmail, setGcalDisconnectEmail] = useState<string | null>(null);
   const [gcalDisconnecting, setGcalDisconnecting] = useState(false);
 
   // ── sidebar nav prefs ──
@@ -251,10 +251,8 @@ export default function SettingsClient({
       try {
         const res = await fetch("/api/integrations/google-calendar/status");
         if (res.ok) {
-          const data = await res.json() as { connected: boolean; email: string | null; last_synced: string | null };
-          setGcalConnected(data.connected);
-          setGcalEmail(data.email ?? null);
-          setGcalLastSynced(data.last_synced ?? null);
+          const data = await res.json() as { connections: GcalConnection[] };
+          setGcalConnections(data.connections ?? []);
         }
       } catch {
         // silently ignore — status check failure shouldn't block settings page
@@ -262,6 +260,7 @@ export default function SettingsClient({
         setGcalStatusLoading(false);
       }
     }
+
     fetchGcalStatus();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -269,6 +268,11 @@ export default function SettingsClient({
     setGcalConnecting(true);
     try {
       const res = await fetch("/api/integrations/google-calendar/auth");
+      if (res.status === 409) {
+        toastError('Maximum 2 Google Calendars already connected');
+        setGcalConnecting(false);
+        return;
+      }
       const data = await res.json() as { url?: string; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Failed to get auth URL");
       window.location.href = data.url!;
@@ -287,7 +291,8 @@ export default function SettingsClient({
       const total = data.synced ?? 0;
       const financial = data.financial ?? 0;
       toastSuccess(`Synced ${total} events (${financial} financial)`);
-      setGcalLastSynced(new Date().toISOString());
+      const now = new Date().toISOString();
+      setGcalConnections((prev) => prev.map((c) => ({ ...c, last_synced: now })));
     } catch {
       toastError("Failed to sync Google Calendar");
     } finally {
@@ -295,20 +300,21 @@ export default function SettingsClient({
     }
   }
 
-  async function handleDisconnectGcal() {
+  async function handleDisconnectGcal(email: string | null) {
     setGcalDisconnecting(true);
     try {
-      const res = await fetch("/api/integrations/google-calendar/status", { method: "DELETE" });
-      if (!res.ok) throw new Error("Disconnect failed");
-      setGcalConnected(false);
-      setGcalEmail(null);
-      setGcalLastSynced(null);
-      toastSuccess("Google Calendar disconnected");
+      const url = email
+        ? `/api/integrations/google-calendar/status?email=${encodeURIComponent(email)}`
+        : '/api/integrations/google-calendar/status';
+      const res = await fetch(url, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Disconnect failed');
+      setGcalConnections((prev) => prev.filter((c) => c.email !== email));
+      setGcalDisconnectEmail(null);
+      toastSuccess('Google Calendar disconnected');
     } catch {
-      toastError("Failed to disconnect Google Calendar");
+      toastError('Failed to disconnect Google Calendar');
     } finally {
       setGcalDisconnecting(false);
-      setGcalDisconnectConfirm(false);
     }
   }
 
@@ -722,74 +728,86 @@ export default function SettingsClient({
                 <CalendarDays className="h-5 w-5 text-blue-400" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <div>
-                    <h3 className="text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>
-                      Google Calendar
-                    </h3>
-                    <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
-                      Sync bill reminders and financial events to your Google Calendar
-                    </p>
-                  </div>
-
-                  {gcalStatusLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin shrink-0" style={{ color: "var(--color-text-muted)" }} />
-                  ) : gcalConnected ? (
-                    <div className="flex items-center gap-1.5 text-sm text-emerald-400 shrink-0">
-                      <CheckCircle2 className="h-4 w-4" />
-                      Connected
-                    </div>
-                  ) : null}
+                <div>
+                  <h3 className="text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>
+                    Google Calendar
+                  </h3>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
+                    Sync bill reminders and financial events to your Google Calendar
+                  </p>
                 </div>
 
-                {!gcalStatusLoading && gcalConnected && (
-                  <div className="mt-3 space-y-3">
-                    {gcalEmail && (
-                      <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
-                        Signed in as <span className="font-medium" style={{ color: "var(--color-text-secondary)" }}>{gcalEmail}</span>
-                      </p>
-                    )}
-                    {gcalLastSynced && (
-                      <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
-                        Last synced:{" "}
-                        {new Intl.DateTimeFormat("en-US", {
-                          timeZone: "America/Los_Angeles",
-                          month: "short",
-                          day: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit",
-                        }).format(new Date(gcalLastSynced))}
-                      </p>
-                    )}
-                    <div className="flex flex-wrap items-center gap-2 pt-1">
-                      <button
-                        onClick={handleSyncGcal}
-                        disabled={gcalSyncing}
-                        className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors disabled:opacity-60"
-                      >
-                        {gcalSyncing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                        Sync Now
-                      </button>
-                      <button
-                        onClick={() => setGcalDisconnectConfirm(true)}
-                        className="text-sm text-red-400 hover:text-red-300 transition-colors"
-                      >
-                        Disconnect
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {!gcalStatusLoading && !gcalConnected && (
+                {gcalStatusLoading ? (
                   <div className="mt-3">
-                    <button
-                      onClick={handleConnectGcal}
-                      disabled={gcalConnecting}
-                      className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors disabled:opacity-60"
-                    >
-                      {gcalConnecting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                      Connect Google Calendar
-                    </button>
+                    <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--color-text-muted)" }} />
+                  </div>
+                ) : (
+                  <div className="mt-3 space-y-3">
+                    {/* Connected calendar rows */}
+                    {gcalConnections.map((conn) => (
+                      <div
+                        key={conn.id}
+                        className="rounded-lg border border-white/10 bg-white/5 px-4 py-3 space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 text-sm text-emerald-400">
+                            <CheckCircle2 className="h-4 w-4 shrink-0" />
+                            <span className="font-medium">Connected</span>
+                          </div>
+                          <button
+                            onClick={() => setGcalDisconnectEmail(conn.email)}
+                            className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                          >
+                            Disconnect
+                          </button>
+                        </div>
+                        {conn.email && (
+                          <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                            {conn.email}
+                          </p>
+                        )}
+                        {conn.last_synced && (
+                          <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                            Last synced:{" "}
+                            {new Intl.DateTimeFormat("en-US", {
+                              timeZone: "America/Los_Angeles",
+                              month: "short",
+                              day: "numeric",
+                              hour: "numeric",
+                              minute: "2-digit",
+                            }).format(new Date(conn.last_synced))}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+
+                    {/* Sync All button — shown when at least one connection exists */}
+                    {gcalConnections.length > 0 && (
+                      <div className="pt-1">
+                        <button
+                          onClick={handleSyncGcal}
+                          disabled={gcalSyncing}
+                          className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors disabled:opacity-60"
+                        >
+                          {gcalSyncing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                          Sync All
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Connect button — shown when fewer than 2 calendars connected */}
+                    {gcalConnections.length < 2 && (
+                      <div className={gcalConnections.length > 0 ? "" : "pt-1"}>
+                        <button
+                          onClick={handleConnectGcal}
+                          disabled={gcalConnecting}
+                          className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors disabled:opacity-60"
+                        >
+                          {gcalConnecting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                          {gcalConnections.length === 0 ? "Connect Google Calendar" : "Add another calendar"}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -798,11 +816,11 @@ export default function SettingsClient({
         </Card>
 
         <ConfirmDialog
-          open={gcalDisconnectConfirm}
-          onClose={() => setGcalDisconnectConfirm(false)}
-          onConfirm={handleDisconnectGcal}
+          open={gcalDisconnectEmail !== null}
+          onClose={() => setGcalDisconnectEmail(null)}
+          onConfirm={() => handleDisconnectGcal(gcalDisconnectEmail)}
           title="Disconnect Google Calendar?"
-          description="This will remove the connection to your Google Calendar. Bill reminders will no longer sync automatically."
+          description={`Remove ${gcalDisconnectEmail ?? 'this calendar'}? Bill reminders will no longer sync.`}
           confirmLabel="Disconnect"
           loading={gcalDisconnecting}
         />

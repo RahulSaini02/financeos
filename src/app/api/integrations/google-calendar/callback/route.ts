@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { exchangeCodeForTokens, getGoogleUserEmail } from '@/lib/google-oauth'
+import { createServerSupabaseClient } from '@/lib/supabase-server'
 
 function createServiceRoleClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -31,10 +32,29 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${settingsBase}?integration=google_calendar_error`)
   }
 
+  // Verify the session user matches the userId from state (defense-in-depth)
+  const supabaseAuth = await createServerSupabaseClient()
+  const { data: { user: sessionUser } } = await supabaseAuth.auth.getUser()
+  if (!sessionUser || sessionUser.id !== userId) {
+    return NextResponse.redirect(`${settingsBase}?integration=google_calendar_error`)
+  }
+
   try {
     const tokens = await exchangeCodeForTokens(code)
 
     const connectedEmail = await getGoogleUserEmail(tokens.access_token)
+
+    // Count existing integrations, excluding the same email (re-auth case)
+    const { count } = await supabaseAuth
+      .from('user_integrations')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('provider', 'google_calendar')
+      .neq('connected_email', connectedEmail)
+
+    if ((count ?? 0) >= 2) {
+      return NextResponse.redirect(`${settingsBase}?integration=google_calendar_error&reason=max_calendars`)
+    }
 
     const tokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
 
@@ -52,7 +72,7 @@ export async function GET(request: NextRequest) {
           connected_email: connectedEmail,
           updated_at: new Date().toISOString(),
         },
-        { onConflict: 'user_id,provider' },
+        { onConflict: 'user_id,provider,connected_email' },
       )
 
     if (error) {
