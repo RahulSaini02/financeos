@@ -280,7 +280,7 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
 
     const payload = {
       user_id: user.id,
-      account_id: form.account_id || "",
+      account_id: form.account_id || null,
       employer: form.employer || "Unknown",
       employer_id: form.employer_id || null,
       date: form.date,
@@ -361,7 +361,8 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
         await supabase
           .from("paychecks")
           .update({ transaction_id: txn.id })
-          .eq("id", paycheck.id);
+          .eq("id", paycheck.id)
+          .eq("user_id", user.id);
       } else {
         let errMsg = "Income transaction could not be created";
         try {
@@ -716,25 +717,25 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
                 {/* Deposit Account */}
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-                    Deposit Account
+                    Deposit Account <span className="text-[var(--color-danger)]">*</span>
                   </label>
                   <select
                     value={form.account_id}
                     onChange={(e) => setForm((prev) => ({ ...prev, account_id: e.target.value }))}
                     className={inputClass}
                   >
-                    <option value="">— Select account (optional) —</option>
+                    <option value="">— Select deposit account —</option>
                     {accounts.map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.name}
                       </option>
                     ))}
                   </select>
-                  {form.account_id && (
-                    <p className="text-[10px] text-[var(--color-text-muted)] mt-1">
-                      An income transaction will be auto-created in this account.
-                    </p>
-                  )}
+                  <p className="text-[10px] text-[var(--color-text-muted)] mt-1">
+                    {form.account_id
+                      ? "An income transaction will be auto-created in this account."
+                      : "Select an account to auto-create an income transaction."}
+                  </p>
                 </div>
 
                 {/* Pay Date */}
@@ -867,7 +868,7 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
               <Button variant="secondary" onClick={closeModal}>
                 Cancel
               </Button>
-              <Button onClick={handleSave} disabled={saving || !form.date || !form.gross_pay}>
+              <Button onClick={handleSave} disabled={saving || !form.date || !form.gross_pay || !form.account_id}>
                 {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
                 {editingId ? "Save Changes" : "Save Paycheck"}
               </Button>

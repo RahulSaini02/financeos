@@ -134,6 +134,17 @@ export async function POST(request: NextRequest) {
     // If target_account_id is provided, this is an internal transfer.
     // Create paired transactions atomically.
     if (target_account_id && target_account_id !== account_id) {
+      const { data: targetAcct, error: targetAcctErr } = await supabase
+        .from('accounts')
+        .select('id')
+        .eq('id', target_account_id)
+        .eq('user_id', user.id)
+        .single()
+
+      if (targetAcctErr || !targetAcct) {
+        return NextResponse.json({ error: 'Target account not found' }, { status: 404 })
+      }
+
       const transferGroupId = randomUUID()
 
       // Find or create the "Transfer" category for this user
