@@ -29,7 +29,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     // Active version
     const { data: activeRow } = await supabase
       .from('user_prompts')
-      .select('content, version')
+      .select('content, version, model')
       .eq('user_id', user.id)
       .eq('prompt_key', key)
       .eq('is_active', true)
@@ -47,6 +47,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       key,
       content: activeRow ? activeRow.content : DEFAULT_PROMPTS[key].content,
       version: activeRow ? activeRow.version : 0,
+      model: activeRow?.model ?? 'claude-haiku-4-5-20251001',
       isDefault: !activeRow,
       versions: allVersions ?? [],
     })
@@ -73,7 +74,11 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     const body = await req.json()
-    const { content, version_label } = body as { content?: string; version_label?: string }
+    const { content, version_label, model } = body as {
+      content?: string
+      version_label?: string
+      model?: string
+    }
 
     if (!content || typeof content !== 'string' || content.trim().length === 0) {
       return NextResponse.json({ error: 'content is required' }, { status: 400 })
@@ -86,7 +91,12 @@ export async function POST(req: NextRequest, { params }: Params) {
       )
     }
 
-    const inserted = await savePromptVersion(supabase, user.id, key, content, version_label)
+    const resolvedModel =
+      typeof model === 'string' && model.trim().length > 0
+        ? model.trim()
+        : 'claude-haiku-4-5-20251001'
+
+    const inserted = await savePromptVersion(supabase, user.id, key, content, version_label, resolvedModel)
 
     return NextResponse.json(
       {
@@ -94,6 +104,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         key: inserted.prompt_key,
         content: inserted.content,
         version: inserted.version,
+        model: inserted.model,
         created_at: inserted.created_at,
       },
       { status: 201 },

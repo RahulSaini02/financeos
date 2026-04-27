@@ -361,7 +361,7 @@ export default function BudgetsClient({
   }
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="p-4 md:p-6 space-y-5 md:space-y-6">
       <PageHeader
         title="Budgets"
         subtitle="Actual spend vs monthly limits · budgets auto-loaded from categories"

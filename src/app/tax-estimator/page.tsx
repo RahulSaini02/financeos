@@ -236,7 +236,7 @@ export default function TaxEstimatorPage () {
   if ( isLoading ) return <GridPageSkeleton cards={3} />;
 
   return (
-    <div className="space-y-6 p-6 max-w-5xl mx-auto">
+    <div className="p-4 md:p-6 space-y-5 md:space-y-6">
       <PageHeader
         title="Tax Estimator"
         subtitle="2026 US Federal &amp; California State Tax — pre-filled from your YTD paycheck data"

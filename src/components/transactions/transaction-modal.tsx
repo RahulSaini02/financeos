@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { X, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, getUserTimezone } from "@/lib/utils";
 import type { Transaction, Account, Category, Loan, TransactionType } from "@/lib/types";
 
 interface TransactionModalProps {
@@ -42,7 +42,7 @@ export function TransactionModal({
   const [accountId, setAccountId] = useState(txn?.account_id ?? accounts[0]?.id ?? "");
   const [targetAccountId, setTargetAccountId] = useState("");
   const [categoryId, setCategoryId] = useState(txn?.category_id ?? "");
-  const [date, setDate] = useState(txn?.date ?? new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState(txn?.date ?? new Intl.DateTimeFormat("en-CA", { timeZone: getUserTimezone() }).format(new Date()));
   const [notes, setNotes] = useState(txn?.notes ?? "");
   const [loanId, setLoanId] = useState<string>(
     (txn as Transaction & { loan_id?: string })?.loan_id ?? ""

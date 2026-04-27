@@ -193,7 +193,7 @@ export default function CategoriesClient({
 
   if (error) {
     return (
-      <div className="flex items-center gap-2 text-[var(--color-danger)] p-6">
+      <div className="flex items-center gap-2 text-[var(--color-danger)] p-4 md:p-6">
         <AlertTriangle className="h-5 w-5" />
         <span>{error}</span>
       </div>
@@ -201,7 +201,7 @@ export default function CategoriesClient({
   }
 
   return (
-    <div className="p-4 md:p-6 space-y-5 md:space-y-6 max-w-5xl mx-auto">
+    <div className="p-4 md:p-6 space-y-5 md:space-y-6">
       {/* Header */}
       <PageHeader
         title="Categories"

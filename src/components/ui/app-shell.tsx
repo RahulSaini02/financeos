@@ -24,6 +24,8 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
+  ShieldCheck,
+  BarChart2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FloatingAiChat } from "@/components/ui/floating-ai-chat";
@@ -44,8 +46,10 @@ export const ALL_NAV_ITEMS = [
   { href: "/paychecks", label: "Paychecks", icon: FileText },
   { href: "/employers", label: "Employers", icon: Briefcase },
   { href: "/tax-estimator", label: "Taxes", icon: ArrowRightLeft },
+  { href: "/analytics", label: "Analytics", icon: BarChart2 },
   { href: "/ai-review", label: "AI Review", icon: Sparkles },
   { href: "/import", label: "Import", icon: Upload },
+  { href: "/admin", label: "Admin", icon: ShieldCheck },
 ];
 
 export const NAV_PREFS_KEY = "pref_nav_items";
@@ -94,6 +98,7 @@ export function AppShell({ children }: AppShellProps) {
     try { return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true"; } catch { return false; }
   });
   const [navPrefs, setNavPrefs] = useState<NavPref[]>(() => getNavPrefs());
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // Listen for nav pref changes from other tabs / same-tab updates
   useEffect(() => {
@@ -108,6 +113,17 @@ export function AppShell({ children }: AppShellProps) {
       window.removeEventListener("nav-prefs-updated", handleNavUpdate);
     };
   }, []);
+
+  // Fetch user profile to determine admin status (for Admin nav item)
+  useEffect(() => {
+    if (!user) return;
+    fetch("/api/user-profile")
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (data?.data?.role === "admin") setIsAdmin(true);
+      })
+      .catch(() => { /* ignore */ });
+  }, [user]);
 
   const toggleCollapsed = () => {
     setSidebarCollapsed((prev) => {
@@ -145,8 +161,10 @@ export function AppShell({ children }: AppShellProps) {
     .join("");
 
   // Build ordered, filtered nav items from prefs
+  // Admin item only shows for admin users
   const visibleNavItems = navPrefs
     .filter((p) => p.visible)
+    .filter((p) => p.href !== "/admin" || isAdmin)
     .map((p) => ALL_NAV_ITEMS.find((n) => n.href === p.href))
     .filter(Boolean) as typeof ALL_NAV_ITEMS;
 
@@ -282,8 +300,9 @@ export function AppShell({ children }: AppShellProps) {
     </aside>
   );
 
-  // Don't show sidebar until auth resolves, or if user is not authenticated
-  if (isLoading || !user) {
+  // Don't show sidebar on auth pages, while loading, or if unauthenticated
+  const isAuthPage = pathname === "/login";
+  if (isLoading || !user || isAuthPage) {
     return <>{children}</>;
   }
 

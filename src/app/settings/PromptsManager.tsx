@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { UserPromptVersion, UserPromptWithMeta } from "@/lib/types";
+import { AI_MODELS, DEFAULT_AI_MODEL } from "@/lib/get-user-model";
 
 type PromptEntry = UserPromptWithMeta;
 type VersionEntry = UserPromptVersion;
@@ -152,6 +153,7 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
   const [loading, setLoading] = useState(true);
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [editorContent, setEditorContent] = useState("");
+  const [editorModel, setEditorModel] = useState<string>(DEFAULT_AI_MODEL);
   const [editorTab, setEditorTab] = useState<"edit" | "preview">("edit");
   const [versions, setVersions] = useState<VersionEntry[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
@@ -218,6 +220,7 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
 
     setActiveKey(key);
     setEditorContent(prompt.content);
+    setEditorModel(DEFAULT_AI_MODEL);
     setDirty(false);
     setSelectedVersionId(null);
     setEditorTab("edit");
@@ -230,6 +233,7 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
       if (!res.ok) throw new Error("Failed to load versions");
       const data = await res.json();
       setVersions(data.versions ?? []);
+      if (data.model) setEditorModel(data.model);
     } catch {
       // Non-critical
     } finally {
@@ -268,7 +272,7 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
       const res = await fetch(`/api/prompts/${activeKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: editorContent }),
+        body: JSON.stringify({ content: editorContent, model: editorModel }),
       });
       if (!res.ok) throw new Error("Save failed");
       const data = await res.json();
@@ -446,6 +450,35 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
         </div>
       </div>
 
+      {/* ── Model selector ────────────────────────────────────────────── */}
+      <div className="flex items-center gap-3 px-4 py-2.5 border-b shrink-0" style={{ borderColor: "var(--color-border)" }}>
+        <label className="text-xs font-medium shrink-0" style={{ color: "var(--color-text-secondary)" }}>
+          AI Model
+        </label>
+        <div className="relative flex-1 max-w-xs">
+          <select
+            value={editorModel}
+            onChange={(e) => { setEditorModel(e.target.value); setDirty(true); }}
+            className="w-full appearance-none rounded-lg border pl-2.5 pr-6 py-1 text-xs outline-none transition-colors focus:ring-1 focus:ring-[var(--color-accent)]"
+            style={{
+              background: "var(--color-bg-secondary)",
+              borderColor: "var(--color-border)",
+              color: "var(--color-text-primary)",
+            }}
+          >
+            {AI_MODELS.map((m) => (
+              <option key={m.value} value={m.value} style={{ background: "var(--color-bg-secondary)" }}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 h-3 w-3"
+            style={{ color: "var(--color-text-muted)" }}
+          />
+        </div>
+      </div>
+
       {/* ── Description + placeholder notes ────────────────────────────── */}
       <div className="px-4 py-2.5 border-b shrink-0" style={{ borderColor: "var(--color-border)" }}>
         <p className="text-xs mb-2" style={{ color: "var(--color-text-muted)" }}>
@@ -519,13 +552,14 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
                 setEditorContent(e.target.value);
                 setDirty(true);
               }}
-              rows={fullscreen ? undefined : 14}
+              rows={fullscreen ? undefined : 8}
               className={`w-full rounded-lg border px-3 py-2.5 text-sm font-mono outline-none resize-y transition-colors focus:ring-1 focus:ring-[var(--color-accent)] ${fullscreen ? "flex-1 resize-none" : ""}`}
               style={{
                 background: "var(--color-bg-secondary)",
                 borderColor: "var(--color-border)",
                 color: "var(--color-text-primary)",
                 minHeight: fullscreen ? undefined : "200px",
+                maxHeight: fullscreen ? undefined : "200px",
                 height: fullscreen ? "100%" : undefined,
               }}
               placeholder="Enter prompt content…"
@@ -548,6 +582,7 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
                 borderColor: "var(--color-border)",
                 color: "var(--color-text-secondary)",
                 minHeight: fullscreen ? undefined : "200px",
+                maxHeight: fullscreen ? undefined : "200px",
               }}
             >
               {editorContent.trim() ? (
@@ -570,7 +605,7 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
                 setEditorContent(e.target.value);
                 setDirty(true);
               }}
-              rows={12}
+              rows={8}
               className="w-full rounded-lg border px-3 py-2.5 text-sm font-mono outline-none resize-y transition-colors focus:ring-1 focus:ring-[var(--color-accent)]"
               style={{
                 background: "var(--color-bg-secondary)",
@@ -588,6 +623,7 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
                 borderColor: "var(--color-border)",
                 color: "var(--color-text-secondary)",
                 minHeight: "200px",
+                maxHeight: "200px",
               }}
             >
               {editorContent.trim() ? (

@@ -19,6 +19,11 @@ export interface Profile {
   full_name: string | null
   default_currency: CurrencyCode
   theme: 'dark' | 'light'
+  role: 'user' | 'admin'
+  email_verified: boolean
+  ai_enabled: boolean
+  ai_access_requested_at: string | null
+  ai_access_requested_reason: string | null
   created_at: string
   updated_at: string
 }
@@ -274,6 +279,17 @@ export interface AiInsight {
   created_at: string
 }
 
+export interface UserProfile {
+  id: string
+  role: 'admin' | 'user'
+  email_verified: boolean
+  ai_enabled: boolean
+  ai_access_requested_at: string | null
+  ai_access_requested_reason: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface UserPrompt {
   id: string
   user_id: string
@@ -282,6 +298,7 @@ export interface UserPrompt {
   version: number
   is_active: boolean
   version_label: string | null
+  model: string
   created_at: string
 }
 
@@ -312,6 +329,34 @@ export interface BudgetWithActual extends Budget {
 
 export interface AccountWithDelta extends Account {
   balance_change_30d: number
+}
+
+export interface UserIntegration {
+  id: string
+  user_id: string
+  provider: 'google_calendar'
+  access_token: string
+  refresh_token: string | null
+  token_expires_at: string | null
+  connected_email: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CalendarEvent {
+  id: string
+  user_id: string
+  google_event_id: string
+  title: string
+  description: string | null
+  start_date: string
+  end_date: string | null
+  estimated_cost: number | null
+  currency: string
+  is_bill_reminder: boolean
+  linked_subscription_id: string | null
+  google_calendar_id: string
+  created_at: string
 }
 
 export interface DashboardSummary {

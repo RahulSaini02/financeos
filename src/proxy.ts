@@ -31,10 +31,12 @@ export async function proxy(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
   const isAuthPage = pathname === "/login";
+  const isOAuthCallback = pathname === "/auth/callback";
   const isPublicAsset = pathname.startsWith("/_next") || pathname.startsWith("/favicon");
 
   // Public assets and auth pages pass through
   if (isPublicAsset) return supabaseResponse;
+  if (isOAuthCallback) return supabaseResponse;
   if (isAuthPage) {
     if (user) {
       // Redirect logged-in users away from login

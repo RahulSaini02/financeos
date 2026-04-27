@@ -20,6 +20,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ categoryId: null }, { status: 200 })
     }
 
+    // Check ai_enabled — graceful fallback, not an error
+    const { data: profileRow } = await supabase
+      .from('profiles')
+      .select('ai_enabled')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    if (!profileRow?.ai_enabled) {
+      return NextResponse.json({ categoryId: null }, { status: 200 })
+    }
+
     const [aiModel, body] = await Promise.all([
       getUserModel(supabase, user.id),
       request.json(),

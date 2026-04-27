@@ -6,6 +6,8 @@ import {
   priorPeriodInfo,
 } from "@/lib/review-periods";
 import AiReviewClient, { type ReviewData } from "./AiReviewClient";
+import { AiAccessGate } from "@/components/ui/ai-access-gate";
+import type { UserProfile } from "@/lib/types";
 
 export default async function AiReviewPage() {
   const supabase = await createServerSupabaseClient();
@@ -13,6 +15,22 @@ export default async function AiReviewPage() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+
+  // Fetch user profile for AI access gate
+  const { data: profileRow } = await supabase
+    .from("profiles")
+    .select("id, role, email_verified, ai_enabled, ai_access_requested_at, ai_access_requested_reason, created_at, updated_at")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const userProfile: UserProfile | null = profileRow
+    ? (profileRow as UserProfile)
+    : null;
+
+  // If AI is not enabled, render gate early (skip heavy DB queries)
+  if (!userProfile?.ai_enabled) {
+    return <AiAccessGate userProfile={userProfile}>{null}</AiAccessGate>;
+  }
 
   try {
     const now = new Date();
