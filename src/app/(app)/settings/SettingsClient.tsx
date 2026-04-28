@@ -248,8 +248,8 @@ export default function SettingsClient({
       try {
         const res = await fetch("/api/user/preferences");
         if (res.ok) {
-          const data = await res.json() as { preferences: UserFinancialPreferences | null };
-          const p = data.preferences;
+          const data = await res.json() as { data: UserFinancialPreferences | null };
+          const p = data.data;
           if (p) {
             setCommStyle(p.communication_style ?? 'balanced');
             setRiskTol(p.risk_tolerance ?? '');
@@ -268,8 +268,8 @@ export default function SettingsClient({
       try {
         const res = await fetch("/api/user/memory");
         if (res.ok) {
-          const data = await res.json() as { memories: UserMemory[] };
-          setMemories(data.memories ?? []);
+          const data = await res.json() as { data: UserMemory[] };
+          setMemories(data.data ?? []);
         }
       } catch { /* silently ignore */ } finally {
         setMemoriesLoading(false);
