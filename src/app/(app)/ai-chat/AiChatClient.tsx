@@ -301,7 +301,7 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
   const unreadCount = insights.filter( ( i ) => !i.is_read ).length;
 
   return (
-    <div className="fixed inset-0 z-30 flex flex-col overflow-hidden bg-[var(--color-bg-primary)] lg:relative lg:inset-auto lg:z-auto">
+    <div className="fixed inset-0 z-30 flex flex-col overflow-hidden bg-[var(--color-bg-primary)] lg:relative lg:inset-auto lg:z-auto lg:h-full">
 
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
       <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-[var(--color-border)]">
