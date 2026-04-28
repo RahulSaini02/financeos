@@ -51,6 +51,10 @@ export async function proxy(request: NextRequest) {
 
   // All other routes require authentication
   if (!user) {
+    // API routes should return 401 JSON, not redirect
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
