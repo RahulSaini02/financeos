@@ -373,6 +373,61 @@ export interface AgentActionLog {
   executed_at: string | null
 }
 
+// ── Agentic Memory ──────────────────────────────────────────────────────────
+
+export type ConversationRole = 'user' | 'assistant'
+export type ConversationMode = 'chat' | 'agent'
+
+export interface ConversationMessage {
+  id: string
+  user_id: string
+  session_id: string
+  role: ConversationRole
+  content: string
+  mode: ConversationMode
+  created_at: string
+}
+
+export type CommunicationStyle = 'brief' | 'balanced' | 'detailed'
+export type RiskTolerance = 'conservative' | 'moderate' | 'aggressive'
+export type MemoryCategory =
+  | 'goal' | 'debt' | 'savings' | 'income'
+  | 'spending' | 'investment' | 'preference' | 'general'
+
+export interface UserFinancialPreferences {
+  id: string
+  user_id: string
+  spending_priorities: string[] | null
+  financial_goals: string[] | null
+  communication_style: CommunicationStyle
+  alert_preferences: string[] | null
+  risk_tolerance: RiskTolerance | null
+  custom_instructions: string | null
+  updated_at: string
+  created_at: string
+}
+
+export interface UserMemory {
+  id: string
+  user_id: string
+  fact: string
+  category: MemoryCategory
+  source_mode: ConversationMode
+  is_active: boolean
+  extracted_at: string
+  expires_at: string | null
+  created_at: string
+}
+
+export interface UserFinancialPreferencesPayload {
+  spending_priorities?: string[]
+  financial_goals?: string[]
+  communication_style?: CommunicationStyle
+  alert_preferences?: string[]
+  risk_tolerance?: RiskTolerance | null
+  custom_instructions?: string | null
+}
+
 export interface DashboardSummary {
   net_worth: number
   total_assets: number

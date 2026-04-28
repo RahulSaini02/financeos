@@ -6,6 +6,14 @@ import { getUserPrompt } from '@/lib/get-user-prompt'
 import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
 import { formatCurrency } from '@/lib/utils'
 import { READ_TOOLS, WRITE_TOOLS, WRITE_TOOL_NAMES, executeReadTool } from '@/lib/agent-tools'
+import {
+  fetchRecentConversationHistory,
+  saveConversationTurn,
+  fetchUserPreferences,
+  fetchActiveMemories,
+  buildMemoryContext,
+  extractAndSaveMemories,
+} from '@/lib/memory-helpers'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -56,9 +64,11 @@ export async function POST(request: NextRequest) {
     messages: Anthropic.MessageParam[]
     model?: string
     timezone?: string
+    sessionId?: string
   }
 
-  const { messages, model: requestModel, timezone: clientTimezone } = body
+  const { messages, model: requestModel, timezone: clientTimezone, sessionId: bodySessionId } = body
+  const sessionId = bodySessionId ?? crypto.randomUUID()
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return new Response(JSON.stringify({ error: 'messages array is required' }), { status: 400 })
@@ -140,7 +150,7 @@ export async function POST(request: NextRequest) {
   sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
   const sevenDaysStr = toLocalDate(sevenDaysFromNow)
 
-  // ── Fetch financial context (same as ai-chat) ───────────────────────────
+  // ── Fetch financial context (same as ai-chat) + memory ──────────────────
   const [
     accountsRes,
     transactionsRes,
@@ -150,6 +160,9 @@ export async function POST(request: NextRequest) {
     subscriptionsRes,
     savingsGoalsRes,
     calendarEventsRes,
+    conversationHistory,
+    userPrefs,
+    activeMemories,
   ] = await Promise.all([
     supabase
       .from('accounts')
@@ -190,6 +203,9 @@ export async function POST(request: NextRequest) {
       .gte('start_date', todayStr)
       .lte('start_date', sevenDaysStr)
       .order('start_date', { ascending: true }),
+    fetchRecentConversationHistory(supabase, user.id),
+    fetchUserPreferences(supabase, user.id),
+    fetchActiveMemories(supabase, user.id),
   ])
 
   const accounts = accountsRes.data ?? []
@@ -338,7 +354,8 @@ ${
     'ai_agent',
     DEFAULT_PROMPTS.ai_agent.content,
   )
-  const agentSystemPrompt = agentPromptTemplate.replaceAll('{{context}}', context)
+  const memoryContext = buildMemoryContext(conversationHistory, userPrefs, activeMemories)
+  const agentSystemPrompt = agentPromptTemplate.replaceAll('{{context}}', context) + memoryContext
 
   const allTools = [...READ_TOOLS, ...WRITE_TOOLS]
 
@@ -348,6 +365,15 @@ ${
       const emit = (data: object) => {
         controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`))
       }
+
+      // Fire-and-forget: save user turn before starting the agent loop
+      void saveConversationTurn(supabase, {
+        userId: user.id,
+        sessionId,
+        role: 'user',
+        content: lastUserText,
+        mode: 'agent',
+      })
 
       try {
         let currentMessages: Anthropic.MessageParam[] = [...messages]
@@ -450,15 +476,25 @@ ${
             const textBlock = response.content.find(
               (b): b is Anthropic.TextBlock => b.type === 'text',
             )
-            const text = textBlock?.text ?? ''
+            const assistantText = textBlock?.text ?? ''
 
             // Emit text in sentence chunks for better UX
-            const chunks = text.match(/[^.!?]+[.!?]*/g) ?? [text]
+            const chunks = assistantText.match(/[^.!?]+[.!?]*/g) ?? [assistantText]
             for (const chunk of chunks) {
               if (chunk.trim().length > 0) {
                 emit({ event: 'text_delta', text: chunk })
               }
             }
+
+            // Fire-and-forget: save assistant turn and extract memories
+            void saveConversationTurn(supabase, {
+              userId: user.id,
+              sessionId,
+              role: 'assistant',
+              content: assistantText,
+              mode: 'agent',
+            })
+            void extractAndSaveMemories(anthropic, supabase, user.id, lastUserText, assistantText, 'agent')
 
             emit({ event: 'done', reason: 'end_turn' })
             continueLoop = false

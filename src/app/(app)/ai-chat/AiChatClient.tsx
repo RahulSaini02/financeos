@@ -103,6 +103,19 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
   const [agentMode, setAgentMode] = useState( false );
   const [agentHistory, setAgentHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>( [] );
   const [confirmingActionId, setConfirmingActionId] = useState<string | null>( null );
+  const [sessionId, setSessionId] = useState<string>( "" );
+
+  useEffect( () => {
+    if ( !user ) return;
+    try {
+      const key = `session_id_${ user.id }`;
+      const stored = localStorage.getItem( key );
+      if ( stored ) { setSessionId( stored ); return; }
+      const newId = crypto.randomUUID();
+      localStorage.setItem( key, newId );
+      setSessionId( newId );
+    } catch { setSessionId( crypto.randomUUID() ); }
+  }, [user] );
 
   const chatEndRef = useRef<HTMLDivElement>( null );
 
@@ -180,7 +193,7 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
       const res = await fetch( "/api/ai-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify( { question, model: selectedModel, timezone: localStorage.getItem( "pref_timezone" ) ?? "America/Los_Angeles" } ),
+        body: JSON.stringify( { question, model: selectedModel, timezone: localStorage.getItem( "pref_timezone" ) ?? "America/Los_Angeles", sessionId } ),
       } );
       const data = await res.json();
       const answer: string = res.ok ? data.answer : "Sorry, I couldn't process that. Please try again.";
@@ -211,7 +224,7 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
       const res = await fetch( "/api/ai-agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify( { messages: newHistory, model: selectedModel, timezone: localStorage.getItem( "pref_timezone" ) ?? "America/Los_Angeles" } ),
+        body: JSON.stringify( { messages: newHistory, model: selectedModel, timezone: localStorage.getItem( "pref_timezone" ) ?? "America/Los_Angeles", sessionId } ),
       } );
       if ( !res.ok || !res.body ) throw new Error( "Agent request failed" );
       const reader = res.body.getReader();
@@ -323,6 +336,9 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
       try {
         localStorage.removeItem( `${ CHAT_SESSION_KEY }_${ user.id }` );
         localStorage.removeItem( `${ AGENT_SESSION_KEY }_${ user.id }` );
+        const newId = crypto.randomUUID();
+        localStorage.setItem( `session_id_${ user.id }`, newId );
+        setSessionId( newId );
       } catch { /* ignore */ }
     }
   }

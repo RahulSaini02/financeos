@@ -6,6 +6,14 @@ import { getUserPrompt } from '@/lib/get-user-prompt'
 import { getUserModel } from '@/lib/get-user-model'
 import { formatCurrency } from '@/lib/utils'
 import { getCalendarEvents, createCalendarEvent, refreshAccessToken } from '@/lib/google-oauth'
+import {
+  fetchRecentConversationHistory,
+  saveConversationTurn,
+  fetchUserPreferences,
+  fetchActiveMemories,
+  buildMemoryContext,
+  extractAndSaveMemories,
+} from '@/lib/memory-helpers'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -37,7 +45,8 @@ export async function POST(request: NextRequest) {
     const userDefaultModel = await getUserModel(supabase, user.id)
 
     const body = await request.json()
-    const { question, model: requestModel, timezone: clientTimezone } = body as { question: string; model?: string; timezone?: string }
+    const { question, model: requestModel, timezone: clientTimezone, sessionId: bodySessionId } = body as { question: string; model?: string; timezone?: string; sessionId?: string }
+    const sessionId = bodySessionId ?? crypto.randomUUID()
 
     if (!question || typeof question !== 'string') {
       return NextResponse.json({ error: 'question is required' }, { status: 400 })
@@ -73,7 +82,7 @@ export async function POST(request: NextRequest) {
     sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
     const sevenDaysStr = toLocalDate(sevenDaysFromNow)
 
-    // Fetch all financial context + calendar integration in parallel
+    // Fetch all financial context + calendar integration + memory in parallel
     const [
       accountsRes,
       transactionsRes,
@@ -84,6 +93,9 @@ export async function POST(request: NextRequest) {
       savingsGoalsRes,
       calendarEventsRes,
       gcalIntegrationRes,
+      conversationHistory,
+      userPrefs,
+      activeMemories,
     ] = await Promise.all([
       supabase.from('accounts').select('name, kind, type, current_balance, currency').eq('user_id', user.id).eq('is_active', true),
       supabase.from('transactions').select('description, amount_usd, cr_dr, date, category:categories(name)').eq('user_id', user.id).gte('date', firstDay).lt('date', nextMonth),
@@ -105,6 +117,9 @@ export async function POST(request: NextRequest) {
         .eq('user_id', user.id)
         .eq('provider', 'google_calendar')
         .maybeSingle(),
+      fetchRecentConversationHistory(supabase, user.id),
+      fetchUserPreferences(supabase, user.id),
+      fetchActiveMemories(supabase, user.id),
     ])
 
     const accounts = accountsRes.data ?? []
@@ -203,7 +218,8 @@ ${calendarEvents.length === 0 ? '- No upcoming financial events' : calendarEvent
       'ai_chat',
       DEFAULT_PROMPTS.ai_chat.content,
     )
-    const chatSystemPrompt = chatPromptTemplate.replaceAll('{{context}}', context)
+    const memoryContext = buildMemoryContext(conversationHistory, userPrefs, activeMemories)
+    const chatSystemPrompt = chatPromptTemplate.replaceAll('{{context}}', context) + memoryContext
 
     // Safety guardrail — prepended unconditionally, cannot be overridden by user prompts
     const calendarCapabilities = gcalIntegration
@@ -297,6 +313,15 @@ Use these tools whenever the user asks to view, check, add, schedule, create, or
     const messages: Anthropic.MessageParam[] = [
       { role: 'user', content: question },
     ]
+
+    // Fire-and-forget: save user turn before calling Claude
+    void saveConversationTurn(supabase, {
+      userId: user.id,
+      sessionId,
+      role: 'user',
+      content: question,
+      mode: 'chat',
+    })
 
     let response = await anthropic.messages.create({
       model: aiModel,
@@ -428,6 +453,16 @@ Use these tools whenever the user asks to view, check, add, schedule, create, or
     const answer =
       response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text ??
       'Sorry, I could not generate a response.'
+
+    // Fire-and-forget: save assistant turn and extract memories
+    void saveConversationTurn(supabase, {
+      userId: user.id,
+      sessionId,
+      role: 'assistant',
+      content: answer,
+      mode: 'chat',
+    })
+    void extractAndSaveMemories(anthropic, supabase, user.id, question, answer, 'chat')
 
     return NextResponse.json({ answer })
   } catch (err) {

@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Eye, EyeOff, GripVertical, RotateCcw, CalendarDays, CheckCircle2 } from "lucide-react";
+import { Loader2, Eye, EyeOff, GripVertical, RotateCcw, CalendarDays, CheckCircle2, Brain, Sparkles, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import { ALL_NAV_ITEMS, NAV_PREFS_KEY, getNavPrefs, type NavPref } from "@/components/ui/app-shell";
 import PromptsManager from "./PromptsManager";
+import type { UserFinancialPreferences, UserMemory } from "@/lib/types";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -175,6 +176,20 @@ export default function SettingsClient({
     (typeof window !== "undefined" && localStorage.getItem("pref_timezone")) || "America/Los_Angeles"
   );
 
+  // ── AI preferences ──
+  const [prefsLoading, setPrefsLoading] = useState(true);
+  const [prefsSaving, setPrefsSaving] = useState(false);
+  const [prefsSuccess, setPrefsSuccess] = useState(false);
+  const [commStyle, setCommStyle] = useState<'brief' | 'balanced' | 'detailed'>('balanced');
+  const [riskTol, setRiskTol] = useState<'conservative' | 'moderate' | 'aggressive' | ''>('');
+  const [goalsText, setGoalsText] = useState('');
+  const [prioritiesText, setPrioritiesText] = useState('');
+  const [customInstructions, setCustomInstructions] = useState('');
+
+  // ── AI memory ──
+  const [memories, setMemories] = useState<UserMemory[]>([]);
+  const [memoriesLoading, setMemoriesLoading] = useState(true);
+
   // ── google calendar integration ──
   const [gcalConnections, setGcalConnections] = useState<GcalConnection[]>([]);
   const [gcalStatusLoading, setGcalStatusLoading] = useState(true);
@@ -223,6 +238,92 @@ export default function SettingsClient({
     const next = ALL_NAV_ITEMS.map((n) => ({ href: n.href, visible: DEFAULT_HREFS.includes(n.href) }));
     setNavPrefs(next);
     saveNavPrefs(next);
+  }
+
+  // ── AI preferences + memory effects ──────────────────────────────────────
+
+  useEffect(() => {
+    async function fetchPrefs() {
+      setPrefsLoading(true);
+      try {
+        const res = await fetch("/api/user/preferences");
+        if (res.ok) {
+          const data = await res.json() as { preferences: UserFinancialPreferences | null };
+          const p = data.preferences;
+          if (p) {
+            setCommStyle(p.communication_style ?? 'balanced');
+            setRiskTol(p.risk_tolerance ?? '');
+            setGoalsText((p.financial_goals ?? []).join('\n'));
+            setPrioritiesText((p.spending_priorities ?? []).join('\n'));
+            setCustomInstructions(p.custom_instructions ?? '');
+          }
+        }
+      } catch { /* silently ignore */ } finally {
+        setPrefsLoading(false);
+      }
+    }
+
+    async function fetchMemories() {
+      setMemoriesLoading(true);
+      try {
+        const res = await fetch("/api/user/memory");
+        if (res.ok) {
+          const data = await res.json() as { memories: UserMemory[] };
+          setMemories(data.memories ?? []);
+        }
+      } catch { /* silently ignore */ } finally {
+        setMemoriesLoading(false);
+      }
+    }
+
+    fetchPrefs();
+    fetchMemories();
+  }, []);
+
+  async function handleSavePrefs() {
+    setPrefsSaving(true);
+    setPrefsSuccess(false);
+    try {
+      const res = await fetch("/api/user/preferences", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          communication_style: commStyle,
+          risk_tolerance: riskTol || null,
+          financial_goals: goalsText.split('\n').map((s) => s.trim()).filter(Boolean),
+          spending_priorities: prioritiesText.split('\n').map((s) => s.trim()).filter(Boolean),
+          custom_instructions: customInstructions.trim() || null,
+        }),
+      });
+      if (res.ok) {
+        setPrefsSuccess(true);
+        setTimeout(() => setPrefsSuccess(false), 3000);
+      }
+    } catch { /* silently ignore */ } finally {
+      setPrefsSaving(false);
+    }
+  }
+
+  async function handleDeleteMemory(id: string) {
+    setMemories((prev) => prev.filter((m) => m.id !== id));
+    try {
+      await fetch("/api/user/memory", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+    } catch { /* silently ignore */ }
+  }
+
+  async function handleClearAllMemories() {
+    setMemories([]);
+    try {
+      await fetch("/api/user/memory", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ all: true }),
+      });
+    } catch { /* silently ignore */ }
   }
 
   // ── google calendar effects + handlers ───────────────────────────────────
@@ -824,6 +925,198 @@ export default function SettingsClient({
           confirmLabel="Disconnect"
           loading={gcalDisconnecting}
         />
+
+        {/* ── AI Preferences ────────────────────────────────────────────── */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4" style={{ color: "var(--color-accent)" }} />
+              <CardTitle>AI Preferences</CardTitle>
+            </div>
+          </CardHeader>
+          <p className="text-sm mb-5" style={{ color: "var(--color-text-secondary)" }}>
+            Personalize how the AI assistant communicates and what it prioritizes for you.
+          </p>
+
+          {prefsLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin" style={{ color: "var(--color-text-muted)" }} />
+            </div>
+          ) : (
+            <div className="space-y-5">
+              <SelectField
+                label="Communication Style"
+                value={commStyle}
+                onChange={(v) => setCommStyle(v as typeof commStyle)}
+                options={[
+                  { value: "brief", label: "Brief — short, direct answers" },
+                  { value: "balanced", label: "Balanced — clear with context" },
+                  { value: "detailed", label: "Detailed — thorough explanations" },
+                ]}
+              />
+
+              <SelectField
+                label="Risk Tolerance"
+                value={riskTol}
+                onChange={(v) => setRiskTol(v as typeof riskTol)}
+                options={[
+                  { value: "", label: "(not set)" },
+                  { value: "conservative", label: "Conservative — safety first" },
+                  { value: "moderate", label: "Moderate — balanced approach" },
+                  { value: "aggressive", label: "Aggressive — growth focused" },
+                ]}
+              />
+
+              <div>
+                <FieldLabel>Financial Goals (one per line)</FieldLabel>
+                <textarea
+                  value={goalsText}
+                  onChange={(e) => setGoalsText(e.target.value)}
+                  rows={3}
+                  placeholder="e.g. Save $60k for house down payment by 2028"
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-1 focus:ring-offset-[var(--color-bg-primary)] resize-y"
+                  style={{
+                    background: "var(--color-bg-tertiary)",
+                    borderColor: "var(--color-border)",
+                    color: "var(--color-text-primary)",
+                  }}
+                />
+              </div>
+
+              <div>
+                <FieldLabel>Spending Priorities (one per line)</FieldLabel>
+                <textarea
+                  value={prioritiesText}
+                  onChange={(e) => setPrioritiesText(e.target.value)}
+                  rows={3}
+                  placeholder="e.g. Debt payoff first"
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-1 focus:ring-offset-[var(--color-bg-primary)] resize-y"
+                  style={{
+                    background: "var(--color-bg-tertiary)",
+                    borderColor: "var(--color-border)",
+                    color: "var(--color-text-primary)",
+                  }}
+                />
+              </div>
+
+              <div>
+                <FieldLabel>Custom Instructions</FieldLabel>
+                <textarea
+                  value={customInstructions}
+                  onChange={(e) => setCustomInstructions(e.target.value)}
+                  rows={3}
+                  maxLength={500}
+                  placeholder="e.g. Always show amounts in USD, remind me of savings goals"
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-1 focus:ring-offset-[var(--color-bg-primary)] resize-y"
+                  style={{
+                    background: "var(--color-bg-tertiary)",
+                    borderColor: "var(--color-border)",
+                    color: "var(--color-text-primary)",
+                  }}
+                />
+                <p className="mt-1 text-xs" style={{ color: "var(--color-text-muted)" }}>
+                  {customInstructions.length}/500
+                </p>
+              </div>
+            </div>
+          )}
+
+          {!prefsLoading && (
+            <div className="mt-5 flex items-center justify-end gap-3">
+              {prefsSuccess && (
+                <span className="text-sm" style={{ color: "var(--color-success)" }}>
+                  Preferences saved.
+                </span>
+              )}
+              <Button
+                variant="primary"
+                size="md"
+                onClick={handleSavePrefs}
+                disabled={prefsSaving}
+              >
+                {prefsSaving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                Save preferences
+              </Button>
+            </div>
+          )}
+        </Card>
+
+        {/* ── AI Memory ─────────────────────────────────────────────────── */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Brain className="h-4 w-4" style={{ color: "var(--color-accent)" }} />
+              <CardTitle>AI Memory</CardTitle>
+            </div>
+          </CardHeader>
+          <p className="text-sm mb-5" style={{ color: "var(--color-text-muted)" }}>
+            Facts the AI has learned about you from conversations.
+          </p>
+
+          {memoriesLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin" style={{ color: "var(--color-text-muted)" }} />
+            </div>
+          ) : memories.length === 0 ? (
+            <p className="text-sm py-4 text-center" style={{ color: "var(--color-text-muted)" }}>
+              No memories yet. Start chatting with the AI to build your memory.
+            </p>
+          ) : (
+            <>
+              <div className="space-y-2">
+                {memories.map((mem) => {
+                  const categoryColors: Record<string, { bg: string; text: string }> = {
+                    goal:       { bg: "color-mix(in srgb, var(--color-accent) 12%, transparent)",  text: "var(--color-accent)" },
+                    debt:       { bg: "color-mix(in srgb, var(--color-danger) 12%, transparent)",  text: "var(--color-danger)" },
+                    savings:    { bg: "color-mix(in srgb, var(--color-success) 12%, transparent)", text: "var(--color-success)" },
+                    income:     { bg: "color-mix(in srgb, var(--color-success) 12%, transparent)", text: "var(--color-success)" },
+                    spending:   { bg: "color-mix(in srgb, var(--color-warning) 12%, transparent)", text: "var(--color-warning)" },
+                    investment: { bg: "color-mix(in srgb, var(--color-accent) 12%, transparent)",  text: "var(--color-accent)" },
+                    preference: { bg: "color-mix(in srgb, var(--color-text-muted) 15%, transparent)", text: "var(--color-text-muted)" },
+                    general:    { bg: "color-mix(in srgb, var(--color-text-muted) 15%, transparent)", text: "var(--color-text-muted)" },
+                  };
+                  const colors = categoryColors[mem.category] ?? categoryColors.general;
+                  return (
+                    <div
+                      key={mem.id}
+                      className="flex items-start gap-3 rounded-lg border px-3 py-3"
+                      style={{ background: "var(--color-bg-secondary)", borderColor: "var(--color-border)" }}
+                    >
+                      <span
+                        className="inline-flex shrink-0 items-center px-2 py-0.5 rounded text-[0.65rem] font-semibold uppercase tracking-wide mt-0.5"
+                        style={{ background: colors.bg, color: colors.text }}
+                      >
+                        {mem.category}
+                      </span>
+                      <p className="flex-1 text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
+                        {mem.fact}
+                      </p>
+                      <button
+                        onClick={() => handleDeleteMemory(mem.id)}
+                        className="shrink-0 p-1 rounded transition-colors hover:bg-[var(--color-bg-tertiary)]"
+                        aria-label="Delete memory"
+                        style={{ color: "var(--color-text-muted)" }}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={handleClearAllMemories}
+                  className="flex items-center gap-1.5 text-xs transition-colors hover:opacity-80"
+                  style={{ color: "var(--color-danger)" }}
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Clear all memories
+                </button>
+              </div>
+            </>
+          )}
+        </Card>
 
         {/* ── Danger Zone ───────────────────────────────────────────────── */}
         <Card>
