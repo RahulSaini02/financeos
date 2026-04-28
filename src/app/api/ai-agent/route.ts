@@ -356,7 +356,7 @@ ${
         while (continueLoop) {
           const response = await anthropic.messages.create({
             model: aiModel,
-            max_tokens: 4096,
+            max_tokens: 8192,
             system: safetyPrefix + agentSystemPrompt,
             tools: allTools,
             messages: currentMessages,

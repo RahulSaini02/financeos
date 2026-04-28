@@ -15,6 +15,12 @@ export default function MarketingNav() {
           </span>
         </Link>
 
+        {/* Section links */}
+        <div className="hidden sm:flex items-center gap-5 text-sm text-[var(--color-text-muted)]">
+          <a href="#features" className="hover:text-[var(--color-text-primary)] transition-colors">Features</a>
+          <a href="#demo" className="hover:text-[var(--color-text-primary)] transition-colors">Demo</a>
+        </div>
+
         {/* Nav actions */}
         <div className="flex items-center gap-2">
           <Link
