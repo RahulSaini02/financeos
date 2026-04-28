@@ -11,7 +11,7 @@ export type CurrencyCode = 'USD' | 'INR'
 export type BillingStatus = 'active' | 'inactive' | 'cancelled'
 export type LoanType = 'student' | 'personal' | 'mortgage' | 'auto' | 'other'
 export type GoalStatus = 'active' | 'paused' | 'completed'
-export type InsightType = 'daily' | 'monthly' | 'alert' | 'monthly_review'
+export type InsightType = 'daily' | 'monthly' | 'alert' | 'monthly_review' | 'agent_action'
 
 export interface Profile {
   id: string
@@ -357,6 +357,20 @@ export interface CalendarEvent {
   linked_subscription_id: string | null
   google_calendar_id: string
   created_at: string
+}
+
+export type AgentActionStatus = 'pending' | 'executed' | 'rejected' | 'failed'
+
+export interface AgentActionLog {
+  id: string
+  user_id: string
+  tool_name: string
+  input_json: Record<string, unknown>
+  result_json: Record<string, unknown> | null
+  status: AgentActionStatus
+  messages_state: unknown | null
+  created_at: string
+  executed_at: string | null
 }
 
 export interface DashboardSummary {
