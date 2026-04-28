@@ -199,6 +199,17 @@ export function LoginForm () {
               {isSignUp ? "Already have an account? Sign in" : "Don't have an account? Sign up"}
             </button>
           </div>
+
+          <p className="mt-4 text-center text-[10px] text-[var(--color-text-muted)] leading-relaxed">
+            By continuing, you agree to our{" "}
+            <a href="/terms" className="underline hover:text-[var(--color-text-secondary)] transition-colors">
+              Terms of Service
+            </a>{" "}
+            and{" "}
+            <a href="/privacy" className="underline hover:text-[var(--color-text-secondary)] transition-colors">
+              Privacy Policy
+            </a>.
+          </p>
         </Card>
 
         <p className="text-center text-xs text-[var(--color-text-muted)] mt-6">
