@@ -22,6 +22,8 @@ import { cn } from "@/lib/utils";
 const CHAT_MODEL_KEY = "pref_chat_model";
 const DEFAULT_CHAT_MODEL = "claude-sonnet-4-6";
 const AGENT_SESSION_KEY = "agent_session_v1";
+const CHAT_SESSION_KEY = "chat_session_v1";
+const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -121,7 +123,30 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
       const raw = localStorage.getItem( `${ AGENT_SESSION_KEY }_${ user.id }` );
       if ( !raw ) return;
       const session = JSON.parse( raw ) as { history: typeof agentHistory; savedAt: number };
-      if ( Date.now() - session.savedAt < 24 * 60 * 60 * 1000 ) setAgentHistory( session.history );
+      if ( Date.now() - session.savedAt < SESSION_TTL ) setAgentHistory( session.history );
+    } catch { /* ignore */ }
+  }, [user, agentMode] );
+
+  // Save standard chat messages (user + assistant only) to localStorage
+  useEffect( () => {
+    if ( !user || agentMode ) return;
+    try {
+      const persistable = messages.filter( ( m ) => m.role === "user" || m.role === "assistant" );
+      if ( persistable.length === 0 ) return;
+      localStorage.setItem( `${ CHAT_SESSION_KEY }_${ user.id }`, JSON.stringify( { messages: persistable, savedAt: Date.now() } ) );
+    } catch { /* ignore */ }
+  }, [messages, user, agentMode] );
+
+  // Restore standard chat messages on mount / when switching back to chat mode
+  useEffect( () => {
+    if ( !user || agentMode ) return;
+    try {
+      const raw = localStorage.getItem( `${ CHAT_SESSION_KEY }_${ user.id }` );
+      if ( !raw ) return;
+      const session = JSON.parse( raw ) as { messages: ChatMessage[]; savedAt: number };
+      if ( Date.now() - session.savedAt < SESSION_TTL && session.messages.length > 0 ) {
+        setMessages( session.messages );
+      }
     } catch { /* ignore */ }
   }, [user, agentMode] );
 
@@ -294,6 +319,12 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
   function clearChat () {
     setMessages( [] );
     setAgentHistory( [] );
+    if ( user ) {
+      try {
+        localStorage.removeItem( `${ CHAT_SESSION_KEY }_${ user.id }` );
+        localStorage.removeItem( `${ AGENT_SESSION_KEY }_${ user.id }` );
+      } catch { /* ignore */ }
+    }
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
