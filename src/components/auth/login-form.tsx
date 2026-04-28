@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -108,8 +109,9 @@ export function LoginForm () {
           <form onSubmit={handleSubmit} className="space-y-4">
             {isSignUp && (
               <div>
-                <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Full Name</label>
+                <label htmlFor="full-name" className="text-xs text-[var(--color-text-muted)] mb-1 block">Full Name</label>
                 <input
+                  id="full-name"
                   type="text"
                   className="w-full h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-3 text-sm"
                   placeholder="Rahul Saini"
@@ -121,8 +123,9 @@ export function LoginForm () {
             )}
 
             <div>
-              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Email</label>
+              <label htmlFor="email" className="text-xs text-[var(--color-text-muted)] mb-1 block">Email</label>
               <input
+                id="email"
                 type="email"
                 className="w-full h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-3 text-sm"
                 placeholder="you@example.com"
@@ -133,9 +136,10 @@ export function LoginForm () {
             </div>
 
             <div>
-              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Password</label>
+              <label htmlFor="password" className="text-xs text-[var(--color-text-muted)] mb-1 block">Password</label>
               <div className="relative">
                 <input
+                  id="password"
                   type={showPassword ? "text" : "password"}
                   className="w-full h-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-3 pr-10 text-sm"
                   placeholder="••••••••"
@@ -146,6 +150,7 @@ export function LoginForm () {
                 />
                 <button
                   type="button"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
                   onClick={() => setShowPassword( !showPassword )}
                 >
@@ -202,13 +207,13 @@ export function LoginForm () {
 
           <p className="mt-4 text-center text-[10px] text-[var(--color-text-muted)] leading-relaxed">
             By continuing, you agree to our{" "}
-            <a href="/terms" className="underline hover:text-[var(--color-text-secondary)] transition-colors">
+            <Link href="/terms" className="underline hover:text-[var(--color-text-secondary)] transition-colors">
               Terms of Service
-            </a>{" "}
+            </Link>{" "}
             and{" "}
-            <a href="/privacy" className="underline hover:text-[var(--color-text-secondary)] transition-colors">
+            <Link href="/privacy" className="underline hover:text-[var(--color-text-secondary)] transition-colors">
               Privacy Policy
-            </a>.
+            </Link>.
           </p>
         </Card>
 

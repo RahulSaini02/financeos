@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Footer from "@/components/marketing/Footer";
 
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -19,15 +20,7 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
 
       <div className="flex-1">{children}</div>
 
-      <footer className="border-t border-[var(--color-border)] py-6">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 flex flex-wrap gap-4 justify-between text-sm text-[var(--color-text-muted)]">
-          <span>© 2026 FinanceOS</span>
-          <div className="flex gap-5">
-            <Link href="/privacy" className="hover:text-[var(--color-text-secondary)] transition-colors">Privacy</Link>
-            <Link href="/terms" className="hover:text-[var(--color-text-secondary)] transition-colors">Terms</Link>
-          </div>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }
