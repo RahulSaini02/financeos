@@ -33,7 +33,7 @@ export async function proxy(request: NextRequest) {
   const isAuthPage = pathname === "/login";
   const isOAuthCallback = pathname === "/auth/callback";
   const isPublicAsset = pathname.startsWith("/_next") || pathname.startsWith("/favicon");
-  const isHeroPage = pathname === "/";
+  const isHeroPage = pathname === "/" || pathname === "/privacy" || pathname === "/terms";
 
   // Public assets and auth pages pass through
   if (isPublicAsset) return supabaseResponse;

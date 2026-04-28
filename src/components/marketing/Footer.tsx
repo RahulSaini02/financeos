@@ -29,13 +29,13 @@ export default function Footer() {
             <GithubIcon className="h-4 w-4" />
           </a>
           <Link
-            href="#"
+            href="/privacy"
             className="hover:text-[var(--color-text-secondary)] transition-colors"
           >
             Privacy
           </Link>
           <Link
-            href="#"
+            href="/terms"
             className="hover:text-[var(--color-text-secondary)] transition-colors"
           >
             Terms
