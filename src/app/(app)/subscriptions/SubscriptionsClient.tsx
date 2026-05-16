@@ -735,10 +735,24 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
                   </div>
                 </div>
 
-                {sub.auto_renew && (
-                  <div className="flex items-center gap-1 text-xs text-[var(--color-accent)]">
-                    <RefreshCw className="h-3 w-3" />
-                    Auto-renews
+                {/* Auto-renew status */}
+                {sub.auto_renew ? (
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex items-center gap-1 text-xs text-[var(--color-accent)]">
+                      <RefreshCw className="h-3 w-3" />
+                      <span>Auto-renew on</span>
+                    </div>
+                    {!sub.account_id && (
+                      <div className="flex items-center gap-1 text-xs text-amber-500">
+                        <AlertTriangle className="h-3 w-3" />
+                        <span>No account linked</span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 text-xs text-[var(--color-text-muted)]">
+                    <RefreshCw className="h-3 w-3 opacity-40" />
+                    <span>Auto-renew off</span>
                   </div>
                 )}
 

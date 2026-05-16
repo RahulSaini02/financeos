@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { getAppSetting } from '@/lib/get-app-setting'
 
 /**
  * GET /api/cron/monthly-review
@@ -38,6 +39,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const supabase = await createServerSupabaseClient()
+    const monthlyReviewModel = await getAppSetting(supabase, 'ai_model_monthly_review', 'claude-haiku-4-5-20251001')
     const now = new Date()
 
     // Last month date range
@@ -173,7 +175,7 @@ ${hasPriorMonth ? '' : '\n(No prior month data available — skip the Month-over
 `.trim()
 
         const msg = await anthropic.messages.create({
-          model: 'claude-haiku-4-5-20251001',
+          model: monthlyReviewModel,
           max_tokens: 900,
           system: `You are FinanceOS, a personal finance analyst reviewing last month's spending.
 

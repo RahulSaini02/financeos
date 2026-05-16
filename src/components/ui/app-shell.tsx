@@ -25,7 +25,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldCheck,
-  BarChart2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FloatingAiChat } from "@/components/ui/floating-ai-chat";
@@ -46,7 +45,6 @@ export const ALL_NAV_ITEMS = [
   { href: "/paychecks", label: "Paychecks", icon: FileText },
   { href: "/employers", label: "Employers", icon: Briefcase },
   { href: "/tax-estimator", label: "Taxes", icon: ArrowRightLeft },
-  { href: "/analytics", label: "Analytics", icon: BarChart2 },
   { href: "/ai-review", label: "AI Review", icon: Sparkles },
   { href: "/import", label: "Import", icon: Upload },
   { href: "/admin", label: "Admin", icon: ShieldCheck },

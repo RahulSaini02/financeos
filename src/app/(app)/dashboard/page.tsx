@@ -19,7 +19,7 @@ import { CategoryPieChart } from "@/components/charts/category-pie-chart";
 import { MonthComparisonChart } from "@/components/charts/month-comparison-chart";
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
-import { InsightExpander } from "@/components/dashboard/InsightExpander";
+import { DashboardInsightCard } from "@/components/dashboard/DashboardInsightCard";
 import Anthropic from "@anthropic-ai/sdk";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -407,19 +407,11 @@ export default async function DashboardPage () {
 
       {/* AI Insight Card */}
       {data.latest_insight && (
-        <Card className="border-[var(--color-accent)] bg-gradient-to-r from-[var(--color-accent)]/10 to-transparent">
-          <div className="flex items-start gap-3">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-accent)]">
-              <AlertTriangle className="h-4 w-4 text-white" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">AI Insight</p>
-              <div className="mt-1">
-                <InsightExpander content={data.latest_insight.content} />
-              </div>
-            </div>
-          </div>
-        </Card>
+        <DashboardInsightCard
+          insightId={data.latest_insight.id}
+          content={data.latest_insight.content}
+          isRead={data.latest_insight.is_read ?? false}
+        />
       )}
 
 

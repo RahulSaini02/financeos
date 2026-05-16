@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, BrainCircuit, Check, ChevronDown, Zap } from "lucide-react";
+import { ArrowUp, Check, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useRef, useCallback, useEffect } from "react";
 import { Textarea } from "@/components/ui/textarea";
@@ -91,8 +91,8 @@ interface AnimatedAiInputProps {
   placeholder?: string;
   disabled?: boolean;
   isSending?: boolean;
-  agentMode: boolean;
-  onModeChange: (agent: boolean) => void;
+  agentMode?: boolean;
+  onModeChange?: (agent: boolean) => void;
   selectedModel: string;
   onModelChange: (model: string) => void;
 }
@@ -106,8 +106,6 @@ export function AnimatedAiInput({
   placeholder,
   disabled,
   isSending,
-  agentMode,
-  onModeChange,
   selectedModel,
   onModelChange,
 }: AnimatedAiInputProps) {
@@ -131,14 +129,10 @@ export function AnimatedAiInput({
     <div
       className={cn(
         "rounded-2xl p-1.5 transition-colors duration-200",
-        agentMode
-          ? "bg-[color-mix(in_srgb,var(--color-warning)_8%,var(--color-bg-secondary))]"
-          : "bg-[var(--color-bg-secondary)]"
+        "bg-[var(--color-bg-secondary)]"
       )}
       style={{
-        boxShadow: agentMode
-          ? "0 0 0 1px color-mix(in srgb, var(--color-warning) 30%, transparent), 0 8px 32px rgba(0,0,0,0.4)"
-          : "0 0 0 1px var(--color-border), 0 8px 32px rgba(0,0,0,0.4)",
+        boxShadow: "0 0 0 1px var(--color-border), 0 8px 32px rgba(0,0,0,0.4)",
       }}
     >
       <div className="relative flex flex-col">
@@ -147,7 +141,7 @@ export function AnimatedAiInput({
           <Textarea
             ref={textareaRef}
             value={value}
-            placeholder={placeholder ?? (agentMode ? "Ask the agent to analyze data or take action…" : "Ask about your finances…")}
+            placeholder={placeholder ?? "Ask about your finances…"}
             disabled={disabled}
             className={cn(
               "w-full rounded-xl rounded-b-none px-4 py-3.5",
@@ -173,39 +167,8 @@ export function AnimatedAiInput({
           )}
         >
           <div className="absolute left-3 right-3 bottom-3 flex items-center justify-between">
-            {/* Left: mode toggle + model picker */}
+            {/* Left: model picker */}
             <div className="flex items-center gap-2">
-              {/* Chat / Agent toggle */}
-              <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[var(--color-bg-primary)]/60">
-                <button
-                  onClick={() => onModeChange(false)}
-                  className={cn(
-                    "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-150",
-                    !agentMode
-                      ? "bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)] shadow-sm"
-                      : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-                  )}
-                >
-                  <BrainCircuit className="h-3 w-3" />
-                  Chat
-                </button>
-                <button
-                  onClick={() => onModeChange(true)}
-                  className={cn(
-                    "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-150",
-                    agentMode
-                      ? "bg-[var(--color-warning)]/20 text-[var(--color-warning)]"
-                      : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-                  )}
-                >
-                  <Zap className={cn("h-3 w-3", agentMode && "fill-[var(--color-warning)]")} />
-                  Agent
-                  {agentMode && <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse" />}
-                </button>
-              </div>
-
-              <div className="h-4 w-px bg-[var(--color-border)]" />
-
               {/* Model picker */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -266,9 +229,7 @@ export function AnimatedAiInput({
               className={cn(
                 "rounded-xl p-2 transition-all duration-200",
                 canSend
-                  ? agentMode
-                    ? "bg-[var(--color-warning)] text-white hover:opacity-90 shadow-lg shadow-[var(--color-warning)]/20"
-                    : "bg-[var(--color-accent)] text-white hover:opacity-90 shadow-lg shadow-[var(--color-accent)]/20"
+                  ? "bg-[var(--color-accent)] text-white hover:opacity-90 shadow-lg shadow-[var(--color-accent)]/20"
                   : "bg-[var(--color-bg-primary)]/60 text-[var(--color-text-muted)] cursor-not-allowed"
               )}
             >

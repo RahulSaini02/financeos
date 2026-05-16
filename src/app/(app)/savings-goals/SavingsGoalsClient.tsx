@@ -104,18 +104,18 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   trees: Trees,
 };
 
-function getIconComponent(iconName: string | null) {
-  const Icon = (iconName && ICON_MAP[iconName]) ? ICON_MAP[iconName] : Target;
+function getIconComponent ( iconName: string | null ) {
+  const Icon = ( iconName && ICON_MAP[iconName] ) ? ICON_MAP[iconName] : Target;
   return <Icon className="h-5 w-5" />;
 }
 
-function getIconComponentSm(iconName: string | null) {
-  const Icon = (iconName && ICON_MAP[iconName]) ? ICON_MAP[iconName] : Target;
+function getIconComponentSm ( iconName: string | null ) {
+  const Icon = ( iconName && ICON_MAP[iconName] ) ? ICON_MAP[iconName] : Target;
   return <Icon className="h-4 w-4" />;
 }
 
-function statusBadge(status: GoalStatus) {
-  if (status === "active") {
+function statusBadge ( status: GoalStatus ) {
+  if ( status === "active" ) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-success)]/15 px-2 py-0.5 text-xs font-medium text-[var(--color-success)]">
         <CheckCircle2 className="h-3 w-3" />
@@ -123,7 +123,7 @@ function statusBadge(status: GoalStatus) {
       </span>
     );
   }
-  if (status === "paused") {
+  if ( status === "paused" ) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-warning)]/15 px-2 py-0.5 text-xs font-medium text-[var(--color-warning)]">
         <PauseCircle className="h-3 w-3" />
@@ -140,34 +140,32 @@ function statusBadge(status: GoalStatus) {
 }
 
 // Visual icon grid used in both the modal and the card popover
-function IconGrid({
+function IconGrid ( {
   selected,
   onSelect,
   compact = false,
 }: {
   selected: string;
-  onSelect: (value: string) => void;
+  onSelect: ( value: string ) => void;
   compact?: boolean;
-}) {
+} ) {
   return (
     <div className="grid grid-cols-4 gap-1.5">
-      {ICON_OPTIONS.map((opt) => {
+      {ICON_OPTIONS.map( ( opt ) => {
         const isSelected = selected === opt.value;
         return (
           <button
             key={opt.value}
             type="button"
-            onClick={() => onSelect(opt.value)}
+            onClick={() => onSelect( opt.value )}
             title={opt.label}
-            className={`flex flex-col items-center justify-center gap-1 rounded-lg border transition-colors ${
-              compact ? "h-10 w-10 p-0" : "h-14 w-full p-1"
-            } ${
-              isSelected
+            className={`flex flex-col items-center justify-center gap-1 rounded-lg border transition-colors ${ compact ? "h-10 w-10 p-0" : "h-14 w-full p-1"
+              } ${ isSelected
                 ? "border-[var(--color-accent)] bg-[var(--color-accent)]/15 text-[var(--color-accent)]"
                 : "border-[var(--color-border)] bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:border-[var(--color-accent)]/50 hover:bg-[var(--color-accent)]/5 hover:text-[var(--color-accent)]"
-            }`}
+              }`}
           >
-            {compact ? getIconComponentSm(opt.value) : getIconComponent(opt.value)}
+            {compact ? getIconComponentSm( opt.value ) : getIconComponent( opt.value )}
             {!compact && (
               <span className="text-[10px] leading-tight text-center text-[var(--color-text-muted)] truncate w-full px-0.5">
                 {opt.label}
@@ -175,7 +173,7 @@ function IconGrid({
             )}
           </button>
         );
-      })}
+      } )}
     </div>
   );
 }
@@ -202,7 +200,7 @@ const emptyForm: SavingsGoalFormData = {
   linked_account_id: "",
 };
 
-function SavingsGoalModal({
+function SavingsGoalModal ( {
   editingGoal,
   accounts,
   userId,
@@ -214,36 +212,45 @@ function SavingsGoalModal({
   userId: string;
   onClose: () => void;
   onSaved: () => void;
-}) {
+} ) {
   const supabase = createClient();
-  const [form, setForm] = useState<SavingsGoalFormData>(() => {
-    if (editingGoal) {
+  const defaultAccountId = accounts[0]?.id ?? "";
+  const [form, setForm] = useState<SavingsGoalFormData>( () => {
+    if ( editingGoal ) {
+      const linkedAcct = accounts.find( ( a ) => a.id === editingGoal.linked_account_id );
       return {
         name: editingGoal.name,
         target_amount: editingGoal.target_amount.toString(),
-        current_amount: editingGoal.current_amount.toString(),
+        current_amount: linkedAcct
+          ? linkedAcct.current_balance.toString()
+          : editingGoal.current_amount.toString(),
         monthly_contribution: editingGoal.monthly_contribution.toString(),
         status: editingGoal.status,
         icon: editingGoal.icon ?? "house",
         notes: editingGoal.notes ?? "",
-        linked_account_id: editingGoal.linked_account_id ?? "",
+        linked_account_id: editingGoal.linked_account_id ?? defaultAccountId,
       };
     }
-    return emptyForm;
-  });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+    const firstAcct = accounts[0];
+    return {
+      ...emptyForm,
+      linked_account_id: defaultAccountId,
+      current_amount: firstAcct ? firstAcct.current_balance.toString() : "",
+    };
+  } );
+  const [saving, setSaving] = useState( false );
+  const [error, setError] = useState<string | null>( null );
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async ( e: React.FormEvent ) => {
     e.preventDefault();
-    setSaving(true);
-    setError(null);
+    setSaving( true );
+    setError( null );
 
     const payload = {
       name: form.name.trim(),
-      target_amount: parseFloat(form.target_amount),
-      current_amount: parseFloat(form.current_amount) || 0,
-      monthly_contribution: parseFloat(form.monthly_contribution) || 0,
+      target_amount: parseFloat( form.target_amount ),
+      current_amount: parseFloat( form.current_amount ) || 0,
+      monthly_contribution: parseFloat( form.monthly_contribution ) || 0,
       status: form.status,
       icon: form.icon || null,
       notes: form.notes.trim() || null,
@@ -251,21 +258,21 @@ function SavingsGoalModal({
     };
 
     let err;
-    if (editingGoal) {
-      ({ error: err } = await supabase
-        .from("savings_goals")
-        .update(payload)
-        .eq("id", editingGoal.id)
-        .eq("user_id", userId));
+    if ( editingGoal ) {
+      ( { error: err } = await supabase
+        .from( "savings_goals" )
+        .update( payload )
+        .eq( "id", editingGoal.id )
+        .eq( "user_id", userId ) );
     } else {
-      ({ error: err } = await supabase
-        .from("savings_goals")
-        .insert({ ...payload, user_id: userId }));
+      ( { error: err } = await supabase
+        .from( "savings_goals" )
+        .insert( { ...payload, user_id: userId } ) );
     }
 
-    setSaving(false);
-    if (err) {
-      setError(err.message);
+    setSaving( false );
+    if ( err ) {
+      setError( err.message );
     } else {
       onSaved();
     }
@@ -307,7 +314,7 @@ function SavingsGoalModal({
               type="text"
               placeholder="Emergency Fund, New Car, Vacation..."
               value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              onChange={( e ) => setForm( ( f ) => ( { ...f, name: e.target.value } ) )}
               className={inputClass}
             />
           </div>
@@ -324,8 +331,8 @@ function SavingsGoalModal({
                 step="0.01"
                 placeholder="10000"
                 value={form.target_amount}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, target_amount: e.target.value }))
+                onChange={( e ) =>
+                  setForm( ( f ) => ( { ...f, target_amount: e.target.value } ) )
                 }
                 className={inputClass}
               />
@@ -340,10 +347,11 @@ function SavingsGoalModal({
                 step="0.01"
                 placeholder="0"
                 value={form.current_amount}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, current_amount: e.target.value }))
+                readOnly={!!form.linked_account_id}
+                onChange={( e ) =>
+                  !form.linked_account_id && setForm( ( f ) => ( { ...f, current_amount: e.target.value } ) )
                 }
-                className={inputClass}
+                className={`${ inputClass } ${ form.linked_account_id ? "opacity-60 cursor-not-allowed" : "" }`}
               />
             </div>
           </div>
@@ -358,8 +366,8 @@ function SavingsGoalModal({
               step="0.01"
               placeholder="500"
               value={form.monthly_contribution}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, monthly_contribution: e.target.value }))
+              onChange={( e ) =>
+                setForm( ( f ) => ( { ...f, monthly_contribution: e.target.value } ) )
               }
               className={inputClass}
             />
@@ -372,7 +380,7 @@ function SavingsGoalModal({
             </label>
             <IconGrid
               selected={form.icon}
-              onSelect={(value) => setForm((f) => ({ ...f, icon: value }))}
+              onSelect={( value ) => setForm( ( f ) => ( { ...f, icon: value } ) )}
             />
           </div>
 
@@ -382,37 +390,47 @@ function SavingsGoalModal({
             </label>
             <select
               value={form.status}
-              onChange={(e) =>
-                setForm((f) => ({
+              onChange={( e ) =>
+                setForm( ( f ) => ( {
                   ...f,
                   status: e.target.value as GoalStatus,
-                }))
+                } ) )
               }
               className={inputClass}
             >
-              {GOAL_STATUS_OPTIONS.map((o) => (
+              {GOAL_STATUS_OPTIONS.map( ( o ) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>
-              ))}
+              ) )}
             </select>
           </div>
 
           <div>
             <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-              Linked Account <span className="text-[var(--color-text-muted)] font-normal">(optional — tracks balance as progress)</span>
+              Linked Savings Account
             </label>
             <select
+              required
               value={form.linked_account_id}
-              onChange={(e) => setForm((f) => ({ ...f, linked_account_id: e.target.value }))}
+              onChange={( e ) => {
+                const acct = accounts.find( ( a ) => a.id === e.target.value );
+                setForm( ( f ) => ( {
+                  ...f,
+                  linked_account_id: e.target.value,
+                  current_amount: acct ? acct.current_balance.toString() : f.current_amount,
+                } ) );
+              }}
               className={inputClass}
             >
-              <option value="">— None —</option>
-              {accounts.map((a) => (
+              {accounts.length === 0 && (
+                <option value="">No savings accounts found</option>
+              )}
+              {accounts.map( ( a ) => (
                 <option key={a.id} value={a.id}>
-                  {a.name} (${a.current_balance.toLocaleString()})
+                  {a.name} ({formatCurrency( a.current_balance )})
                 </option>
-              ))}
+              ) )}
             </select>
           </div>
 
@@ -424,10 +442,10 @@ function SavingsGoalModal({
               rows={2}
               placeholder="Optional notes..."
               value={form.notes}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, notes: e.target.value }))
+              onChange={( e ) =>
+                setForm( ( f ) => ( { ...f, notes: e.target.value } ) )
               }
-              className={`${inputClass} resize-none`}
+              className={`${ inputClass } resize-none`}
             />
           </div>
 
@@ -457,7 +475,7 @@ function SavingsGoalModal({
 }
 
 // Floating icon picker popover attached to a goal card
-function GoalIconPopover({
+function GoalIconPopover ( {
   goalId,
   currentIcon,
   userId,
@@ -466,37 +484,37 @@ function GoalIconPopover({
   goalId: string;
   currentIcon: string | null;
   userId: string;
-  onIconSaved: (goalId: string, newIcon: string) => void;
-}) {
+  onIconSaved: ( goalId: string, newIcon: string ) => void;
+} ) {
   const supabase = createClient();
-  const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState( false );
+  const [saving, setSaving] = useState( false );
+  const containerRef = useRef<HTMLDivElement>( null );
 
   // Close on outside click
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
+  useEffect( () => {
+    if ( !open ) return;
+    const handler = ( e: MouseEvent ) => {
+      if ( containerRef.current && !containerRef.current.contains( e.target as Node ) ) {
+        setOpen( false );
       }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
+    document.addEventListener( "mousedown", handler );
+    return () => document.removeEventListener( "mousedown", handler );
+  }, [open] );
 
-  const handleSelect = async (value: string) => {
-    if (!userId) return;
-    setSaving(true);
+  const handleSelect = async ( value: string ) => {
+    if ( !userId ) return;
+    setSaving( true );
     const { error } = await supabase
-      .from("savings_goals")
-      .update({ icon: value })
-      .eq("id", goalId)
-      .eq("user_id", userId);
-    setSaving(false);
-    if (!error) {
-      onIconSaved(goalId, value);
-      setOpen(false);
+      .from( "savings_goals" )
+      .update( { icon: value } )
+      .eq( "id", goalId )
+      .eq( "user_id", userId );
+    setSaving( false );
+    if ( !error ) {
+      onIconSaved( goalId, value );
+      setOpen( false );
     }
   };
 
@@ -504,14 +522,14 @@ function GoalIconPopover({
     <div ref={containerRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen( ( v ) => !v )}
         title="Change icon"
         className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--color-accent)]/10 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/20 transition-colors"
       >
         {saving ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
-          getIconComponent(currentIcon)
+          getIconComponent( currentIcon )
         )}
       </button>
 
@@ -533,118 +551,118 @@ interface SavingsGoalsClientProps {
   accounts: AccountOption[];
 }
 
-export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClientProps) {
+export function SavingsGoalsClient ( { initialGoals, accounts }: SavingsGoalsClientProps ) {
   const supabase = createClient();
 
-  const [goals, setGoals] = useState<SavingsGoal[]>(initialGoals);
-  const [error, setError] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingGoal, setEditingGoal] = useState<SavingsGoal | null>(null);
-  const [sortBy, setSortBy] = useState<"progress" | "target" | "name">("progress");
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [userId, setUserId] = useState<string>("");
+  const [goals, setGoals] = useState<SavingsGoal[]>( initialGoals );
+  const [error, setError] = useState<string | null>( null );
+  const [activeFilter, setActiveFilter] = useState<FilterTab>( "all" );
+  const [modalOpen, setModalOpen] = useState( false );
+  const [editingGoal, setEditingGoal] = useState<SavingsGoal | null>( null );
+  const [sortBy, setSortBy] = useState<"progress" | "target" | "name">( "progress" );
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>( null );
+  const [deleting, setDeleting] = useState( false );
+  const [userId, setUserId] = useState<string>( "" );
 
   // Fetch the authenticated user's ID once on mount for use in mutations
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) setUserId(data.user.id);
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect( () => {
+    supabase.auth.getUser().then( ( { data } ) => {
+      if ( data.user ) setUserId( data.user.id );
+    } );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [] );
 
   const loadGoals = async () => {
-    if (!userId) return;
+    if ( !userId ) return;
     const { data, error: err } = await supabase
-      .from("savings_goals")
-      .select("*, account:accounts(id, name, current_balance)")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
-    if (err) {
-      setError(err.message);
+      .from( "savings_goals" )
+      .select( "*, account:accounts(id, name, current_balance)" )
+      .eq( "user_id", userId )
+      .order( "created_at", { ascending: false } );
+    if ( err ) {
+      setError( err.message );
     } else {
-      setGoals(data ?? []);
+      setGoals( data ?? [] );
     }
   };
 
   const handleDelete = async () => {
-    if (!confirmDeleteId) return;
-    setDeleting(true);
+    if ( !confirmDeleteId ) return;
+    setDeleting( true );
     const { error: err } = await supabase
-      .from("savings_goals")
+      .from( "savings_goals" )
       .delete()
-      .eq("id", confirmDeleteId)
-      .eq("user_id", userId);
-    setDeleting(false);
-    if (err) {
-      setError(err.message);
+      .eq( "id", confirmDeleteId )
+      .eq( "user_id", userId );
+    setDeleting( false );
+    if ( err ) {
+      setError( err.message );
     } else {
-      setGoals((prev) => prev.filter((g) => g.id !== confirmDeleteId));
+      setGoals( ( prev ) => prev.filter( ( g ) => g.id !== confirmDeleteId ) );
     }
-    setConfirmDeleteId(null);
+    setConfirmDeleteId( null );
   };
 
   const openAdd = () => {
-    setEditingGoal(null);
-    setModalOpen(true);
+    setEditingGoal( null );
+    setModalOpen( true );
   };
 
-  const openEdit = (goal: SavingsGoal) => {
-    setEditingGoal(goal);
-    setModalOpen(true);
+  const openEdit = ( goal: SavingsGoal ) => {
+    setEditingGoal( goal );
+    setModalOpen( true );
   };
 
   const handleSaved = () => {
-    setModalOpen(false);
-    setEditingGoal(null);
+    setModalOpen( false );
+    setEditingGoal( null );
     loadGoals();
   };
 
   // Update icon in local state after quick-pick save
-  const handleIconSaved = (goalId: string, newIcon: string) => {
-    setGoals((prev) =>
-      prev.map((g) => (g.id === goalId ? { ...g, icon: newIcon } : g))
+  const handleIconSaved = ( goalId: string, newIcon: string ) => {
+    setGoals( ( prev ) =>
+      prev.map( ( g ) => ( g.id === goalId ? { ...g, icon: newIcon } : g ) )
     );
   };
 
-  const activeGoals = goals.filter((g) => g.status === "active");
-  const totalTarget = activeGoals.reduce((sum, g) => sum + g.target_amount, 0);
-  const totalCurrent = activeGoals.reduce((sum, g) => {
-    const linked = g.linked_account_id ? accounts.find((a) => a.id === g.linked_account_id) : null;
-    return sum + (linked ? linked.current_balance : g.current_amount);
-  }, 0);
-  const overallProgress = totalTarget > 0 ? (totalCurrent / totalTarget) * 100 : 0;
+  const activeGoals = goals.filter( ( g ) => g.status === "active" );
+  const totalTarget = activeGoals.reduce( ( sum, g ) => sum + g.target_amount, 0 );
+  const totalCurrent = activeGoals.reduce( ( sum, g ) => {
+    const linked = g.linked_account_id ? accounts.find( ( a ) => a.id === g.linked_account_id ) : null;
+    return sum + ( linked ? linked.current_balance : g.current_amount );
+  }, 0 );
+  const overallProgress = totalTarget > 0 ? ( totalCurrent / totalTarget ) * 100 : 0;
   const totalMonthlyContribution = activeGoals.reduce(
-    (sum, g) => sum + g.monthly_contribution,
+    ( sum, g ) => sum + g.monthly_contribution,
     0
   );
 
-  const filteredGoals = goals.filter((g) => {
-    if (activeFilter === "all") return true;
+  const filteredGoals = goals.filter( ( g ) => {
+    if ( activeFilter === "all" ) return true;
     return g.status === activeFilter;
-  });
+  } );
 
-  const getEffectiveAmount = (g: SavingsGoal) => {
-    const linked = g.linked_account_id ? accounts.find((a) => a.id === g.linked_account_id) : null;
+  const getEffectiveAmount = ( g: SavingsGoal ) => {
+    const linked = g.linked_account_id ? accounts.find( ( a ) => a.id === g.linked_account_id ) : null;
     return linked ? linked.current_balance : g.current_amount;
   };
 
-  const sortedGoals = [...filteredGoals].sort((a, b) => {
-    const progressA = a.target_amount > 0 ? getEffectiveAmount(a) / a.target_amount : 0;
-    const progressB = b.target_amount > 0 ? getEffectiveAmount(b) / b.target_amount : 0;
+  const sortedGoals = [...filteredGoals].sort( ( a, b ) => {
+    const progressA = a.target_amount > 0 ? getEffectiveAmount( a ) / a.target_amount : 0;
+    const progressB = b.target_amount > 0 ? getEffectiveAmount( b ) / b.target_amount : 0;
 
-    switch (sortBy) {
+    switch ( sortBy ) {
       case "progress":
         return progressB - progressA;
       case "target":
         return b.target_amount - a.target_amount;
       case "name":
-        return a.name.localeCompare(b.name);
+        return a.name.localeCompare( b.name );
       default:
         return 0;
     }
-  });
+  } );
 
   const TABS: { key: FilterTab; label: string }[] = [
     { key: "all", label: "All" },
@@ -694,7 +712,7 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
         <Card>
           <CardTitle>Total Target</CardTitle>
           <CardValue className="mt-2 text-[var(--color-text-primary)]">
-            {formatCurrency(totalTarget)}
+            {formatCurrency( totalTarget )}
           </CardValue>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
             across active goals
@@ -703,16 +721,16 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
         <Card>
           <CardTitle>Total Saved</CardTitle>
           <CardValue className="mt-2 text-[var(--color-success)]">
-            {formatCurrency(totalCurrent)}
+            {formatCurrency( totalCurrent )}
           </CardValue>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
-            {overallProgress.toFixed(1)}% of target
+            {overallProgress.toFixed( 1 )}% of target
           </p>
         </Card>
         <Card>
           <CardTitle>Monthly Contribution</CardTitle>
           <CardValue className="mt-2 text-[var(--color-accent)]">
-            {formatCurrency(totalMonthlyContribution)}
+            {formatCurrency( totalMonthlyContribution )}
           </CardValue>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
             auto-savings
@@ -724,31 +742,30 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
             {activeGoals.length}
           </CardValue>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
-            {goals.filter((g) => g.status === "completed").length} completed
+            {goals.filter( ( g ) => g.status === "completed" ).length} completed
           </p>
         </Card>
       </div>
 
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-1 border-b border-[var(--color-border)] pb-0">
-          {TABS.map((tab) => (
+          {TABS.map( ( tab ) => (
             <button
               key={tab.key}
-              onClick={() => setActiveFilter(tab.key)}
-              className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
-                activeFilter === tab.key
+              onClick={() => setActiveFilter( tab.key )}
+              className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${ activeFilter === tab.key
                   ? "border-[var(--color-accent)] text-[var(--color-accent)]"
                   : "border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-              }`}
+                }`}
             >
               {tab.label}
             </button>
-          ))}
+          ) )}
         </div>
         <div className="relative">
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+            onChange={( e ) => setSortBy( e.target.value as typeof sortBy )}
             className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
           >
             <option value="progress">Sort by Progress</option>
@@ -770,25 +787,25 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
           description={
             activeFilter === "all"
               ? "Add your first savings goal to get started."
-              : `No ${activeFilter} savings goals.`
+              : `No ${ activeFilter } savings goals.`
           }
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {sortedGoals.map((goal) => {
+          {sortedGoals.map( ( goal ) => {
             const linkedAccount = goal.linked_account_id
-              ? accounts.find((a) => a.id === goal.linked_account_id)
+              ? accounts.find( ( a ) => a.id === goal.linked_account_id )
               : null;
             const effectiveCurrent = linkedAccount
               ? linkedAccount.current_balance
               : goal.current_amount;
             const progress = goal.target_amount > 0
-              ? (effectiveCurrent / goal.target_amount) * 100
+              ? ( effectiveCurrent / goal.target_amount ) * 100
               : 0;
             const isCompleted = progress >= 100;
             const remaining = goal.target_amount - effectiveCurrent;
             const monthsToGoal = goal.monthly_contribution > 0
-              ? Math.ceil(remaining / goal.monthly_contribution)
+              ? Math.ceil( remaining / goal.monthly_contribution )
               : null;
 
             return (
@@ -808,18 +825,18 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
                       <h3 className="text-base font-semibold text-[var(--color-text-primary)]">
                         {goal.name}
                       </h3>
-                      <div className="mt-1">{statusBadge(goal.status)}</div>
+                      <div className="mt-1">{statusBadge( goal.status )}</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button
-                      onClick={() => openEdit(goal)}
+                      onClick={() => openEdit( goal )}
                       className="rounded-lg p-1.5 hover:bg-[var(--color-bg-tertiary)] transition-colors"
                     >
                       <Pencil className="h-3.5 w-3.5 text-[var(--color-text-muted)]" />
                     </button>
                     <button
-                      onClick={() => setConfirmDeleteId(goal.id)}
+                      onClick={() => setConfirmDeleteId( goal.id )}
                       className="rounded-lg p-1.5 hover:bg-[var(--color-danger)]/10 transition-colors"
                     >
                       <Trash2 className="h-3.5 w-3.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)]" />
@@ -830,10 +847,10 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
                 <div className="flex items-baseline justify-between">
                   <div>
                     <span className="text-xl md:text-2xl font-semibold text-[var(--color-text-primary)]">
-                      {formatCurrency(effectiveCurrent)}
+                      {formatCurrency( effectiveCurrent )}
                     </span>
                     <span className="text-xs text-[var(--color-text-muted)] ml-1">
-                      of {formatCurrency(goal.target_amount)}
+                      of {formatCurrency( goal.target_amount )}
                     </span>
                   </div>
                   {linkedAccount && (
@@ -847,21 +864,20 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
                 {/* Progress Bar */}
                 <div className="relative h-3 w-full rounded-full bg-[var(--color-bg-tertiary)] overflow-hidden">
                   <div
-                    className={`absolute left-0 top-0 h-full rounded-full transition-all ${
-                      isCompleted
+                    className={`absolute left-0 top-0 h-full rounded-full transition-all ${ isCompleted
                         ? "bg-[var(--color-success)]"
                         : progress >= 75
-                        ? "bg-[var(--color-success)]"
-                        : progress >= 50
-                        ? "bg-[var(--color-warning)]"
-                        : "bg-[var(--color-accent)]"
-                    }`}
-                    style={{ width: `${Math.min(progress, 100)}%` }}
+                          ? "bg-[var(--color-success)]"
+                          : progress >= 50
+                            ? "bg-[var(--color-warning)]"
+                            : "bg-[var(--color-accent)]"
+                      }`}
+                    style={{ width: `${ Math.min( progress, 100 ) }%` }}
                   />
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-medium text-[var(--color-text-secondary)]">
-                    {progress.toFixed(1)}%
+                    {progress.toFixed( 1 )}%
                   </span>
                   {isCompleted ? (
                     <span className="text-[var(--color-success)] font-medium">
@@ -869,7 +885,7 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
                     </span>
                   ) : (
                     <span className="text-[var(--color-text-muted)]">
-                      {formatCurrency(remaining)} remaining
+                      {formatCurrency( remaining )} remaining
                     </span>
                   )}
                 </div>
@@ -878,7 +894,7 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
                   <div className="flex items-center gap-2 pt-3 border-t border-[var(--color-border)]">
                     <div className="flex items-center gap-1 text-xs text-[var(--color-text-muted)]">
                       <TrendingUp className="h-3 w-3" />
-                      <span>{formatCurrency(goal.monthly_contribution)}/mo</span>
+                      <span>{formatCurrency( goal.monthly_contribution )}/mo</span>
                     </div>
                     {monthsToGoal && monthsToGoal > 0 && (
                       <span className="text-xs text-[var(--color-text-muted)]">
@@ -895,7 +911,7 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
                 )}
               </Card>
             );
-          })}
+          } )}
         </div>
       )}
 
@@ -905,8 +921,8 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
           accounts={accounts}
           userId={userId}
           onClose={() => {
-            setModalOpen(false);
-            setEditingGoal(null);
+            setModalOpen( false );
+            setEditingGoal( null );
           }}
           onSaved={handleSaved}
         />
@@ -914,7 +930,7 @@ export function SavingsGoalsClient({ initialGoals, accounts }: SavingsGoalsClien
 
       <ConfirmDialog
         open={!!confirmDeleteId}
-        onClose={() => setConfirmDeleteId(null)}
+        onClose={() => setConfirmDeleteId( null )}
         onConfirm={handleDelete}
         title="Delete savings goal?"
         description="This will permanently remove the goal. This action cannot be undone."

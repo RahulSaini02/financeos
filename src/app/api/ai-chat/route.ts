@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
       activeMemories,
     ] = await Promise.all([
       supabase.from('accounts').select('name, kind, type, current_balance, currency').eq('user_id', user.id).eq('is_active', true),
-      supabase.from('transactions').select('description, amount_usd, cr_dr, date, category:categories(name)').eq('user_id', user.id).gte('date', firstDay).lt('date', nextMonth),
+      supabase.from('transactions').select('description, amount_usd, cr_dr, date, category:categories(name)').eq('user_id', user.id).eq('is_internal_transfer', false).gte('date', firstDay).lt('date', nextMonth),
       supabase.from('loans').select('name, type, current_balance, interest_rate, emi, start_date, term_months').eq('user_id', user.id),
       supabase.from('investments').select('ticker, type, platform, total_invested, current_value').eq('user_id', user.id),
       supabase.from('budgets').select('amount_usd, category:categories(name)').eq('user_id', user.id).eq('month', firstDay),
@@ -323,148 +323,212 @@ Use these tools whenever the user asks to view, check, add, schedule, create, or
       mode: 'chat',
     })
 
-    let response = await anthropic.messages.create({
-      model: aiModel,
-      max_tokens: 1024,
-      system: safetyPrefix + chatSystemPrompt,
-      tools: tools.length > 0 ? tools : undefined,
-      messages,
-    })
+    // ── SSE streaming response ────────────────────────────────────────────────
+    const stream = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder()
 
-    // Claude may call get_calendar_events one or more times before giving a final answer
-    while (response.stop_reason === 'tool_use' && gcalIntegration) {
-      const toolUseBlocks = response.content.filter(
-        (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
-      )
-
-      messages.push({ role: 'assistant', content: response.content })
-
-      const toolResults: Anthropic.ToolResultBlockParam[] = []
-
-      for (const toolUse of toolUseBlocks) {
-        if (toolUse.name !== 'get_calendar_events' && toolUse.name !== 'create_calendar_event') continue
+        function emit(event: Record<string, unknown>) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+        }
 
         try {
-          // Refresh token if expiring within 5 minutes
-          let accessToken = gcalIntegration.access_token
-          if (
-            gcalIntegration.refresh_token &&
-            gcalIntegration.token_expires_at &&
-            new Date(gcalIntegration.token_expires_at) < new Date(Date.now() + 5 * 60 * 1000)
-          ) {
-            const refreshed = await refreshAccessToken(gcalIntegration.refresh_token)
-            accessToken = refreshed.access_token
-            await supabase
-              .from('user_integrations')
-              .update({
-                access_token: refreshed.access_token,
-                token_expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
-                updated_at: new Date().toISOString(),
-              })
-              .eq('user_id', user.id)
-              .eq('provider', 'google_calendar')
-          }
+          let fullText = ''
 
-          if (toolUse.name === 'get_calendar_events') {
-            const input = toolUse.input as { start_date: string; end_date: string }
-            const timeMin = new Date(`${input.start_date}T00:00:00`).toISOString()
-            const timeMax = new Date(`${input.end_date}T23:59:59`).toISOString()
-            const events = await getCalendarEvents(accessToken, timeMin, timeMax)
+          // Helper: run one streaming call and collect text + final response content
+          async function streamOnce(msgs: Anthropic.MessageParam[]): Promise<{
+            stopReason: string | null
+            content: Anthropic.ContentBlock[]
+          }> {
+            const chunks: Anthropic.ContentBlock[] = []
+            let stopReason: string | null = null
 
-            const eventList = events.length === 0
-              ? 'No events found for this date range.'
-              : events.map(e => {
-                  const start = e.start.date ?? e.start.dateTime?.split('T')[0] ?? 'unknown'
-                  const end = e.end.date ?? e.end.dateTime?.split('T')[0] ?? ''
-                  const timeStr = e.start.dateTime
-                    ? ` at ${new Date(e.start.dateTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
-                    : ' (all day)'
-                  const desc = e.description ? ` — ${e.description.slice(0, 120)}` : ''
-                  return `• ${e.summary}${timeStr} on ${start}${end && end !== start ? ` to ${end}` : ''}${desc}`
-                }).join('\n')
+            // Cache the system prompt + tools so repeat messages in the same session
+            // skip reprocessing the large financial context block (5-min TTL).
+            const cachedTools = tools.length > 0
+              ? tools.map((t, i) =>
+                  i === tools.length - 1
+                    ? { ...t, cache_control: { type: 'ephemeral' as const } }
+                    : t
+                )
+              : undefined
 
-            toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: eventList })
-
-          } else if (toolUse.name === 'create_calendar_event') {
-            const input = toolUse.input as {
-              title: string
-              date: string
-              start_time?: string
-              end_time?: string
-              description?: string
-            }
-
-            let eventBody: Parameters<typeof createCalendarEvent>[1]
-
-            if (input.start_time) {
-              const startDT = `${input.date}T${input.start_time}:00`
-              const endTime = input.end_time ?? (() => {
-                const [h, m] = input.start_time!.split(':').map(Number)
-                return `${String(h + 1).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-              })()
-              const endDT = `${input.date}T${endTime}:00`
-              eventBody = {
-                summary: input.title,
-                description: input.description,
-                start: { dateTime: startDT, timeZone: 'America/Los_Angeles' },
-                end: { dateTime: endDT, timeZone: 'America/Los_Angeles' },
-              }
-            } else {
-              // All-day event
-              const nextDay = new Date(input.date)
-              nextDay.setDate(nextDay.getDate() + 1)
-              const nextDayStr = nextDay.toISOString().split('T')[0]
-              eventBody = {
-                summary: input.title,
-                description: input.description,
-                start: { date: input.date },
-                end: { date: nextDayStr },
-              }
-            }
-
-            const created = await createCalendarEvent(accessToken, eventBody)
-            toolResults.push({
-              type: 'tool_result',
-              tool_use_id: toolUse.id,
-              content: `Event created successfully. Title: "${input.title}", Date: ${input.date}${input.start_time ? ` at ${input.start_time}` : ' (all day)'}. Link: ${created.htmlLink}`,
+            const sdkStream = anthropic.messages.stream({
+              model: aiModel,
+              max_tokens: 1024,
+              system: [
+                {
+                  type: 'text' as const,
+                  text: safetyPrefix + chatSystemPrompt,
+                  cache_control: { type: 'ephemeral' as const },
+                },
+              ],
+              tools: cachedTools,
+              messages: msgs,
             })
+
+            sdkStream.on('text', (text) => {
+              fullText += text
+              emit({ event: 'text_delta', text })
+            })
+
+            const finalMsg = await sdkStream.finalMessage()
+            stopReason = finalMsg.stop_reason
+            for (const block of finalMsg.content) {
+              chunks.push(block)
+            }
+
+            return { stopReason, content: chunks }
           }
-        } catch (err) {
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: toolUse.id,
-            content: `Error with calendar operation: ${err instanceof Error ? err.message : 'unknown error'}`,
-            is_error: true,
+
+          let { stopReason, content: responseContent } = await streamOnce(messages)
+
+          // Tool-use loop — mirrors original logic but uses streamOnce for each turn
+          while (stopReason === 'tool_use' && gcalIntegration) {
+            const toolUseBlocks = responseContent.filter(
+              (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
+            )
+
+            messages.push({ role: 'assistant', content: responseContent })
+
+            const toolResults: Anthropic.ToolResultBlockParam[] = []
+
+            for (const toolUse of toolUseBlocks) {
+              if (toolUse.name !== 'get_calendar_events' && toolUse.name !== 'create_calendar_event') continue
+
+              try {
+                // Refresh token if expiring within 5 minutes
+                let accessToken = gcalIntegration.access_token
+                if (
+                  gcalIntegration.refresh_token &&
+                  gcalIntegration.token_expires_at &&
+                  new Date(gcalIntegration.token_expires_at) < new Date(Date.now() + 5 * 60 * 1000)
+                ) {
+                  const refreshed = await refreshAccessToken(gcalIntegration.refresh_token)
+                  accessToken = refreshed.access_token
+                  await supabase
+                    .from('user_integrations')
+                    .update({
+                      access_token: refreshed.access_token,
+                      token_expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
+                      updated_at: new Date().toISOString(),
+                    })
+                    .eq('user_id', user.id)
+                    .eq('provider', 'google_calendar')
+                }
+
+                if (toolUse.name === 'get_calendar_events') {
+                  const input = toolUse.input as { start_date: string; end_date: string }
+                  const timeMin = new Date(`${input.start_date}T00:00:00`).toISOString()
+                  const timeMax = new Date(`${input.end_date}T23:59:59`).toISOString()
+                  const events = await getCalendarEvents(accessToken, timeMin, timeMax)
+
+                  const eventList = events.length === 0
+                    ? 'No events found for this date range.'
+                    : events.map(e => {
+                        const start = e.start.date ?? e.start.dateTime?.split('T')[0] ?? 'unknown'
+                        const end = e.end.date ?? e.end.dateTime?.split('T')[0] ?? ''
+                        const timeStr = e.start.dateTime
+                          ? ` at ${new Date(e.start.dateTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+                          : ' (all day)'
+                        const desc = e.description ? ` — ${e.description.slice(0, 120)}` : ''
+                        return `• ${e.summary}${timeStr} on ${start}${end && end !== start ? ` to ${end}` : ''}${desc}`
+                      }).join('\n')
+
+                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: eventList })
+
+                } else if (toolUse.name === 'create_calendar_event') {
+                  const input = toolUse.input as {
+                    title: string
+                    date: string
+                    start_time?: string
+                    end_time?: string
+                    description?: string
+                  }
+
+                  let eventBody: Parameters<typeof createCalendarEvent>[1]
+
+                  if (input.start_time) {
+                    const startDT = `${input.date}T${input.start_time}:00`
+                    const endTime = input.end_time ?? (() => {
+                      const [h, m] = input.start_time!.split(':').map(Number)
+                      return `${String(h + 1).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+                    })()
+                    const endDT = `${input.date}T${endTime}:00`
+                    eventBody = {
+                      summary: input.title,
+                      description: input.description,
+                      start: { dateTime: startDT, timeZone: 'America/Los_Angeles' },
+                      end: { dateTime: endDT, timeZone: 'America/Los_Angeles' },
+                    }
+                  } else {
+                    // All-day event
+                    const nextDay = new Date(input.date)
+                    nextDay.setDate(nextDay.getDate() + 1)
+                    const nextDayStr = nextDay.toISOString().split('T')[0]
+                    eventBody = {
+                      summary: input.title,
+                      description: input.description,
+                      start: { date: input.date },
+                      end: { date: nextDayStr },
+                    }
+                  }
+
+                  const created = await createCalendarEvent(accessToken, eventBody)
+                  toolResults.push({
+                    type: 'tool_result',
+                    tool_use_id: toolUse.id,
+                    content: `Event created successfully. Title: "${input.title}", Date: ${input.date}${input.start_time ? ` at ${input.start_time}` : ' (all day)'}. Link: ${created.htmlLink}`,
+                  })
+                }
+              } catch (err) {
+                toolResults.push({
+                  type: 'tool_result',
+                  tool_use_id: toolUse.id,
+                  content: `Error with calendar operation: ${err instanceof Error ? err.message : 'unknown error'}`,
+                  is_error: true,
+                })
+              }
+            }
+
+            messages.push({ role: 'user', content: toolResults })
+
+            // Reset fullText so only the final answer text accumulates for saves
+            fullText = ''
+            const next = await streamOnce(messages)
+            stopReason = next.stopReason
+            responseContent = next.content
+          }
+
+          const answer = fullText || 'Sorry, I could not generate a response.'
+
+          // Fire-and-forget: save assistant turn and extract memories
+          void saveConversationTurn(supabase, {
+            userId: user.id,
+            sessionId,
+            role: 'assistant',
+            content: answer,
+            mode: 'chat',
           })
+          void extractAndSaveMemories(anthropic, supabase, user.id, question, answer, 'chat')
+
+          emit({ event: 'done' })
+        } catch (err) {
+          console.error('AI Chat stream error:', err)
+          emit({ event: 'error', message: 'Internal server error' })
+        } finally {
+          controller.close()
         }
-      }
-
-      messages.push({ role: 'user', content: toolResults })
-
-      response = await anthropic.messages.create({
-        model: aiModel,
-        max_tokens: 1024,
-        system: safetyPrefix + chatSystemPrompt,
-        tools: tools.length > 0 ? tools : undefined,
-        messages,
-      })
-    }
-
-    const answer =
-      response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text ??
-      'Sorry, I could not generate a response.'
-
-    // Fire-and-forget: save assistant turn and extract memories
-    void saveConversationTurn(supabase, {
-      userId: user.id,
-      sessionId,
-      role: 'assistant',
-      content: answer,
-      mode: 'chat',
+      },
     })
-    void extractAndSaveMemories(anthropic, supabase, user.id, question, answer, 'chat')
 
-    return NextResponse.json({ answer })
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    })
   } catch (err) {
     console.error('AI Chat error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

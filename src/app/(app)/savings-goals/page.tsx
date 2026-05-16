@@ -18,6 +18,7 @@ export default async function SavingsGoalsPage() {
       .from("accounts")
       .select("id, name, current_balance")
       .eq("user_id", user.id)
+      .eq("type", "savings")
       .order("name", { ascending: true }),
   ]);
 

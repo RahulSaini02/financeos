@@ -46,6 +46,14 @@ export async function GET(request: Request) {
     const now = new Date()
     const periodKey = isValidKey ? periodParam : getDefaultPeriodKey(now)
 
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+    if (periodKey >= currentMonthKey) {
+      return NextResponse.json(
+        { error: 'Reviews are only available for completed months.' },
+        { status: 400 },
+      )
+    }
+
     const { periodStart, periodEnd, label } = periodInfo(periodKey)
     const { periodStart: priorPeriodStart, periodEnd: priorPeriodEnd } = priorPeriodInfo(periodKey)
 

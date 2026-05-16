@@ -12,6 +12,28 @@ const fmt = (n: number) => formatCurrency(n)
 
 export const READ_TOOLS: Anthropic.Tool[] = [
   {
+    name: 'get_financial_summary',
+    description:
+      'Returns a complete financial overview: net worth, accounts with balances, this month income/expenses/savings rate, top 5 spending categories, active loans, investment portfolio, subscriptions monthly cost, savings goals, and upcoming calendar events (next 7 days). Call this FIRST for any general financial question before using specific query tools.',
+    input_schema: { type: 'object' as const, properties: {}, required: [] },
+  },
+  {
+    name: 'get_account_balances',
+    description:
+      'Returns current balances for all active accounts (checking, savings, credit cards, investments). Use when the user asks about a specific account balance or total assets/liabilities.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        kind: {
+          type: 'string',
+          enum: ['asset', 'liability', 'investment', 'all'],
+          description: 'Filter by account kind. Default: all',
+        },
+      },
+      required: [],
+    },
+  },
+  {
     name: 'get_spending_trends',
     description:
       'Returns month-by-month spending broken down by category for the past N months. Use when the user asks about trends, patterns, or how their spending has changed over time.',
@@ -220,6 +242,7 @@ async function execQuerySpending(
     .from('transactions')
     .select('description, amount_usd, cr_dr, date, category:categories(name)')
     .eq('user_id', userId)
+    .eq('is_internal_transfer', false)
     .gte('date', startDate)
     .lte('date', endDate)
     .order('date', { ascending: false })
@@ -297,6 +320,7 @@ async function execGetBudgetStatus(
       .from('transactions')
       .select('amount_usd, cr_dr, category_id')
       .eq('user_id', userId)
+      .eq('is_internal_transfer', false)
       .gte('date', month)
       .lt(
         'date',
@@ -509,6 +533,245 @@ async function execGetSubscriptionList(
   return { text: lines.join('\n'), summary }
 }
 
+// ── New summary/account read tool executors ─────────────────────────────────
+
+async function execGetFinancialSummary(
+  _input: Record<string, unknown>,
+  userId: string,
+  supabase: SupabaseClient,
+): Promise<ToolResult> {
+  const now = new Date()
+  const todayStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now)
+
+  const [todayYear, todayMonth] = todayStr.split('-').map(Number)
+  const firstDay = `${todayYear}-${String(todayMonth).padStart(2, '0')}-01`
+  const nextMonthNum = todayMonth === 12 ? 1 : todayMonth + 1
+  const nextMonthYear = todayMonth === 12 ? todayYear + 1 : todayYear
+  const nextMonth = `${nextMonthYear}-${String(nextMonthNum).padStart(2, '0')}-01`
+
+  const sevenDaysFromNow = new Date(now)
+  sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
+  const sevenDaysStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(sevenDaysFromNow)
+
+  const [
+    accountsRes,
+    transactionsRes,
+    loansRes,
+    investmentsRes,
+    subscriptionsRes,
+    savingsGoalsRes,
+    calendarEventsRes,
+  ] = await Promise.all([
+    supabase
+      .from('accounts')
+      .select('name, kind, type, current_balance, currency')
+      .eq('user_id', userId)
+      .eq('is_active', true),
+    supabase
+      .from('transactions')
+      .select('description, amount_usd, cr_dr, date, category:categories(name)')
+      .eq('user_id', userId)
+      .eq('is_internal_transfer', false)
+      .gte('date', firstDay)
+      .lt('date', nextMonth),
+    supabase
+      .from('loans')
+      .select('name, type, current_balance, interest_rate, emi')
+      .eq('user_id', userId),
+    supabase
+      .from('investments')
+      .select('ticker, type, platform, total_invested, current_value')
+      .eq('user_id', userId),
+    supabase
+      .from('subscriptions')
+      .select('name, billing_cost, billing_cycle_months, status, next_billing_date')
+      .eq('user_id', userId)
+      .eq('status', 'active'),
+    supabase
+      .from('savings_goals')
+      .select('name, target_amount, current_amount, monthly_contribution, status')
+      .eq('user_id', userId),
+    supabase
+      .from('calendar_events')
+      .select('title, start_date, estimated_cost, is_bill_reminder')
+      .eq('user_id', userId)
+      .gte('start_date', todayStr)
+      .lte('start_date', sevenDaysStr)
+      .order('start_date', { ascending: true }),
+  ])
+
+  const accounts = accountsRes.data ?? []
+  const transactions = transactionsRes.data ?? []
+  const loans = loansRes.data ?? []
+  const investments = investmentsRes.data ?? []
+  const subscriptions = subscriptionsRes.data ?? []
+  const savingsGoals = savingsGoalsRes.data ?? []
+  const calendarEvents = calendarEventsRes.data ?? []
+
+  const totalAssets = accounts
+    .filter((a) => a.kind === 'asset' || a.kind === 'investment')
+    .reduce((s, a) => s + (a.current_balance ?? 0), 0)
+  const totalLiabilities = accounts
+    .filter((a) => a.kind === 'liability')
+    .reduce((s, a) => s + Math.abs(a.current_balance ?? 0), 0)
+  const netWorth = totalAssets - totalLiabilities
+
+  const monthlyIncome = transactions
+    .filter((t) => t.cr_dr === 'credit')
+    .reduce((s, t) => s + (t.amount_usd ?? 0), 0)
+  const monthlyExpenses = transactions
+    .filter((t) => t.cr_dr === 'debit')
+    .reduce((s, t) => s + (t.amount_usd ?? 0), 0)
+  const savingsRate =
+    monthlyIncome > 0
+      ? (((monthlyIncome - monthlyExpenses) / monthlyIncome) * 100).toFixed(1)
+      : '0.0'
+
+  const spendByCategory: Record<string, number> = {}
+  for (const t of transactions) {
+    if (t.cr_dr === 'debit') {
+      const cat = (t.category as unknown as { name: string } | null)?.name ?? 'Uncategorized'
+      spendByCategory[cat] = (spendByCategory[cat] ?? 0) + (t.amount_usd ?? 0)
+    }
+  }
+  const topCategories = Object.entries(spendByCategory)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+
+  const monthlySubCost = subscriptions.reduce(
+    (s, sub) => s + sub.billing_cost / (sub.billing_cycle_months || 1),
+    0,
+  )
+
+  const totalPortfolioValue = investments.reduce((s, i) => s + i.current_value, 0)
+  const totalInvested = investments.reduce((s, i) => s + i.total_invested, 0)
+  const portfolioGainLoss = totalPortfolioValue - totalInvested
+
+  const monthLabel = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+
+  const lines = [
+    `Financial Summary — ${monthLabel}`,
+    '',
+    '## Net Worth',
+    `  Total Assets: ${fmt(totalAssets)}`,
+    `  Total Liabilities: ${fmt(totalLiabilities)}`,
+    `  Net Worth: ${fmt(netWorth)}`,
+    '',
+    '## This Month',
+    `  Income: ${fmt(monthlyIncome)}`,
+    `  Expenses: ${fmt(monthlyExpenses)}`,
+    `  Savings Rate: ${savingsRate}%`,
+    '',
+    '## Top 5 Spending Categories',
+    ...(topCategories.length > 0
+      ? topCategories.map(([cat, amt]) => `  ${cat}: ${fmt(amt)}`)
+      : ['  No transactions this month']),
+    '',
+    `## Accounts (${accounts.length} active)`,
+    ...accounts.map((a) => `  ${a.name} (${a.kind}/${a.type}): ${fmt(a.current_balance ?? 0)}`),
+    '',
+    '## Loans',
+    ...(loans.length === 0
+      ? ['  No loans']
+      : loans.map((l) => {
+          const monthlyInterest = (l.current_balance * l.interest_rate) / 100 / 12
+          const principalPaid = Math.max(l.emi - monthlyInterest, 1)
+          const monthsLeft = Math.ceil(l.current_balance / principalPaid)
+          const payoff = new Date()
+          payoff.setMonth(payoff.getMonth() + monthsLeft)
+          const payoffStr = payoff.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+          return `  ${l.name}: ${fmt(l.current_balance)} balance, ${l.interest_rate}% rate, ${fmt(l.emi)}/mo, payoff ~${payoffStr}`
+        })),
+    '',
+    '## Investments',
+    ...(investments.length === 0
+      ? ['  No investments']
+      : [
+          `  Portfolio Value: ${fmt(totalPortfolioValue)} (${portfolioGainLoss >= 0 ? '+' : ''}${fmt(portfolioGainLoss)} gain/loss)`,
+          `  Total Invested: ${fmt(totalInvested)}`,
+          ...investments.map((i) => `  ${i.ticker || i.type} on ${i.platform}: ${fmt(i.current_value)}`),
+        ]),
+    '',
+    '## Subscriptions',
+    ...(subscriptions.length === 0
+      ? ['  No active subscriptions']
+      : [
+          `  Total Monthly Cost: ${fmt(monthlySubCost)}`,
+          ...subscriptions.map(
+            (s) => `  ${s.name}: ${fmt(s.billing_cost / (s.billing_cycle_months || 1))}/mo`,
+          ),
+        ]),
+    '',
+    '## Savings Goals',
+    ...(savingsGoals.length === 0
+      ? ['  No savings goals']
+      : savingsGoals.map(
+          (g) => `  ${g.name}: ${fmt(g.current_amount)} / ${fmt(g.target_amount)} (${g.status})`,
+        )),
+    '',
+    '## Upcoming Calendar Events (next 7 days)',
+    ...(calendarEvents.length === 0
+      ? ['  No upcoming financial events']
+      : calendarEvents.map((e) => {
+          const costPart = e.estimated_cost ? ` - $${e.estimated_cost}` : ''
+          const billPart = e.is_bill_reminder ? ' [bill reminder]' : ''
+          return `  ${e.title} on ${e.start_date}${costPart}${billPart}`
+        })),
+  ]
+
+  const summary = `Financial summary: net worth ${fmt(netWorth)}, ${fmt(monthlyIncome)} income, ${fmt(monthlyExpenses)} expenses (${monthLabel})`
+  return { text: lines.join('\n'), summary }
+}
+
+async function execGetAccountBalances(
+  input: Record<string, unknown>,
+  userId: string,
+  supabase: SupabaseClient,
+): Promise<ToolResult> {
+  const kind = typeof input.kind === 'string' ? input.kind : 'all'
+
+  let query = supabase
+    .from('accounts')
+    .select('name, kind, type, current_balance')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .order('kind', { ascending: true })
+    .order('name', { ascending: true })
+
+  if (kind !== 'all') {
+    query = query.eq('kind', kind)
+  }
+
+  const { data: accounts, error } = await query
+
+  if (error) {
+    return { text: `Error fetching accounts: ${error.message}`, summary: 'Error fetching accounts' }
+  }
+
+  const rows = accounts ?? []
+  const total = rows.reduce((s, a) => s + (a.current_balance ?? 0), 0)
+
+  const lines = [
+    `Accounts (${kind === 'all' ? 'all kinds' : kind}): ${rows.length} found`,
+    `Total Balance: ${fmt(total)}`,
+    '',
+    ...rows.map((a) => `  ${a.name} (${a.kind}/${a.type}): ${fmt(a.current_balance ?? 0)}`),
+  ]
+
+  const summary = `${rows.length} accounts (${kind}), total balance: ${fmt(total)}`
+  return { text: lines.join('\n'), summary }
+}
+
 // ── Phase 2 read tool executor ──────────────────────────────────────────────
 
 async function execGetSpendingTrends(
@@ -528,6 +791,7 @@ async function execGetSpendingTrends(
     .from('transactions')
     .select('amount_usd, cr_dr, date, category:categories(name)')
     .eq('user_id', userId)
+    .eq('is_internal_transfer', false)
     .eq('cr_dr', 'debit')
     .gte('date', startStr)
     .order('date', { ascending: true })
@@ -845,6 +1109,10 @@ export async function executeReadTool(
   supabase: SupabaseClient,
 ): Promise<ToolResult> {
   switch (name) {
+    case 'get_financial_summary':
+      return execGetFinancialSummary(input, userId, supabase)
+    case 'get_account_balances':
+      return execGetAccountBalances(input, userId, supabase)
     case 'get_spending_trends':
       return execGetSpendingTrends(input, userId, supabase)
     case 'query_spending':

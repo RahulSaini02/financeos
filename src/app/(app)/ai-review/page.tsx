@@ -41,9 +41,11 @@ export default async function AiReviewPage() {
       .rpc("get_available_review_months", { p_user_id: user.id })
       .then((res) => (res.data ?? []).map((r: { month_key: string }) => r.month_key) as string[]);
 
-    // Default to most recent month that has data; fall back to last completed month
+    // Default to most recent completed month that has data; fall back to last completed month
     const availableKeys = await availableMonthsPromise;
-    const defaultKey = availableKeys[0] ?? getDefaultPeriodKey(now);
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+    const completedKeys = (availableKeys ?? []).filter((k: string) => k < currentMonthKey)
+    const defaultKey = completedKeys[0] ?? getDefaultPeriodKey(now);
 
     const { periodStart, periodEnd, label } = periodInfo(defaultKey);
     const { periodStart: priorPeriodStart, periodEnd: priorPeriodEnd } =
@@ -144,7 +146,7 @@ export default async function AiReviewPage() {
       analysis: cachedInsight?.content ?? "",
     };
 
-    return <AiReviewClient initialData={initialData} availablePeriodKeys={availableKeys} />;
+    return <AiReviewClient initialData={initialData} availablePeriodKeys={completedKeys} />;
   } catch {
     return <AiReviewClient initialData={null} availablePeriodKeys={[]} />;
   }

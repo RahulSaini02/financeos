@@ -120,8 +120,13 @@ export default function AiReviewClient({
   // If the RPC returned nothing (migration not yet applied or new user),
   // fall back to generating the last 12 months from today's date.
   const periodKeys = useMemo(() => {
-    if (availablePeriodKeys.length > 0) return availablePeriodKeys;
-    const base = getDefaultPeriodKey(new Date());
+    const now = new Date()
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+    if (availablePeriodKeys.length > 0) {
+      const completedOnly = availablePeriodKeys.filter((k) => k < currentMonthKey)
+      return completedOnly.length > 0 ? completedOnly : availablePeriodKeys
+    }
+    const base = getDefaultPeriodKey(now);
     return [base, ...getPastPeriodKeys(base, 11)];
   }, [availablePeriodKeys]);
 

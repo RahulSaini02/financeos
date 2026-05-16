@@ -88,9 +88,31 @@ export function LoginForm () {
 
   if ( isNavigating ) {
     return (
-      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-[var(--color-bg-primary)]">
-        <Loader2 className="h-8 w-8 animate-spin text-[var(--color-accent)]" />
-        <p className="text-sm text-[var(--color-text-secondary)]">Signing you in…</p>
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[var(--color-bg-primary)] animate-in fade-in duration-300">
+        {/* App wordmark */}
+        <div className="flex flex-col items-center gap-2 mb-10">
+          <div className="w-12 h-12 rounded-2xl bg-[var(--color-accent)] flex items-center justify-center mb-1 shadow-lg shadow-[var(--color-accent)]/30">
+            <span className="text-white font-bold text-xl tracking-tight">F</span>
+          </div>
+          <span className="text-lg font-semibold tracking-tight text-[var(--color-text-primary)]">FinanceOS</span>
+        </div>
+
+        {/* Progress bar */}
+        <div className="w-48 h-0.5 rounded-full bg-[var(--color-border)] overflow-hidden">
+          <div className="h-full bg-[var(--color-accent)] rounded-full animate-[loading-bar_1.2s_ease-in-out_infinite]" />
+        </div>
+
+        <p className="mt-5 text-xs text-[var(--color-text-muted)] tracking-wide">
+          Setting up your dashboard…
+        </p>
+
+        <style>{`
+          @keyframes loading-bar {
+            0%   { width: 0%;   margin-left: 0%; }
+            50%  { width: 60%;  margin-left: 20%; }
+            100% { width: 0%;   margin-left: 100%; }
+          }
+        `}</style>
       </div>
     );
   }

@@ -291,6 +291,8 @@ export default function AdminClient({
   const [usersLoading, setUsersLoading] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [alert, setAlert] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  const [modelSettings, setModelSettings] = useState<Record<string, string>>({})
+  const [modelSaving, setModelSaving] = useState<string | null>(null)
 
   // Compute stats from users list once loaded, else use server-side stats
   const stats: AdminStats = users.length > 0
@@ -334,6 +336,39 @@ export default function AdminClient({
       fetchUsers();
     }
   }, [activeTab, fetchUsers, users.length]);
+
+  useEffect(() => {
+    if (activeTab !== 'models') return
+    fetch('/api/admin/settings')
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: { settings?: Array<{ key: string; value: string }> } | null) => {
+        if (!data?.settings) return
+        const map: Record<string, string> = {}
+        for (const s of data.settings) map[s.key] = s.value
+        setModelSettings(map)
+      })
+      .catch(() => {})
+  }, [activeTab])
+
+  async function saveModelSetting(key: string, value: string) {
+    setModelSaving(key)
+    try {
+      const res = await fetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, value }),
+      })
+      if (res.ok) {
+        setModelSettings((prev) => ({ ...prev, [key]: value }))
+        setAlert({ kind: 'success', message: 'Model setting updated.' })
+      } else {
+        setAlert({ kind: 'error', message: 'Failed to update model setting.' })
+      }
+    } finally {
+      setModelSaving(null)
+      setTimeout(() => setAlert(null), 4000)
+    }
+  }
 
   async function handleAction(userId: string, action: AdminAction) {
     setProcessingId(userId);
@@ -386,6 +421,20 @@ export default function AdminClient({
 
   const adminUsers = users.filter((u) => u.role === "admin").length;
 
+  const MODEL_FEATURES = [
+    { key: 'ai_model_daily_insight',   label: 'Daily Insight',       desc: 'Dashboard daily insight card' },
+    { key: 'ai_model_monthly_summary', label: 'Monthly Summary',     desc: 'Monthly AI summary generation' },
+    { key: 'ai_model_monthly_review',  label: 'AI Review',           desc: 'Monthly review analysis (cron)' },
+    { key: 'ai_model_auto_categorize', label: 'Auto-Categorization', desc: 'Transaction categorization' },
+    { key: 'ai_model_chat_default',    label: 'AI Chat Default',     desc: 'Chat assistant system default' },
+  ]
+
+  const AI_MODEL_OPTIONS = [
+    { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 — Fast & cost-efficient' },
+    { value: 'claude-sonnet-4-6',         label: 'Sonnet 4.6 — Balanced' },
+    { value: 'claude-opus-4-6',           label: 'Opus 4.6 — Most capable' },
+  ]
+
   const tabs = [
     { key: "overview" as const, label: "Overview" },
     { key: "users" as const, label: "User Management" },
@@ -410,7 +459,7 @@ export default function AdminClient({
 
         {/* Tabs */}
         <div
-          className="flex gap-1 border-b overflow-x-auto"
+          className="flex gap-1 border-b overflow-x-auto mt-4 md:mt-5"
           style={{ borderColor: "var(--color-border)" }}
         >
           {tabs.map((tab) => (
@@ -441,7 +490,7 @@ export default function AdminClient({
 
         {/* ── Overview Tab ─────────────────────────────────────────────────── */}
         {activeTab === "overview" && (
-          <div className="space-y-6">
+          <div className="space-y-6 pt-4 md:pt-5">
             {/* Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
@@ -529,7 +578,7 @@ export default function AdminClient({
 
         {/* ── User Management Tab ───────────────────────────────────────────── */}
         {activeTab === "users" && (
-          <Card>
+          <div className="pt-4 md:pt-5"><Card>
             <CardHeader>
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <CardTitle>User Management</CardTitle>
@@ -585,12 +634,12 @@ export default function AdminClient({
                 </table>
               </div>
             )}
-          </Card>
+          </Card></div>
         )}
 
         {/* ── AI Access Requests Tab ─────────────────────────────────────────── */}
         {activeTab === "ai-requests" && (
-          <Card>
+          <div className="pt-4 md:pt-5"><Card>
             <CardHeader>
               <div className="flex items-center gap-3">
                 <CardTitle>
@@ -699,12 +748,12 @@ export default function AdminClient({
                 ))}
               </div>
             )}
-          </Card>
+          </Card></div>
         )}
 
         {/* ── AI Models Tab ──────────────────────────────────────────────────── */}
         {activeTab === "models" && (
-          <Card>
+          <div className="pt-4 md:pt-5"><Card>
             <CardHeader>
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--color-accent)]/10">
@@ -718,45 +767,36 @@ export default function AdminClient({
                 Default AI models configured per feature. Users can override their chat model
                 preference from Settings.
               </p>
-              <div
-                className="rounded-xl border divide-y"
-                style={{
-                  borderColor: "var(--color-border)",
-                  background: "var(--color-bg-tertiary)",
-                }}
-              >
-                {[
-                  { label: "Daily Insight", desc: "Dashboard daily insight card", model: "claude-haiku-4-5-20251001" },
-                  { label: "Monthly Summary", desc: "Monthly AI summary generation", model: "claude-haiku-4-5-20251001" },
-                  { label: "AI Review", desc: "Monthly review analysis", model: "claude-sonnet-4-6" },
-                  { label: "Auto-Categorization", desc: "Transaction categorization", model: "claude-haiku-4-5-20251001" },
-                  { label: "AI Chat", desc: "Chat assistant (user-configurable)", model: "claude-sonnet-4-6" },
-                ].map((item) => (
-                  <div
-                    key={item.label}
-                    className="flex items-center justify-between px-4 py-3 gap-4"
-                    style={{ borderColor: "var(--color-border)" }}
-                  >
+              <div className="divide-y divide-[var(--color-border)]">
+                {MODEL_FEATURES.map((feat) => (
+                  <div key={feat.key} className="flex items-center justify-between py-3 border-b border-[var(--color-border)] last:border-0">
                     <div>
-                      <p className="text-sm font-medium" style={{ color: "var(--color-text-primary)" }}>
-                        {item.label}
-                      </p>
-                      <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
-                        {item.desc}
-                      </p>
+                      <div className="text-sm font-medium text-[var(--color-text-primary)]">{feat.label}</div>
+                      <div className="text-xs text-[var(--color-text-muted)]">{feat.desc}</div>
                     </div>
-                    <span className="shrink-0 text-xs px-2 py-1 rounded-lg bg-[var(--color-accent)]/10 text-[var(--color-accent)] font-mono">
-                      {item.model}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={modelSettings[feat.key] ?? 'claude-haiku-4-5-20251001'}
+                        onChange={(e) => setModelSettings((prev) => ({ ...prev, [feat.key]: e.target.value }))}
+                        className="text-xs border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)] rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
+                      >
+                        {AI_MODEL_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => saveModelSetting(feat.key, modelSettings[feat.key] ?? 'claude-haiku-4-5-20251001')}
+                        disabled={modelSaving === feat.key}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+                      >
+                        {modelSaving === feat.key ? 'Saving…' : 'Save'}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
-              <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
-                To change default models, update the values in the codebase. Users can set per-prompt
-                model overrides in Settings &rarr; AI Prompts.
-              </p>
             </div>
-          </Card>
+          </Card></div>
         )}
       </div>
     </div>

@@ -21,7 +21,7 @@ export default async function InvestmentsPage() {
       .order("name", { ascending: true }),
     supabase
       .from("savings_goals")
-      .select("*, account:accounts!savings_goals_linked_account_id_fkey(id, name, current_balance)")
+      .select("*, account:accounts(id, name, current_balance)")
       .eq("user_id", user.id)
       .order("created_at"),
   ]);

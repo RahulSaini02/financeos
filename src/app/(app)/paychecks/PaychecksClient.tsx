@@ -269,141 +269,169 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
     setSaving(true);
     setSaveError(null);
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const netPay = parseFloat(form.net_pay) || 0;
-    const gross = parseFloat(form.gross_pay) || 0;
-    const employee401k = parseFloat(form.retirement_401k) || 0;
-    const employee401kPct = parseFloat(form.employee_401k_pct) || 0;
-    const employerMatch = calcEmployerMatch(gross, employee401kPct);
-
-    const payload = {
-      user_id: user.id,
-      account_id: form.account_id || null,
-      employer: form.employer || "Unknown",
-      employer_id: form.employer_id || null,
-      date: form.date,
-      gross_pay: gross,
-      federal_tax: parseFloat(form.federal_tax) || 0,
-      state_tax: parseFloat(form.state_tax) || 0,
-      sdi: parseFloat(form.sdi) || 0,
-      other_deductions: parseFloat(form.other_deductions) || 0,
-      retirement_401k: employee401k,
-      employee_401k_pct: employee401kPct,
-      employer_401k_match: employerMatch,
-      net_pay: netPay,
-      notes: form.notes || null,
-    };
-
-    // ── Edit path ──────────────────────────────────────────────────────────────
-    if (editingId) {
-      const { error: updateErr } = await supabase
-        .from("paychecks")
-        .update(payload)
-        .eq("id", editingId)
-        .eq("user_id", user.id);
-
-      if (updateErr) {
-        setSaveError(updateErr.message);
-        setSaving(false);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setSaveError("Not authenticated. Please refresh and try again.");
         return;
       }
 
-      const existing = paychecks.find((p) => p.id === editingId);
-      if (existing?.transaction_id) {
-        await supabase
-          .from("transactions")
-          .update({
-            account_id: payload.account_id || existing.account_id,
-            description: `Paycheck — ${payload.employer || "Employer"}`,
-            amount_usd: netPay,
-            date: payload.date,
-          })
-          .eq("id", existing.transaction_id);
+      const netPay = parseFloat(form.net_pay) || 0;
+      const gross = parseFloat(form.gross_pay) || 0;
+      const employee401k = parseFloat(form.retirement_401k) || 0;
+      const employee401kPct = parseFloat(form.employee_401k_pct) || 0;
+      const employerMatch = calcEmployerMatch(gross, employee401kPct);
+
+      const payload = {
+        user_id: user.id,
+        account_id: form.account_id || null,
+        employer: form.employer || "Unknown",
+        employer_id: form.employer_id || null,
+        date: form.date,
+        gross_pay: gross,
+        federal_tax: parseFloat(form.federal_tax) || 0,
+        state_tax: parseFloat(form.state_tax) || 0,
+        sdi: parseFloat(form.sdi) || 0,
+        other_deductions: parseFloat(form.other_deductions) || 0,
+        retirement_401k: employee401k,
+        employee_401k_pct: employee401kPct,
+        employer_401k_match: employerMatch,
+        net_pay: netPay,
+        notes: form.notes || null,
+      };
+
+      // ── Edit path ────────────────────────────────────────────────────────────
+      if (editingId) {
+        const { error: updateErr } = await supabase
+          .from("paychecks")
+          .update(payload)
+          .eq("id", editingId)
+          .eq("user_id", user.id);
+
+        if (updateErr) {
+          setSaveError(updateErr.message);
+          return;
+        }
+
+        const existing = paychecks.find((p) => p.id === editingId);
+        if (existing?.transaction_id) {
+          const { error: txnUpdateErr } = await supabase
+            .from("transactions")
+            .update({
+              account_id: payload.account_id || existing.account_id,
+              description: `Paycheck — ${payload.employer || "Employer"}`,
+              amount_usd: netPay,
+              date: payload.date,
+            })
+            .eq("id", existing.transaction_id);
+          if (txnUpdateErr) {
+            console.warn("Paycheck transaction sync failed:", txnUpdateErr.message);
+          }
+        }
+
+        closeModal();
+        await fetchPaychecks();
+        return;
+      }
+
+      // ── Insert path ──────────────────────────────────────────────────────────
+      const { data: paycheck, error: err } = await supabase
+        .from("paychecks")
+        .insert(payload)
+        .select()
+        .single();
+
+      if (err || !paycheck) {
+        setSaveError(err?.message ?? "Failed to save paycheck");
+        return;
+      }
+
+      if (form.account_id && netPay > 0) {
+        let txnRes: Response;
+        try {
+          txnRes = await fetch("/api/transactions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              account_id: form.account_id,
+              description: `Paycheck — ${form.employer || "Employer"}`,
+              amount_usd: netPay,
+              cr_dr: "credit",
+              date: form.date,
+              notes: `Auto-generated from paycheck. Gross: $${form.gross_pay}`,
+            }),
+          });
+        } catch (fetchErr) {
+          setSaveError(`Network error creating income transaction: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`);
+          await fetchPaychecks();
+          return;
+        }
+
+        if (txnRes.ok) {
+          let txn: { id?: string } = {};
+          try {
+            txn = await txnRes.json() as { id?: string };
+          } catch {
+            console.warn("Could not parse transaction response body");
+          }
+
+          if (txn.id) {
+            const { error: linkErr } = await supabase
+              .from("paychecks")
+              .update({ transaction_id: txn.id })
+              .eq("id", paycheck.id)
+              .eq("user_id", user.id);
+            if (linkErr) {
+              console.warn("Failed to link transaction to paycheck:", linkErr.message);
+            }
+          } else {
+            console.warn("Transaction created but no id returned — transaction_id not linked");
+          }
+        } else {
+          let errMsg = "Income transaction could not be created";
+          try {
+            const body = await txnRes.json() as { error?: string };
+            if (body?.error) errMsg = `Paycheck saved, but transaction failed: ${body.error}`;
+          } catch { /* ignore JSON parse errors on error responses */ }
+          setSaveError(errMsg);
+          await fetchPaychecks();
+          return;
+        }
+      }
+
+      // ── Sync 401K investment ────────────────────────────────────────────────
+      const total401k = employee401k + employerMatch;
+      if (total401k > 0) {
+        try {
+          const { data: investments } = await supabase
+            .from("investments")
+            .select("id, total_invested, current_value")
+            .eq("user_id", user.id)
+            .ilike("type", "%401%")
+            .order("created_at", { ascending: true })
+            .limit(1);
+
+          if (investments && investments.length > 0) {
+            const inv = investments[0];
+            await supabase
+              .from("investments")
+              .update({
+                total_invested: (inv.total_invested ?? 0) + total401k,
+                current_value: (inv.current_value ?? 0) + total401k,
+              })
+              .eq("id", inv.id);
+          }
+        } catch { /* non-fatal */ }
       }
 
       closeModal();
       await fetchPaychecks();
+    } catch (unexpectedErr) {
+      console.error("handleSave unexpected error:", unexpectedErr);
+      setSaveError(unexpectedErr instanceof Error ? unexpectedErr.message : "An unexpected error occurred");
+    } finally {
       setSaving(false);
-      return;
     }
-
-    // ── Insert path ────────────────────────────────────────────────────────────
-    const { data: paycheck, error: err } = await supabase
-      .from("paychecks")
-      .insert(payload)
-      .select()
-      .single();
-
-    if (err || !paycheck) {
-      setSaveError(err?.message ?? "Failed to save paycheck");
-      setSaving(false);
-      return;
-    }
-
-    if (form.account_id && netPay > 0) {
-      const txnRes = await fetch("/api/transactions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          account_id: form.account_id,
-          description: `Paycheck — ${form.employer || "Employer"}`,
-          amount_usd: netPay,
-          cr_dr: "credit",
-          date: form.date,
-          notes: `Auto-generated from paycheck. Gross: $${form.gross_pay}`,
-        }),
-      });
-
-      if (txnRes.ok) {
-        const txn = await txnRes.json();
-        await supabase
-          .from("paychecks")
-          .update({ transaction_id: txn.id })
-          .eq("id", paycheck.id)
-          .eq("user_id", user.id);
-      } else {
-        let errMsg = "Income transaction could not be created";
-        try {
-          const body = await txnRes.json();
-          if (body?.error) errMsg = `Paycheck saved, but transaction failed: ${body.error}`;
-        } catch { /* ignore */ }
-        setSaveError(errMsg);
-        setSaving(false);
-        await fetchPaychecks();
-        return;
-      }
-    }
-
-    // ── Sync 401K investment ──────────────────────────────────────────────────
-    const total401k = employee401k + employerMatch;
-    if (total401k > 0) {
-      try {
-        const { data: investments } = await supabase
-          .from("investments")
-          .select("id, total_invested, current_value")
-          .eq("user_id", user.id)
-          .ilike("type", "%401%")
-          .order("created_at", { ascending: true })
-          .limit(1);
-
-        if (investments && investments.length > 0) {
-          const inv = investments[0];
-          await supabase
-            .from("investments")
-            .update({
-              total_invested: (inv.total_invested ?? 0) + total401k,
-              current_value: (inv.current_value ?? 0) + total401k,
-            })
-            .eq("id", inv.id);
-        }
-      } catch { /* non-fatal */ }
-    }
-
-    closeModal();
-    await fetchPaychecks();
-    setSaving(false);
   }
 
   if (error) {

@@ -4,12 +4,13 @@ import {
   useState, useEffect, useRef, useCallback,
 } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/components/auth-provider";
 import type { AiInsight } from "@/lib/types";
 import {
   Sparkles, Loader2, Bot, User, BrainCircuit,
-  Bell, Zap, Trash2, PanelRightOpen, PanelRightClose, X,
+  Bell, Trash2, X, History, ChevronLeft,
 } from "lucide-react";
 import { MarkdownContent } from "@/components/ui/markdown-content";
 import { AgentToolStep } from "@/components/ui/agent-tool-step";
@@ -21,8 +22,7 @@ import { cn } from "@/lib/utils";
 
 const CHAT_MODEL_KEY = "pref_chat_model";
 const DEFAULT_CHAT_MODEL = "claude-sonnet-4-6";
-const AGENT_SESSION_KEY = "agent_session_v1";
-const CHAT_SESSION_KEY = "chat_session_v1";
+const SESSION_KEY = "ai_session_v1";
 const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -49,6 +49,23 @@ interface ChatMessage {
   timestamp?: number;
 }
 
+interface SessionSummary {
+  session_id: string;
+  first_message: string;
+  message_count: number;
+  created_at: string;
+  last_message_at: string;
+}
+
+interface StoredMessage {
+  id: string;
+  session_id: string;
+  role: "user" | "assistant";
+  content: string;
+  mode: string;
+  created_at: string;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const BADGE_STYLES: Record<string, { bg: string; text: string }> = {
@@ -57,6 +74,19 @@ const BADGE_STYLES: Record<string, { bg: string; text: string }> = {
   alert: { bg: "bg-[var(--color-danger)]/10", text: "text-[var(--color-danger)]" },
   agent_action: { bg: "bg-[var(--color-warning)]/10", text: "text-[var(--color-warning)]" },
 };
+
+function relativeTime ( iso: string ): string {
+  const diff = Date.now() - new Date( iso ).getTime();
+  const mins = Math.floor( diff / 60_000 );
+  if ( mins < 1 ) return "Just now";
+  if ( mins < 60 ) return `${ mins }m ago`;
+  const hrs = Math.floor( mins / 60 );
+  if ( hrs < 24 ) return `${ hrs }h ago`;
+  const days = Math.floor( hrs / 24 );
+  if ( days === 1 ) return "Yesterday";
+  if ( days < 7 ) return `${ days } days ago`;
+  return new Date( iso ).toLocaleDateString( "en-US", { month: "short", day: "numeric", timeZone: "America/Los_Angeles" } );
+}
 
 function InsightBadge ( { type }: { type: string } ) {
   const style = BADGE_STYLES[type] ?? BADGE_STYLES.daily;
@@ -71,23 +101,17 @@ function InsightBadge ( { type }: { type: string } ) {
 const SUGGESTED_QUESTIONS = [
   "How much did I spend this month?",
   "What's my net worth?",
-  "When will I pay off my loans?",
   "Am I over budget anywhere?",
-  "What's my savings rate?",
-];
-
-const AGENT_SUGGESTED_QUESTIONS = [
-  "Analyze my spending and check if I'm over budget",
-  "What subscriptions should I consider cancelling?",
-  "Show me my loan payoff timeline",
-  "Help me create a savings goal for an emergency fund",
-  "Am I on track with my savings goals?",
+  "What subscriptions should I review?",
+  "When will I pay off my loans?",
+  "Help me set a savings goal",
 ];
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function AiChatClient ( { initialInsights }: { initialInsights: AiInsight[] } ) {
   const { user } = useAuth();
+  const router = useRouter();
   const supabase = createClient();
 
   const [insights, setInsights] = useState<AiInsight[]>( initialInsights );
@@ -100,10 +124,12 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
     try { return ( typeof window !== "undefined" && localStorage.getItem( CHAT_MODEL_KEY ) ) || DEFAULT_CHAT_MODEL; }
     catch { return DEFAULT_CHAT_MODEL; }
   } );
-  const [agentMode, setAgentMode] = useState( false );
   const [agentHistory, setAgentHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>( [] );
   const [confirmingActionId, setConfirmingActionId] = useState<string | null>( null );
   const [sessionId, setSessionId] = useState<string>( "" );
+  const [showSessions, setShowSessions] = useState( false );
+  const [sessions, setSessions] = useState<SessionSummary[]>( [] );
+  const [sessionsLoading, setSessionsLoading] = useState( false );
 
   useEffect( () => {
     if ( !user ) return;
@@ -119,49 +145,33 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
 
   const chatEndRef = useRef<HTMLDivElement>( null );
 
+  // ── Typewriter refs (shared across sendMessage calls) ─────────────────────
+  const twBuffer = useRef( "" );   // full text received from stream
+  const twShown = useRef( "" );    // text currently displayed
+  const twFrame = useRef<number | null>( null );
+
   useEffect( () => {
     chatEndRef.current?.scrollIntoView( { behavior: "smooth" } );
   }, [messages] );
 
+  // Save agent history to localStorage
   useEffect( () => {
-    if ( !user || !agentMode ) return;
+    if ( !user ) return;
     try {
-      localStorage.setItem( `${ AGENT_SESSION_KEY }_${ user.id }`, JSON.stringify( { history: agentHistory, savedAt: Date.now() } ) );
+      localStorage.setItem( `${ SESSION_KEY }_${ user.id }`, JSON.stringify( { history: agentHistory, savedAt: Date.now() } ) );
     } catch { /* ignore */ }
-  }, [agentHistory, user, agentMode] );
+  }, [agentHistory, user] );
 
+  // Restore agent history on mount
   useEffect( () => {
-    if ( !user || !agentMode ) return;
+    if ( !user ) return;
     try {
-      const raw = localStorage.getItem( `${ AGENT_SESSION_KEY }_${ user.id }` );
+      const raw = localStorage.getItem( `${ SESSION_KEY }_${ user.id }` );
       if ( !raw ) return;
       const session = JSON.parse( raw ) as { history: typeof agentHistory; savedAt: number };
       if ( Date.now() - session.savedAt < SESSION_TTL ) setAgentHistory( session.history );
     } catch { /* ignore */ }
-  }, [user, agentMode] );
-
-  // Save standard chat messages (user + assistant only) to localStorage
-  useEffect( () => {
-    if ( !user || agentMode ) return;
-    try {
-      const persistable = messages.filter( ( m ) => m.role === "user" || m.role === "assistant" );
-      if ( persistable.length === 0 ) return;
-      localStorage.setItem( `${ CHAT_SESSION_KEY }_${ user.id }`, JSON.stringify( { messages: persistable, savedAt: Date.now() } ) );
-    } catch { /* ignore */ }
-  }, [messages, user, agentMode] );
-
-  // Restore standard chat messages on mount / when switching back to chat mode
-  useEffect( () => {
-    if ( !user || agentMode ) return;
-    try {
-      const raw = localStorage.getItem( `${ CHAT_SESSION_KEY }_${ user.id }` );
-      if ( !raw ) return;
-      const session = JSON.parse( raw ) as { messages: ChatMessage[]; savedAt: number };
-      if ( Date.now() - session.savedAt < SESSION_TTL && session.messages.length > 0 ) {
-        setMessages( session.messages );
-      }
-    } catch { /* ignore */ }
-  }, [user, agentMode] );
+  }, [user] );
 
   const fetchInsights = useCallback( async () => {
     if ( !user ) return;
@@ -171,47 +181,69 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
     setInsightsLoading( false );
   }, [user, supabase] );
 
+  const fetchSessions = useCallback( async () => {
+    setSessionsLoading( true );
+    try {
+      const res = await fetch( `/api/ai-chat/sessions?mode=agent` );
+      if ( res.ok ) {
+        const json = await res.json() as { sessions: SessionSummary[] };
+        setSessions( json.sessions ?? [] );
+      }
+    } catch { /* ignore */ } finally {
+      setSessionsLoading( false );
+    }
+  }, [] );
+
+  async function loadSession ( sessionSummary: SessionSummary ) {
+    try {
+      const res = await fetch( `/api/ai-chat/sessions/${ sessionSummary.session_id }` );
+      if ( !res.ok ) return;
+      const json = await res.json() as { messages: StoredMessage[] };
+      const restored: ChatMessage[] = json.messages.map( ( m ) => ( {
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: new Date( m.created_at ).getTime(),
+      } ) );
+      const history = json.messages
+        .filter( ( m ) => m.role === "user" || m.role === "assistant" )
+        .map( ( m ) => ( { role: m.role as "user" | "assistant", content: m.content } ) );
+      setMessages( restored );
+      setAgentHistory( history );
+      setShowSessions( false );
+    } catch { /* ignore */ }
+  }
+
   async function markAsRead ( id: string ) {
     await supabase.from( "ai_insights" ).update( { is_read: true } ).eq( "id", id ).eq( "user_id", user?.id ?? "" );
     setInsights( ( prev ) => prev.map( ( ins ) => ( ins.id === id ? { ...ins, is_read: true } : ins ) ) );
   }
 
-  // ── Send (standard chat) ──────────────────────────────────────────────────
+  async function markAllAsRead() {
+    if (!user) return
+    const unreadIds = insights.filter((i) => !i.is_read).map((i) => i.id)
+    if (unreadIds.length === 0) return
+    await supabase
+      .from('ai_insights')
+      .update({ is_read: true })
+      .in('id', unreadIds)
+      .eq('user_id', user.id)
+    setInsights((prev) => prev.map((i) => ({ ...i, is_read: true })))
+  }
+
+  // ── Send (unified agent message) ──────────────────────────────────────────
 
   async function sendMessage ( question: string ) {
     if ( !question.trim() || isSending ) return;
     const userMsgId = crypto.randomUUID();
-    const loadingMsgId = crypto.randomUUID();
-    setMessages( ( prev ) => [
-      ...prev,
-      { id: userMsgId, role: "user", content: question, timestamp: Date.now() },
-      { id: loadingMsgId, role: "loading", content: "" },
-    ] );
-    setInputValue( "" );
-    setIsSending( true );
-    try {
-      const res = await fetch( "/api/ai-chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify( { question, model: selectedModel, timezone: localStorage.getItem( "pref_timezone" ) ?? "America/Los_Angeles", sessionId } ),
-      } );
-      const data = await res.json();
-      const answer: string = res.ok ? data.answer : "Sorry, I couldn't process that. Please try again.";
-      setMessages( ( prev ) => prev.map( ( m ) => m.id === loadingMsgId ? { id: loadingMsgId, role: "assistant", content: answer, timestamp: Date.now() } : m ) );
-      if ( res.ok ) fetchInsights();
-    } catch {
-      setMessages( ( prev ) => prev.map( ( m ) => m.id === loadingMsgId ? { id: loadingMsgId, role: "assistant", content: "Sorry, I couldn't process that. Please try again." } : m ) );
-    } finally {
-      setIsSending( false );
-    }
-  }
-
-  // ── Send (agent mode) ─────────────────────────────────────────────────────
-
-  async function sendAgentMessage ( question: string ) {
-    if ( !question.trim() || isSending ) return;
-    const userMsgId = crypto.randomUUID();
     const toolStepsMsgId = crypto.randomUUID();
+    const textMsgId = toolStepsMsgId + "_text";
+
+    // Reset typewriter state
+    twBuffer.current = "";
+    twShown.current = "";
+    if ( twFrame.current !== null ) { cancelAnimationFrame( twFrame.current ); twFrame.current = null; }
+
     setMessages( ( prev ) => [
       ...prev,
       { id: userMsgId, role: "user", content: question, timestamp: Date.now() },
@@ -220,6 +252,31 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
     setInputValue( "" );
     setIsSending( true );
     const newHistory: typeof agentHistory = [...agentHistory, { role: "user", content: question }];
+
+    // rAF drain loop — 2 chars/frame
+    const startTypewriter = () => {
+      const tick = () => {
+        const target = twBuffer.current;
+        const shown = twShown.current;
+        if ( shown.length < target.length ) {
+          const next = target.slice( 0, shown.length + 2 );
+          twShown.current = next;
+          setMessages( ( prev ) => prev.map( ( m ) => m.id === textMsgId ? { ...m, content: next } : m ) );
+        }
+        twFrame.current = requestAnimationFrame( tick );
+      };
+      twFrame.current = requestAnimationFrame( tick );
+    };
+
+    const stopTypewriter = ( flush = false ) => {
+      if ( twFrame.current !== null ) { cancelAnimationFrame( twFrame.current ); twFrame.current = null; }
+      if ( flush && twShown.current !== twBuffer.current ) {
+        const full = twBuffer.current;
+        twShown.current = full;
+        setMessages( ( prev ) => prev.map( ( m ) => m.id === textMsgId ? { ...m, content: full } : m ) );
+      }
+    };
+
     try {
       const res = await fetch( "/api/ai-agent", {
         method: "POST",
@@ -229,14 +286,14 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
       if ( !res.ok || !res.body ) throw new Error( "Agent request failed" );
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let assistantText = "";
-      let buffer = "";
+      let sseBuffer = "";
+      let textStarted = false;
       while ( true ) {
         const { done, value } = await reader.read();
         if ( done ) break;
-        buffer += decoder.decode( value, { stream: true } );
-        const lines = buffer.split( "\n\n" );
-        buffer = lines.pop() ?? "";
+        sseBuffer += decoder.decode( value, { stream: true } );
+        const lines = sseBuffer.split( "\n\n" );
+        sseBuffer = lines.pop() ?? "";
         for ( const line of lines ) {
           if ( !line.startsWith( "data: " ) ) continue;
           try {
@@ -262,19 +319,21 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
               }] );
             }
             if ( event.event === "text_delta" && event.text ) {
-              assistantText += event.text;
-              setMessages( ( prev ) => {
-                const hasAssistant = prev.some( ( m ) => m.id === toolStepsMsgId + "_text" );
-                if ( hasAssistant ) return prev.map( ( m ) => m.id === toolStepsMsgId + "_text" ? { ...m, content: assistantText } : m );
-                return [...prev, { id: toolStepsMsgId + "_text", role: "assistant" as const, content: assistantText }];
-              } );
+              if ( !textStarted ) {
+                textStarted = true;
+                setMessages( ( prev ) => [...prev, { id: textMsgId, role: "assistant" as const, content: "" }] );
+                startTypewriter();
+              }
+              twBuffer.current += event.text;
             }
           } catch { /* ignore */ }
         }
       }
-      if ( assistantText ) setAgentHistory( [...newHistory, { role: "assistant", content: assistantText }] );
+      stopTypewriter( true );
+      if ( twBuffer.current ) setAgentHistory( [...newHistory, { role: "assistant", content: twBuffer.current }] );
       if ( res.ok ) fetchInsights();
     } catch {
+      stopTypewriter();
       setMessages( ( prev ) => [...prev, { id: crypto.randomUUID(), role: "assistant", content: "Sorry, I couldn't process that. Please try again." }] );
     } finally {
       setIsSending( false );
@@ -325,8 +384,7 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
 
   function handleSubmit () {
     if ( !inputValue.trim() || isSending ) return;
-    if ( agentMode ) sendAgentMessage( inputValue );
-    else sendMessage( inputValue );
+    sendMessage( inputValue );
   }
 
   function clearChat () {
@@ -334,8 +392,7 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
     setAgentHistory( [] );
     if ( user ) {
       try {
-        localStorage.removeItem( `${ CHAT_SESSION_KEY }_${ user.id }` );
-        localStorage.removeItem( `${ AGENT_SESSION_KEY }_${ user.id }` );
+        localStorage.removeItem( `${ SESSION_KEY }_${ user.id }` );
         const newId = crypto.randomUUID();
         localStorage.setItem( `session_id_${ user.id }`, newId );
         setSessionId( newId );
@@ -353,18 +410,30 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
       <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-[var(--color-border)]">
         <div className="flex items-center gap-3">
-          <div className={cn(
-            "flex h-9 w-9 items-center justify-center rounded-xl transition-colors duration-200",
-            agentMode ? "bg-[var(--color-warning)]/15" : "bg-[var(--color-accent)]/10"
-          )}>
-            {agentMode
-              ? <Zap className="h-4 w-4 text-[var(--color-warning)]" />
-              : <BrainCircuit className="h-4 w-4 text-[var(--color-accent)]" />}
+          <button
+            onClick={() => {
+              const ref = document.referrer;
+              const isInApp = ref && new URL(ref).origin === window.location.origin;
+              const AUTH_PATHS = ['/', '/login', '/signup'];
+              const isAuthOrLanding = ref && AUTH_PATHS.includes(new URL(ref).pathname);
+              if (isInApp && !isAuthOrLanding) {
+                router.back();
+              } else {
+                router.push('/dashboard');
+              }
+            }}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors lg:hidden"
+            aria-label="Go back"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--color-accent)]/10">
+            <BrainCircuit className="h-4 w-4 text-[var(--color-accent)]" />
           </div>
           <div>
             <h1 className="text-sm font-semibold text-[var(--color-text-primary)] leading-tight">AI Finance Assistant</h1>
             <p className="text-[0.65rem] text-[var(--color-text-muted)] leading-tight mt-0.5">
-              {agentMode ? "Agent mode — queries data and takes actions" : "Ask anything about your finances"}
+              Ask anything • I&apos;ll use tools when needed
             </p>
           </div>
         </div>
@@ -379,27 +448,47 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
             </button>
           )}
           <button
-            onClick={() => setShowInsights( ( v ) => !v )}
+            onClick={() => {
+              const next = !showInsights
+              setShowInsights(next)
+              if (next) fetchInsights()
+            }}
             className={cn(
-              "relative flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors mr-4",
+              "relative flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors",
               showInsights
                 ? "bg-[var(--color-accent)]/15 text-[var(--color-accent)]"
                 : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"
             )}
+            title="Alerts & Insights"
           >
-            {showInsights ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRightOpen className="h-3.5 w-3.5" />}
-            Insights
+            <Bell className="h-3.5 w-3.5" />
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center text-[0.55rem] font-bold bg-[var(--color-accent)] text-white rounded-full">
-                {unreadCount > 9 ? "9+" : unreadCount}
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
+                {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
+          </button>
+          <button
+            onClick={() => {
+              const next = !showSessions;
+              setShowSessions( next );
+              if ( next && sessions.length === 0 ) fetchSessions();
+            }}
+            className={cn(
+              "relative flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors mr-4",
+              showSessions
+                ? "bg-[var(--color-accent)]/15 text-[var(--color-accent)]"
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"
+            )}
+          >
+            <History className="h-3.5 w-3.5" />
+            Sessions
           </button>
         </div>
       </div>
 
       {/* ── Body ─────────────────────────────────────────────────────────── */}
-      <div className="flex-1 flex overflow-hidden min-h-0">
+      <div className="flex-1 flex overflow-hidden min-h-0 relative">
 
         {/* Chat area */}
         <div className="flex-1 flex flex-col min-h-0">
@@ -411,36 +500,25 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
                 <div className="flex flex-col items-center justify-center text-center py-20 gap-6">
                   {/* Icon with glow */}
                   <div
-                    className={cn(
-                      "flex h-20 w-20 items-center justify-center rounded-2xl transition-colors duration-300",
-                      agentMode ? "bg-[var(--color-warning)]/10" : "bg-[var(--color-accent)]/10"
-                    )}
+                    className="flex h-20 w-20 items-center justify-center rounded-2xl bg-[var(--color-accent)]/10"
                     style={{
-                      boxShadow: agentMode
-                        ? "0 0 48px color-mix(in srgb, var(--color-warning) 18%, transparent)"
-                        : "0 0 48px color-mix(in srgb, var(--color-accent) 18%, transparent)",
+                      boxShadow: "0 0 48px color-mix(in srgb, var(--color-accent) 18%, transparent)",
                     }}
                   >
-                    {agentMode
-                      ? <Zap className="h-10 w-10 text-[var(--color-warning)]" />
-                      : <BrainCircuit className="h-10 w-10 text-[var(--color-accent)]" />}
+                    <BrainCircuit className="h-10 w-10 text-[var(--color-accent)]" />
                   </div>
                   <div className="space-y-2">
-                    <p className="text-xl font-semibold">
-                      {agentMode ? "Agent Mode Active" : "Ask me anything"}
-                    </p>
+                    <p className="text-xl font-semibold">Ask me anything</p>
                     <p className="text-sm text-[var(--color-text-muted)] max-w-sm mx-auto">
-                      {agentMode
-                        ? "I'll use tools to fetch real data and can update budgets, create goals, and more — with your confirmation."
-                        : "I have full context on your transactions, budgets, accounts, loans, and investments."}
+                      I can answer questions about your finances and use tools to fetch real data, check budgets, analyze trends, and more.
                     </p>
                   </div>
                   {/* Suggestion pills */}
                   <div className="flex flex-wrap justify-center gap-2 max-w-md">
-                    {( agentMode ? AGENT_SUGGESTED_QUESTIONS : SUGGESTED_QUESTIONS ).map( ( q ) => (
+                    {SUGGESTED_QUESTIONS.map( ( q ) => (
                       <button
                         key={q}
-                        onClick={() => agentMode ? sendAgentMessage( q ) : sendMessage( q )}
+                        onClick={() => sendMessage( q )}
                         className="text-xs bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-full px-4 py-2 text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-all"
                       >
                         {q}
@@ -463,8 +541,8 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
                             animate={{ opacity: 1, y: 0 }}
                             className="flex items-start gap-3"
                           >
-                            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-warning)]/10 mt-0.5">
-                              <Zap className="h-4 w-4 text-[var(--color-warning)]" />
+                            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-accent)]/10 mt-0.5">
+                              <BrainCircuit className="h-4 w-4 text-[var(--color-accent)]" />
                             </div>
                             <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-2xl rounded-tl-sm px-4 py-3 min-w-[200px]">
                               {steps.length === 0 ? (
@@ -564,8 +642,6 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
                 onSubmit={handleSubmit}
                 disabled={isSending}
                 isSending={isSending}
-                agentMode={agentMode}
-                onModeChange={( agent ) => { setAgentMode( agent ); setMessages( [] ); setAgentHistory( [] ); }}
                 selectedModel={selectedModel}
                 onModelChange={( m ) => {
                   setSelectedModel( m );
@@ -576,69 +652,154 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
           </div>
         </div>
 
-        {/* ── Insights panel (collapsible slide-in) ─────────────────────── */}
+        {/* ── Sessions panel overlay ────────────────────────────────────── */}
         <AnimatePresence>
-          {showInsights && (
-            <motion.div
-              initial={{ x: "100%", opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: "100%", opacity: 0 }}
-              transition={{ duration: 0.2, ease: "easeInOut" }}
-              className="fixed inset-0 z-50 bg-[var(--color-bg-primary)] lg:relative lg:inset-auto lg:z-auto lg:w-72 lg:flex-shrink-0 lg:border-l lg:border-[var(--color-border)] lg:bg-transparent"
-            >
+          {showSessions && (
+            <>
+              {/* Backdrop */}
+              <div
+                className="absolute inset-0 z-40"
+                onClick={() => setShowSessions( false )}
+              />
+              <motion.div
+                initial={{ x: "100%", opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: "100%", opacity: 0 }}
+                transition={{ duration: 0.2, ease: "easeInOut" }}
+                className="absolute top-0 right-0 bottom-0 z-50 w-72 border-l border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-xl flex flex-col"
+              >
               <div className="h-full flex flex-col p-4">
                 <div className="flex items-center gap-2 mb-3 shrink-0">
-                  <Sparkles className="h-4 w-4 text-[var(--color-accent)]" />
-                  <h2 className="text-sm font-semibold">Past Insights</h2>
-                  {unreadCount > 0 && (
-                    <span className="ml-auto text-[0.65rem] font-medium bg-[var(--color-accent)] text-white rounded-full px-1.5 py-0.5">
-                      {unreadCount} new
-                    </span>
-                  )}
+                  <History className="h-4 w-4 text-[var(--color-accent)]" />
+                  <h2 className="text-sm font-semibold">Past Sessions</h2>
                   <button
-                    onClick={() => setShowInsights( false )}
-                    className="lg:hidden ml-auto flex h-7 w-7 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
-                    aria-label="Close insights"
+                    onClick={() => setShowSessions( false )}
+                    className="ml-auto flex h-7 w-7 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                    aria-label="Close sessions"
                   >
                     <X className="h-4 w-4" />
                   </button>
                 </div>
                 <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-                  {insightsLoading ? (
+                  {sessionsLoading ? (
                     <div className="flex justify-center py-10">
                       <Loader2 className="h-5 w-5 animate-spin text-[var(--color-accent)]" />
                     </div>
-                  ) : insights.length === 0 ? (
+                  ) : sessions.length === 0 ? (
                     <div className="py-10 text-center text-sm text-[var(--color-text-muted)]">
-                      No insights yet. Ask a question!
+                      No past sessions yet.
                     </div>
                   ) : (
-                    insights.map( ( insight ) => (
+                    sessions.map( ( session ) => (
                       <button
-                        key={insight.id}
-                        onClick={() => markAsRead( insight.id )}
-                        className={cn(
-                          "w-full text-left rounded-xl border p-3 transition-colors hover:bg-[var(--color-bg-tertiary)] bg-[var(--color-bg-secondary)]",
-                          !insight.is_read
-                            ? "border-l-4 border-l-[var(--color-accent)] border-[var(--color-border)]"
-                            : "border-[var(--color-border)]"
-                        )}
+                        key={session.session_id}
+                        onClick={() => loadSession( session )}
+                        className="w-full text-left rounded-xl border border-[var(--color-border)] p-3 transition-colors hover:bg-[var(--color-bg-tertiary)] bg-[var(--color-bg-secondary)]"
                       >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <InsightBadge type={insight.type} />
+                        <p className="text-xs font-medium text-[var(--color-text-primary)] line-clamp-2 mb-1.5">
+                          {session.first_message.slice( 0, 60 )}{session.first_message.length > 60 ? "…" : ""}
+                        </p>
+                        <div className="flex items-center justify-between">
                           <span className="text-[0.65rem] text-[var(--color-text-muted)]">
-                            {new Date( insight.created_at ).toLocaleDateString( "en-US", { month: "short", day: "numeric" } )}
+                            {relativeTime( session.last_message_at )}
+                          </span>
+                          <span className="text-[0.65rem] font-medium bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] rounded-full px-2 py-0.5">
+                            {session.message_count} {session.message_count === 1 ? "msg" : "msgs"}
                           </span>
                         </div>
-                        <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed line-clamp-4">
-                          {insight.content}
-                        </p>
                       </button>
                     ) )
                   )}
                 </div>
               </div>
-            </motion.div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+
+        {/* ── Insights / Alerts panel overlay ──────────────────────────── */}
+        <AnimatePresence>
+          {showInsights && (
+            <>
+              <div
+                className="absolute inset-0 z-40"
+                onClick={() => setShowInsights(false)}
+              />
+              <motion.div
+                initial={{ x: '100%', opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: '100%', opacity: 0 }}
+                transition={{ duration: 0.2, ease: 'easeInOut' }}
+                className="absolute top-0 right-0 bottom-0 z-50 w-80 border-l border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-xl flex flex-col"
+              >
+                <div className="flex flex-col h-full p-4">
+                  {/* Header */}
+                  <div className="flex items-center gap-2 mb-3 shrink-0">
+                    <Bell className="h-4 w-4 text-[var(--color-accent)]" />
+                    <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                      Alerts & Insights
+                    </h2>
+                    {unreadCount > 0 && (
+                      <span className="ml-1 px-1.5 py-0.5 rounded-full bg-red-500 text-[9px] font-bold text-white">
+                        {unreadCount}
+                      </span>
+                    )}
+                    <div className="ml-auto flex items-center gap-1">
+                      {unreadCount > 0 && (
+                        <button
+                          onClick={markAllAsRead}
+                          className="text-[0.65rem] text-[var(--color-accent)] hover:underline"
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setShowInsights(false)}
+                        className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Body */}
+                  <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-0">
+                    {insightsLoading ? (
+                      <div className="flex justify-center py-10">
+                        <Loader2 className="h-5 w-5 animate-spin text-[var(--color-accent)]" />
+                      </div>
+                    ) : insights.length === 0 ? (
+                      <div className="py-10 text-center text-sm text-[var(--color-text-muted)]">
+                        No insights yet.
+                      </div>
+                    ) : (
+                      insights.map((insight) => (
+                        <div
+                          key={insight.id}
+                          onClick={() => !insight.is_read && markAsRead(insight.id)}
+                          className={cn(
+                            'rounded-xl border p-3 cursor-pointer transition-colors',
+                            insight.is_read
+                              ? 'border-[var(--color-border)] opacity-60'
+                              : 'border-[var(--color-accent)]/30 bg-[var(--color-accent)]/5'
+                          )}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <InsightBadge type={insight.type} />
+                            <span className="text-[0.6rem] text-[var(--color-text-muted)]">
+                              {new Date(insight.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <p className="text-xs text-[var(--color-text-secondary)] line-clamp-3">
+                            {insight.content}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            </>
           )}
         </AnimatePresence>
       </div>

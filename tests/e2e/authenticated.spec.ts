@@ -63,12 +63,6 @@ test.describe("Authenticated — smoke tests", () => {
     await expect(page.getByRole("heading", { name: "Categories" })).toBeVisible({ timeout: 10000 });
   });
 
-  test("analytics page loads", async ({ page }) => {
-    await login(page);
-    await page.goto("/analytics");
-    await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible({ timeout: 10000 });
-  });
-
   test("settings page loads with all cards", async ({ page }) => {
     await login(page);
     await page.goto("/settings");

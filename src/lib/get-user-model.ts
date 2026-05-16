@@ -1,7 +1,8 @@
 // Shared helper — fetches the user's preferred AI model, falling back to the
-// default Haiku model if no preference is set.
+// app_settings default, then the hardcoded default Haiku model if neither is set.
 
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { getAppSetting } from '@/lib/get-app-setting'
 
 type SupabaseClient = Awaited<ReturnType<typeof createServerSupabaseClient>>
 
@@ -27,7 +28,10 @@ export async function getUserModel(
     .eq('is_active', true)
     .maybeSingle()
 
-  const model = data?.content ?? DEFAULT_AI_MODEL
-  // Guard against invalid values stored in DB
-  return AI_MODELS.some((m) => m.value === model) ? model : DEFAULT_AI_MODEL
+  if (data?.content && AI_MODELS.some((m) => m.value === data.content)) {
+    return data.content
+  }
+
+  // No user override — fall back to the admin-configured default from app_settings
+  return getAppSetting(supabase, 'ai_model_chat_default', DEFAULT_AI_MODEL)
 }
