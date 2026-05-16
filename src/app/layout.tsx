@@ -27,9 +27,10 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/app-icon.png", type: "image/png" },
+      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
     ],
-    apple: "/apple-icon.png",
+    apple: "/icon-192.png",
   },
   other: {
     "mobile-web-app-capable": "yes",
