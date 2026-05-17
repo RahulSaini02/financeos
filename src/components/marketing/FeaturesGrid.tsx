@@ -8,7 +8,6 @@ import {
   Target,
   Calculator,
 } from "lucide-react";
-import { motion } from "motion/react";
 
 const features = [
   {
@@ -61,15 +60,11 @@ export default function FeaturesGrid() {
 
       {/* Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {features.map((feature, index) => {
+        {features.map((feature) => {
           const Icon = feature.icon;
           return (
-            <motion.div
+            <div
               key={feature.title}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: index * 0.08 }}
               className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-2xl p-6 hover:border-[var(--color-accent)]/40 transition-colors"
             >
               <div className="rounded-xl bg-[var(--color-accent)]/10 p-2.5 w-fit mb-4">
@@ -81,7 +76,7 @@ export default function FeaturesGrid() {
               <p className="text-sm text-[var(--color-text-muted)] mt-1">
                 {feature.description}
               </p>
-            </motion.div>
+            </div>
           );
         })}
       </div>

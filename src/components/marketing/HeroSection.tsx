@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { motion } from "motion/react";
 
 export default function HeroSection() {
   return (
@@ -25,47 +24,39 @@ export default function HeroSection() {
       {/* Content */}
       <div className="relative z-10 max-w-3xl mx-auto px-4 sm:px-6 text-center">
         {/* Badge */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: "easeOut", delay: 0 }}
-          className="inline-flex items-center gap-1.5 border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] text-xs px-3 py-1 rounded-full mb-6"
+        <div
+          className="inline-flex items-center gap-1.5 border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-muted)] text-xs px-3 py-1 rounded-full mb-6 hero-fade-in"
+          style={{ animationDelay: "0ms" }}
         >
           <span>✦</span>
           <span>Powered by Claude AI</span>
-        </motion.div>
+        </div>
 
         {/* Headline */}
-        <motion.h1
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 }}
-          className="text-5xl sm:text-6xl font-bold leading-tight text-[var(--color-text-primary)]"
+        <h1
+          className="text-5xl sm:text-6xl font-bold leading-tight text-[var(--color-text-primary)] hero-fade-in"
+          style={{ animationDelay: "100ms" }}
         >
           Your finances,{" "}
           <br className="hidden sm:block" />
           <span className="bg-gradient-to-r from-[var(--color-accent)] to-[var(--color-warning)] bg-clip-text text-transparent">
             finally intelligent
           </span>
-        </motion.h1>
+        </h1>
 
         {/* Sub-copy */}
-        <motion.p
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: "easeOut", delay: 0.2 }}
-          className="text-lg text-[var(--color-text-secondary)] max-w-xl mx-auto mt-4"
+        <p
+          className="text-lg text-[var(--color-text-secondary)] max-w-xl mx-auto mt-4 hero-fade-in"
+          style={{ animationDelay: "200ms" }}
         >
           Connect all your accounts, track every dollar, and let an AI agent
           handle the rest — budgets, subscriptions, savings goals, and beyond.
-        </motion.p>
+        </p>
 
         {/* CTA row */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: "easeOut", delay: 0.3 }}
-          className="mt-8 flex gap-3 justify-center flex-wrap"
+        <div
+          className="mt-8 flex gap-3 justify-center flex-wrap hero-fade-in"
+          style={{ animationDelay: "300ms" }}
         >
           <Link
             href="/login?signup=true"
@@ -79,7 +70,7 @@ export default function HeroSection() {
           >
             Sign In
           </Link>
-        </motion.div>
+        </div>
       </div>
     </section>
   );

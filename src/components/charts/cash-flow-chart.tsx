@@ -69,10 +69,10 @@ export function CashFlowChart({ data }: CashFlowChartProps) {
             <button
               key={p.value}
               onClick={() => setPeriod(p.value)}
-              className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+              className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
                 period === p.value
                   ? "bg-[var(--color-accent)] text-white"
-                  : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+                  : "text-[var(--color-text-primary)] hover:text-[var(--color-text-primary)] opacity-60 hover:opacity-100"
               }`}
             >
               {p.label}

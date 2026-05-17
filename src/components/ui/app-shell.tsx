@@ -27,7 +27,11 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { FloatingAiChat } from "@/components/ui/floating-ai-chat";
+import dynamic from "next/dynamic";
+const FloatingAiChat = dynamic(
+  () => import("@/components/ui/floating-ai-chat").then((m) => m.FloatingAiChat),
+  { ssr: false }
+);
 import { KeyboardShortcuts } from "@/components/ui/keyboard-shortcuts";
 import { useAuth } from "@/components/auth-provider";
 
@@ -209,7 +213,7 @@ export function AppShell({ children }: AppShellProps) {
               : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
           )}
         >
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--color-accent)]/80 text-xs font-medium text-white shrink-0">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-700 text-xs font-medium text-white shrink-0">
             {initials}
           </div>
           <span className="flex-1 truncate text-left font-medium">{displayName}</span>
@@ -254,6 +258,7 @@ export function AppShell({ children }: AppShellProps) {
               key={item.href}
               href={item.href}
               title={sidebarCollapsed ? item.label : undefined}
+              aria-label={sidebarCollapsed ? item.label : undefined}
               className={cn(
                 "flex items-center rounded-lg px-2 py-2 text-sm font-medium transition-colors",
                 sidebarCollapsed ? "justify-center" : "gap-3 px-3",
@@ -276,6 +281,7 @@ export function AppShell({ children }: AppShellProps) {
         <Link
           href="/settings"
           title={sidebarCollapsed ? displayName : undefined}
+          aria-label={sidebarCollapsed ? `${displayName} — Settings` : undefined}
           className={cn(
             "flex w-full items-center rounded-lg px-2 py-2 text-sm transition-colors",
             sidebarCollapsed ? "justify-center" : "gap-3 px-3",
@@ -284,7 +290,7 @@ export function AppShell({ children }: AppShellProps) {
               : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
           )}
         >
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--color-accent)]/80 text-xs font-medium text-white">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-700 text-xs font-medium text-white">
             {initials}
           </div>
           {!sidebarCollapsed && (
@@ -342,7 +348,7 @@ export function AppShell({ children }: AppShellProps) {
             <Menu className="h-5 w-5" />
           </button>
           <span className="text-base font-semibold tracking-tight">FinanceOS</span>
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--color-accent)] text-xs font-medium text-white">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-700 text-xs font-medium text-white">
             {initials}
           </div>
         </header>
@@ -366,7 +372,7 @@ export function AppShell({ children }: AppShellProps) {
                   "flex flex-col items-center gap-0.5 rounded-lg px-3 py-2 min-w-0 flex-1 transition-colors",
                   isActive
                     ? "text-[var(--color-accent)]"
-                    : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+                    : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
                 )}
               >
                 <item.icon className="h-5 w-5 shrink-0" />

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 import { Card, CardHeader, CardTitle, CardValue, CardChange } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,13 +15,10 @@ import {
 import Link from "next/link";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
-import { NetWorthChart } from "@/components/charts/net-worth-chart";
-import { CategoryPieChart } from "@/components/charts/category-pie-chart";
-import { MonthComparisonChart } from "@/components/charts/month-comparison-chart";
+import { DashboardCharts } from "./DashboardCharts";
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
-import { DashboardInsightCard } from "@/components/dashboard/DashboardInsightCard";
-import Anthropic from "@anthropic-ai/sdk";
+import { DashboardInsightLoader } from "./DashboardInsightLoader";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -111,24 +109,19 @@ async function getDashboardData ( userId: string ) {
   sevenDaysFromNow.setDate( sevenDaysFromNow.getDate() + 7 );
   const sevenDaysStr = sevenDaysFromNow.toISOString().split( 'T' )[0];
 
-  const prevMonthDate = new Date( now.getFullYear(), now.getMonth() - 1, 1 );
-  const prevMonthFirstDay = `${ prevMonthDate.getFullYear() }-${ pad( prevMonthDate.getMonth() + 1 ) }-01`;
-  const prevMonthLastDay = new Date( now.getFullYear(), now.getMonth(), 0 ).toISOString().split( 'T' )[0];
   const twelveMonthsAgoDate = new Date( now.getFullYear(), now.getMonth() - 11, 1 );
   const twelveMonthsAgoStr = `${ twelveMonthsAgoDate.getFullYear() }-${ pad( twelveMonthsAgoDate.getMonth() + 1 ) }-01`;
 
   const [
     accountsRes, transactionsRes, flaggedRes, networthRes,
-    insightRes, billsRes, prevTransactionsRes, twelveMonthTxnsRes, recentTxnsRes,
+    billsRes, twelveMonthTxnsRes, recentTxnsRes,
     budgetsRes, flaggedTxnsRes,
   ] = await Promise.all( [
     supabase.from( 'accounts' ).select( '*' ).eq( 'user_id', userId ).eq( 'is_active', true ),
     supabase.from( 'transactions' ).select( '*, category:categories(name, id)' ).eq( 'user_id', userId ).gte( 'date', firstDay ).lte( 'date', lastDay ),
     supabase.from( 'transactions' ).select( '*', { count: 'exact', head: true } ).eq( 'user_id', userId ).eq( 'flagged', true ),
     supabase.from( 'networth_snapshots' ).select( '*' ).eq( 'user_id', userId ).order( 'month', { ascending: false } ).limit( 12 ),
-    supabase.from( 'ai_insights' ).select( '*' ).eq( 'user_id', userId ).eq( 'type', 'daily' ).gte( 'created_at', todayStr ).order( 'created_at', { ascending: false } ).limit( 1 ),
     supabase.from( 'subscriptions' ).select( 'name, next_billing_date, billing_cost' ).eq( 'user_id', userId ).eq( 'status', 'active' ).not( 'next_billing_date', 'is', null ).gte( 'next_billing_date', todayStr ).lte( 'next_billing_date', sevenDaysStr ).order( 'next_billing_date', { ascending: true } ),
-    supabase.from( 'transactions' ).select( 'amount_usd, cr_dr, is_internal_transfer' ).eq( 'user_id', userId ).gte( 'date', prevMonthFirstDay ).lte( 'date', prevMonthLastDay ),
     supabase.from( 'transactions' ).select( 'amount_usd, cr_dr, date' ).eq( 'user_id', userId ).eq( 'is_internal_transfer', false ).gte( 'date', twelveMonthsAgoStr ).lte( 'date', lastDay ),
     supabase.from( 'transactions' ).select( 'id, description, final_amount, date, flagged, categories(name), accounts(name)' ).eq( 'user_id', userId ).order( 'date', { ascending: false } ).limit( 5 ),
     supabase.from( 'budgets' ).select( '*, category:categories(id, name)' ).eq( 'user_id', userId ).eq( 'month', firstDay ),
@@ -139,7 +132,6 @@ async function getDashboardData ( userId: string ) {
   const transactions = transactionsRes.data ?? [];
   const flagged_count = flaggedRes.count ?? 0;
   const snapshots = networthRes.data ?? [];
-  let latest_insight = insightRes.data?.[0] ?? null;
   const bills = billsRes.data ?? [];
 
   const total_assets = accounts.filter( ( a ) => a.kind === 'asset' || a.kind === 'investment' ).reduce( ( s, a ) => s + ( a.current_balance ?? 0 ), 0 );
@@ -182,44 +174,6 @@ async function getDashboardData ( userId: string ) {
     const label = d.toLocaleDateString( 'en-US', { month: 'short', year: '2-digit' } );
     return { month: key, label, income: Math.round( ( monthMap[key]?.income ?? 0 ) * 100 ) / 100, expenses: Math.round( ( monthMap[key]?.expenses ?? 0 ) * 100 ) / 100 };
   } );
-
-  // AI daily insight — generate once per day
-  const hasInsightToday = latest_insight && latest_insight.created_at.startsWith( todayStr );
-  if ( !hasInsightToday && process.env.ANTHROPIC_API_KEY ) {
-    try {
-      const anthropic = new Anthropic( { apiKey: process.env.ANTHROPIC_API_KEY } );
-      const savingsRate = monthly_income > 0 ? ( ( monthly_income - monthly_expenses ) / monthly_income * 100 ).toFixed( 1 ) : '0';
-      const msg = await anthropic.messages.create( {
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 150,
-        messages: [{ role: 'user', content: `You are a personal finance assistant. Generate a single concise daily financial insight (2-3 sentences max) based on this data:\n- Net worth: $${ net_worth.toFixed( 2 ) }\n- This month income: $${ monthly_income.toFixed( 2 ) }, expenses: $${ monthly_expenses.toFixed( 2 ) }, savings rate: ${ savingsRate }%\n- Flagged transactions: ${ flagged_count }\n- Upcoming bills in 7 days: ${ bills.length }\nBe specific, actionable, and encouraging. Do not use markdown. Do not start with "Based on" or "Your data shows".` }],
-      } );
-      const insightText = msg.content[0].type === 'text' ? msg.content[0].text : null;
-      if ( insightText ) {
-        const { data: newInsight } = await supabase.from( 'ai_insights' ).insert( { user_id: userId, type: 'daily', content: insightText, month: firstDay, is_read: false } ).select().single();
-        if ( newInsight ) latest_insight = newInsight;
-      }
-    } catch { /* non-fatal */ }
-  }
-
-  // Monthly summary — once per month
-  if ( process.env.ANTHROPIC_API_KEY ) {
-    try {
-      const { data: existing } = await supabase.from( 'ai_insights' ).select( 'id' ).eq( 'user_id', userId ).eq( 'type', 'monthly' ).eq( 'month', firstDay ).limit( 1 );
-      if ( !existing || existing.length === 0 ) {
-        const prevTransactions = prevTransactionsRes.data ?? [];
-        if ( prevTransactions.length > 0 ) {
-          const prevIncome = prevTransactions.filter( ( t ) => t.cr_dr === 'credit' && !t.is_internal_transfer ).reduce( ( s, t ) => s + Math.abs( t.amount_usd ?? 0 ), 0 );
-          const prevExpenses = prevTransactions.filter( ( t ) => t.cr_dr === 'debit' && !t.is_internal_transfer ).reduce( ( s, t ) => s + Math.abs( t.amount_usd ?? 0 ), 0 );
-          const prevSavingsRate = prevIncome > 0 ? ( ( prevIncome - prevExpenses ) / prevIncome * 100 ).toFixed( 1 ) : '0';
-          const anthropic = new Anthropic( { apiKey: process.env.ANTHROPIC_API_KEY } );
-          const summaryMsg = await anthropic.messages.create( { model: 'claude-haiku-4-5-20251001', max_tokens: 200, messages: [{ role: 'user', content: `Generate a concise monthly financial summary for ${ prevMonthDate.toLocaleDateString( 'en-US', { month: 'long', year: 'numeric' } ) }. Data:\n- Income: $${ prevIncome.toFixed( 2 ) }, Expenses: $${ prevExpenses.toFixed( 2 ) }, Savings rate: ${ prevSavingsRate }%\nWrite 3-4 sentences covering performance and one actionable suggestion. No markdown.` }] } );
-          const summaryText = summaryMsg.content[0].type === 'text' ? summaryMsg.content[0].text : null;
-          if ( summaryText ) await supabase.from( 'ai_insights' ).insert( { user_id: userId, type: 'monthly', content: summaryText, month: firstDay, is_read: false } );
-        }
-      }
-    } catch { /* non-fatal */ }
-  }
 
   // Upsert net worth snapshot
   await supabase.from( 'networth_snapshots' ).upsert( { user_id: userId, month: lastDay, assets_total: total_assets, liabilities_total: total_liabilities, net_worth }, { onConflict: 'user_id,month' } );
@@ -314,7 +268,6 @@ async function getDashboardData ( userId: string ) {
     monthly_income, monthly_expenses, savings_rate,
     flagged_count, upcoming_bills,
     networth_trend: [...snapshots].reverse(),
-    latest_insight,
     categoryBreakdown, monthlyData,
     recentTransactions,
     alerts,
@@ -405,32 +358,25 @@ export default async function DashboardPage () {
         />
       </div>
 
-      {/* AI Insight Card */}
-      {data.latest_insight && (
-        <DashboardInsightCard
-          insightId={data.latest_insight.id}
-          content={data.latest_insight.content}
-          isRead={data.latest_insight.is_read ?? false}
+      {/* AI Insight Card — streams in without blocking page render */}
+      <Suspense fallback={null}>
+        <DashboardInsightLoader
+          userId={user.id}
+          netWorth={data.net_worth}
+          monthlyIncome={data.monthly_income}
+          monthlyExpenses={data.monthly_expenses}
+          flaggedCount={data.flagged_count}
+          billsCount={data.upcoming_bills.length}
         />
-      )}
+      </Suspense>
 
 
-      {/* Charts row — Category pie + Month comparison + Net Worth Trend */}
-      <div className="grid gap-4 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        <CategoryPieChart
-          data={( data.categoryBreakdown ?? [] ).map( ( d ) => ( {
-            name: d.name,
-            value: d.amount,
-            color: d.color,
-          } ) )}
-        />
-        <MonthComparisonChart monthlyData={data.monthlyData ?? []} />
-        {data.networth_trend.length > 0 ? (
-          <NetWorthChart points={data.networth_trend} />
-        ) : (
-          <div />
-        )}
-      </div>
+      {/* Charts row — lazy-loaded to defer recharts from critical bundle */}
+      <DashboardCharts
+        categoryBreakdown={data.categoryBreakdown ?? []}
+        monthlyData={data.monthlyData ?? []}
+        networthTrend={data.networth_trend}
+      />
 
       {/* Two-column layout */}
       <div className="grid gap-4 sm:gap-6 lg:grid-cols-3">
@@ -506,8 +452,8 @@ export default async function DashboardPage () {
           <Card>
             <CardHeader>
               <CardTitle>Upcoming Bills</CardTitle>
-              <Link href="/subscriptions">
-                <Button variant="ghost" size="sm">
+              <Link href="/subscriptions" aria-label="View all subscriptions">
+                <Button variant="ghost" size="sm" aria-label="View all subscriptions">
                   <ChevronRight className="h-3.5 w-3.5" />
                 </Button>
               </Link>

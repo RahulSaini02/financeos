@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
 import Image from "next/image";
 
 const screens = [
@@ -56,41 +55,44 @@ export default function DemoPreview() {
 
         {/* Content area */}
         <div className="aspect-[16/9] relative overflow-hidden bg-[var(--color-bg-primary)]">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeScreen}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.6 }}
-              className="absolute inset-0"
+          {screens.map((screen, index) => (
+            <div
+              key={screen.src}
+              className="absolute inset-0 transition-opacity duration-600"
+              style={{ opacity: activeScreen === index ? 1 : 0 }}
             >
               <Image
-                src={screens[activeScreen].src}
-                alt={screens[activeScreen].label}
+                src={screen.src}
+                alt={screen.label}
                 fill
                 className="object-cover object-top"
-                priority={activeScreen === 0}
+                priority={index === 0}
+                quality={75}
+                loading={index === 0 ? "eager" : "lazy"}
                 sizes="(max-width: 1024px) 100vw, 900px"
               />
-            </motion.div>
-          </AnimatePresence>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Dot indicators */}
+      {/* Dot indicators — min 44×44px touch target */}
       <div className="flex justify-center gap-2 mt-4">
-        {screens.map((_, index) => (
+        {screens.map((screen, index) => (
           <button
             key={index}
             onClick={() => setActiveScreen(index)}
-            aria-label={`Go to screen ${index + 1}`}
-            className={`h-2 rounded-full transition-all duration-300 ${
-              activeScreen === index
-                ? "w-6 bg-[var(--color-accent)]"
-                : "w-2 bg-[var(--color-border)]"
-            }`}
-          />
+            aria-label={`Go to ${screen.label} screen`}
+            className="flex items-center justify-center min-w-[44px] min-h-[44px] p-3"
+          >
+            <span
+              className={`block h-2 rounded-full transition-all duration-300 ${
+                activeScreen === index
+                  ? "w-6 bg-[var(--color-accent)]"
+                  : "w-2 bg-[var(--color-border)]"
+              }`}
+            />
+          </button>
         ))}
       </div>
     </section>

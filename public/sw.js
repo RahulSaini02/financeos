@@ -177,6 +177,11 @@ function storeGetAll(store) {
   });
 }
 
+// ── Message (skip waiting for manual update flow) ─────────────────────────────
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
 // ── Push notifications (placeholder) ─────────────────────────────────────────
 self.addEventListener('push', (event) => {
   if (!event.data) return;

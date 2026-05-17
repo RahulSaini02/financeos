@@ -31,12 +31,12 @@ export function CardHeader({ children, className, ...props }: CardProps) {
 
 export function CardTitle({ children, className, ...props }: CardProps) {
   return (
-    <h3
+    <h2
       className={cn("text-sm font-medium text-[var(--color-text-secondary)]", className)}
       {...props}
     >
       {children}
-    </h3>
+    </h2>
   );
 }
 

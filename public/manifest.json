@@ -24,7 +24,29 @@
       "purpose": "any maskable"
     }
   ],
-  "screenshots": [],
+  "screenshots": [
+    {
+      "src": "/demo-dashboard.png",
+      "sizes": "2560x1600",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Dashboard overview"
+    },
+    {
+      "src": "/demo-budgets.png",
+      "sizes": "3314x1978",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Budget tracking"
+    },
+    {
+      "src": "/demo-ai-chat.png",
+      "sizes": "3322x1972",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "AI financial assistant"
+    }
+  ],
   "shortcuts": [
     {
       "name": "Add Transaction",
