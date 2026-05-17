@@ -82,7 +82,7 @@ export function FloatingAiChat() {
               </button>
 
               {/* The full AI chat client — same component as /ai-chat page */}
-              <AiChatClient initialInsights={[]} />
+              <AiChatClient initialInsights={[]} onClose={() => setOpen(false)} />
             </motion.div>
           </>
         )}

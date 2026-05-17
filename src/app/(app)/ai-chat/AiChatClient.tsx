@@ -109,7 +109,7 @@ const SUGGESTED_QUESTIONS = [
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-export default function AiChatClient ( { initialInsights }: { initialInsights: AiInsight[] } ) {
+export default function AiChatClient ( { initialInsights, onClose }: { initialInsights: AiInsight[]; onClose?: () => void } ) {
   const { user } = useAuth();
   const router = useRouter();
   const supabase = createClient();
@@ -411,19 +411,9 @@ export default function AiChatClient ( { initialInsights }: { initialInsights: A
       <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-[var(--color-border)]">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => {
-              const ref = document.referrer;
-              const isInApp = ref && new URL(ref).origin === window.location.origin;
-              const AUTH_PATHS = ['/', '/login', '/signup'];
-              const isAuthOrLanding = ref && AUTH_PATHS.includes(new URL(ref).pathname);
-              if (isInApp && !isAuthOrLanding) {
-                router.back();
-              } else {
-                router.push('/dashboard');
-              }
-            }}
+            onClick={() => onClose ? onClose() : router.push('/dashboard')}
             className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors lg:hidden"
-            aria-label="Go back"
+            aria-label="Close chat"
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
