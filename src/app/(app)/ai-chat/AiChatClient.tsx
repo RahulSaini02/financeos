@@ -405,7 +405,12 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
   const unreadCount = insights.filter( ( i ) => !i.is_read ).length;
 
   return (
-    <div className="fixed inset-0 z-30 flex flex-col overflow-hidden bg-[var(--color-bg-primary)] lg:relative lg:inset-auto lg:z-auto lg:h-full">
+    <div className={cn(
+      "flex flex-col overflow-hidden bg-[var(--color-bg-primary)]",
+      onClose
+        ? "h-full"
+        : "fixed inset-0 z-30 lg:relative lg:inset-auto lg:z-auto lg:h-full"
+    )}>
 
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
       <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-[var(--color-border)]">
@@ -420,9 +425,9 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--color-accent)]/10">
             <BrainCircuit className="h-4 w-4 text-[var(--color-accent)]" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h1 className="text-sm font-semibold text-[var(--color-text-primary)] leading-tight">AI Finance Assistant</h1>
-            <p className="text-[0.65rem] text-[var(--color-text-muted)] leading-tight mt-0.5">
+            <p className="text-[0.65rem] text-[var(--color-text-muted)] leading-tight mt-0.5 truncate">
               Ask anything • I&apos;ll use tools when needed
             </p>
           </div>
@@ -487,19 +492,19 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
           <div className="flex-1 overflow-y-auto">
             <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6">
               {messages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center text-center py-20 gap-6">
+                <div className="flex flex-col items-center justify-center text-center py-8 sm:py-16 gap-6">
                   {/* Icon with glow */}
                   <div
-                    className="flex h-20 w-20 items-center justify-center rounded-2xl bg-[var(--color-accent)]/10"
+                    className="flex h-14 w-14 sm:h-20 sm:w-20 items-center justify-center rounded-2xl bg-[var(--color-accent)]/10"
                     style={{
                       boxShadow: "0 0 48px color-mix(in srgb, var(--color-accent) 18%, transparent)",
                     }}
                   >
-                    <BrainCircuit className="h-10 w-10 text-[var(--color-accent)]" />
+                    <BrainCircuit className="h-7 w-7 sm:h-10 sm:w-10 text-[var(--color-accent)]" />
                   </div>
                   <div className="space-y-2">
-                    <p className="text-xl font-semibold">Ask me anything</p>
-                    <p className="text-sm text-[var(--color-text-muted)] max-w-sm mx-auto">
+                    <p className="text-base sm:text-xl font-semibold">Ask me anything</p>
+                    <p className="text-xs sm:text-sm text-[var(--color-text-muted)] mx-auto">
                       I can answer questions about your finances and use tools to fetch real data, check budgets, analyze trends, and more.
                     </p>
                   </div>

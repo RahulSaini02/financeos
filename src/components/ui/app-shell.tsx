@@ -172,7 +172,10 @@ export function AppShell({ children }: AppShellProps) {
 
   // Mobile sidebar — always fully expanded
   const mobileSidebar = (
-    <aside className="flex w-64 flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-secondary)] h-full">
+    <aside
+      className="flex w-64 flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-secondary)] h-full"
+      style={{ paddingTop: "env(safe-area-inset-top)", paddingLeft: "env(safe-area-inset-left)" }}
+    >
       <div className="flex h-14 items-center justify-between border-b border-[var(--color-border)] px-4">
         <span className="text-lg font-semibold tracking-tight">FinanceOS</span>
         <button
@@ -339,7 +342,11 @@ export function AppShell({ children }: AppShellProps) {
       {/* ── Right side: top bar + content ────────── */}
       <div className="flex flex-1 flex-col min-h-0 min-w-0">
         {/* Mobile top bar */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 lg:hidden">
+        <header
+          className="shrink-0 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] lg:hidden"
+          style={{ paddingTop: "env(safe-area-inset-top)" }}
+        >
+        <div className="flex h-14 items-center justify-between px-4">
           <button
             onClick={() => setSidebarOpen(true)}
             className="p-1.5 -ml-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
@@ -351,16 +358,23 @@ export function AppShell({ children }: AppShellProps) {
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-700 text-xs font-medium text-white">
             {initials}
           </div>
+        </div>
         </header>
 
         {/* Main content */}
-        <main className="flex-1 overflow-y-auto pb-16 lg:pb-0">
+        <main
+          className="flex-1 overflow-y-auto lg:pb-0"
+          style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 4rem)" }}
+        >
           {children}
         </main>
       </div>
 
       {/* ── Mobile bottom navigation ──────────────── */}
-      <nav className="fixed bottom-0 inset-x-0 z-30 border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)] lg:hidden">
+      <nav
+        className="fixed bottom-0 inset-x-0 z-30 border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)] lg:hidden"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
         <div className="flex items-center justify-around h-16 px-2">
           {bottomNavItems.map((item) => {
             const isActive = pathname === item.href || pathname?.startsWith(item.href + "/");

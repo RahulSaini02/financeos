@@ -37,7 +37,8 @@ export function FloatingAiChat() {
       {/* Floating trigger button */}
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-20 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-accent)] text-white shadow-lg hover:opacity-90 active:scale-95 transition-all lg:bottom-6 lg:right-6"
+        className="fixed right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-accent)] text-white shadow-lg hover:opacity-90 active:scale-95 transition-all lg:bottom-6 lg:right-6"
+        style={{ bottom: "calc(env(safe-area-inset-bottom) + 5rem)" }}
         aria-label="Open AI Chat"
       >
         <BotMessageSquare className="h-6 w-6" />
@@ -62,10 +63,10 @@ export function FloatingAiChat() {
             {/* Panel — slides up from bottom on mobile, slides in from right on desktop */}
             <motion.div
               key="panel"
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 24 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
               className="fixed z-50 bg-[var(--color-bg-primary)] border border-[var(--color-border)] shadow-2xl overflow-hidden flex flex-col
                 inset-x-0 bottom-0 top-[5vh] rounded-t-2xl
                 sm:inset-auto sm:bottom-6 sm:right-6 sm:top-6 sm:left-auto sm:w-[520px] sm:rounded-2xl

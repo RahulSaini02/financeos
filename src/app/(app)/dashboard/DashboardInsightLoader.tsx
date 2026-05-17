@@ -20,15 +20,13 @@ export async function DashboardInsightLoader( {
   const pad = ( n: number ) => String( n ).padStart( 2, '0' );
   const firstDay = `${ now.getFullYear() }-${ pad( now.getMonth() + 1 ) }-01`;
 
-  // Fetch existing insight for today
+  // Fetch existing insight for today (keyed by today's date in `month` column)
   const { data: existing } = await supabase
     .from( 'ai_insights' )
     .select( '*' )
     .eq( 'user_id', userId )
     .eq( 'type', 'daily' )
-    .gte( 'created_at', todayStr )
-    .order( 'created_at', { ascending: false } )
-    .limit( 1 )
+    .eq( 'month', todayStr )
     .single();
 
   if ( existing ) {
@@ -46,7 +44,7 @@ export async function DashboardInsightLoader( {
   if ( !process.env.ANTHROPIC_API_KEY ) return null;
 
   const newInsight = await generateDailyInsight( {
-    supabase, userId, firstDay, netWorth, monthlyIncome, monthlyExpenses, flaggedCount, billsCount,
+    supabase, userId, todayStr, firstDay, netWorth, monthlyIncome, monthlyExpenses, flaggedCount, billsCount,
   } );
 
   if ( !newInsight ) return null;
@@ -60,10 +58,11 @@ export async function DashboardInsightLoader( {
 }
 
 async function generateDailyInsight( {
-  supabase, userId, firstDay, netWorth, monthlyIncome, monthlyExpenses, flaggedCount, billsCount,
+  supabase, userId, todayStr, firstDay, netWorth, monthlyIncome, monthlyExpenses, flaggedCount, billsCount,
 }: {
   supabase: Awaited<ReturnType<typeof import( '@/lib/supabase-server' ).createServerSupabaseClient>>;
   userId: string;
+  todayStr: string;
   firstDay: string;
   netWorth: number;
   monthlyIncome: number;
@@ -93,7 +92,7 @@ async function generateDailyInsight( {
 
     const { data: newInsight } = await supabase
       .from( 'ai_insights' )
-      .insert( { user_id: userId, type: 'daily', content: insightText, month: firstDay, is_read: false } )
+      .insert( { user_id: userId, type: 'daily', content: insightText, month: todayStr, is_read: false } )
       .select()
       .single();
 

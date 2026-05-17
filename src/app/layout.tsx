@@ -42,7 +42,11 @@ export const metadata: Metadata = {
       { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
       { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
     ],
-    apple: "/icon-192.png",
+    // apple-touch-icon must be a square PNG with solid background (no transparency)
+    // iOS applies its own rounded corners — transparent pixels become black
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
   },
   other: {
     "mobile-web-app-capable": "yes",
