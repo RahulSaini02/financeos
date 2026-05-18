@@ -126,8 +126,24 @@ export async function POST(request: NextRequest) {
     const transactions = transactionsRes.data ?? []
     const loans = loansRes.data ?? []
     const investments = investmentsRes.data ?? []
-    const rawBudgets = budgetsRes.data ?? []
+    let rawBudgets = budgetsRes.data ?? []
     const subscriptions = subscriptionsRes.data ?? []
+
+    // If no budgets for current month, fall back to the most recent month's budgets
+    if (rawBudgets.length === 0) {
+      const fallbackBudgetsRes = await supabase
+        .from('budgets')
+        .select('amount_usd, month, category:categories(name)')
+        .eq('user_id', user.id)
+        .order('month', { ascending: false })
+        .limit(20)
+      const fallback = fallbackBudgetsRes.data ?? []
+      if (fallback.length > 0) {
+        // Take only the most recent month's budgets (all have the same month)
+        const latestMonth = fallback[0].month
+        rawBudgets = fallback.filter(b => b.month === latestMonth)
+      }
+    }
     const savingsGoals = savingsGoalsRes.data ?? []
     const gcalIntegration = gcalIntegrationRes.data ?? null
     const calendarEvents = calendarEventsRes.data ?? []
@@ -152,8 +168,11 @@ export async function POST(request: NextRequest) {
 
     const budgetsWithActuals = rawBudgets.map(b => {
       const catName = (b.category as unknown as { name: string } | null)?.name ?? 'Unknown'
-      return { category: catName, budget: b.amount_usd }
+      const month = (b as unknown as { month?: string }).month
+      return { category: catName, budget: b.amount_usd, month }
     })
+    const budgetsMonth = budgetsWithActuals[0]?.month
+    const budgetsAreCurrentMonth = budgetsMonth === firstDay
 
     const activeSubs = subscriptions.filter(s => s.status === 'active')
     const monthlySubCost = activeSubs.reduce((s, sub) => s + sub.billing_cost / (sub.billing_cycle_months || 1), 0)
@@ -179,7 +198,7 @@ export async function POST(request: NextRequest) {
 ### Top Spending Categories
 ${topCategories.map(([cat, amt]) => `- ${cat}: ${fmt(amt)}`).join('\n') || '- No transactions this month'}
 
-### Budgets
+### Budgets${budgetsWithActuals.length > 0 && !budgetsAreCurrentMonth ? ` (from ${budgetsMonth} — no budgets set for current month yet)` : ''}
 ${budgetsWithActuals.map(b => `- ${b.category}: ${fmt(b.budget)} budget`).join('\n') || '- No budgets set'}
 
 ### Accounts (${accounts.length} active)
