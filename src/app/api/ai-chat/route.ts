@@ -93,11 +93,12 @@ export async function POST(request: NextRequest) {
       savingsGoalsRes,
       calendarEventsRes,
       gcalIntegrationRes,
+      categoriesRes,
       conversationHistory,
       userPrefs,
       activeMemories,
     ] = await Promise.all([
-      supabase.from('accounts').select('name, kind, type, current_balance, currency').eq('user_id', user.id).eq('is_active', true),
+      supabase.from('accounts').select('id, name, kind, type, current_balance, currency').eq('user_id', user.id).eq('is_active', true),
       supabase.from('transactions').select('description, amount_usd, cr_dr, date, category:categories(name)').eq('user_id', user.id).eq('is_internal_transfer', false).gte('date', firstDay).lt('date', nextMonth),
       supabase.from('loans').select('name, type, current_balance, interest_rate, emi, start_date, term_months').eq('user_id', user.id),
       supabase.from('investments').select('ticker, type, platform, total_invested, current_value').eq('user_id', user.id),
@@ -117,12 +118,14 @@ export async function POST(request: NextRequest) {
         .eq('user_id', user.id)
         .eq('provider', 'google_calendar')
         .maybeSingle(),
+      supabase.from('categories').select('id, name, type').eq('user_id', user.id).order('name'),
       fetchRecentConversationHistory(supabase, user.id),
       fetchUserPreferences(supabase, user.id),
       fetchActiveMemories(supabase, user.id),
     ])
 
     const accounts = accountsRes.data ?? []
+    const categories = categoriesRes.data ?? []
     const transactions = transactionsRes.data ?? []
     const loans = loansRes.data ?? []
     const investments = investmentsRes.data ?? []
@@ -202,7 +205,10 @@ ${topCategories.map(([cat, amt]) => `- ${cat}: ${fmt(amt)}`).join('\n') || '- No
 ${budgetsWithActuals.map(b => `- ${b.category}: ${fmt(b.budget)} budget`).join('\n') || '- No budgets set'}
 
 ### Accounts (${accounts.length} active)
-${accounts.map(a => `- ${a.name} (${a.type}): ${fmt(a.current_balance)}`).join('\n')}
+${accounts.map(a => `- ${a.name} (${a.type}): ${fmt(a.current_balance)} [id: ${a.id}]`).join('\n')}
+
+### Categories (for transaction logging)
+${categories.map(c => `- ${c.name} (${c.type}) [id: ${c.id}]`).join('\n') || '- No categories'}
 
 ### Loans
 ${loans.length === 0 ? '- No loans' : loans.map(l => {
@@ -328,6 +334,25 @@ Use these tools whenever the user asks to view, check, add, schedule, create, or
       })
     }
 
+    // ── create_transaction tool (always available) ────────────────────────────
+    tools.push({
+      name: 'create_transaction',
+      description: `Create a new financial transaction for the user. Use this when the user says they spent money, received income, made a payment, or wants to log any financial activity. Always confirm the details with the user before calling this tool. After creating, tell the user what was logged including the category assigned.`,
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          description: { type: 'string', description: 'Merchant name or transaction description, e.g. "Starbucks Coffee"' },
+          amount_usd: { type: 'number', description: 'Positive amount in USD, e.g. 12.50' },
+          cr_dr: { type: 'string', enum: ['debit', 'credit'], description: '"debit" for expenses/payments, "credit" for income/deposits' },
+          account_id: { type: 'string', description: 'Account ID to debit/credit. Use the first account if unsure.' },
+          category_id: { type: 'string', description: 'Category ID from the categories list. Pick the best match.' },
+          date: { type: 'string', description: `Transaction date in YYYY-MM-DD format. Default: today (${todayStr}).` },
+          notes: { type: 'string', description: 'Optional notes.' },
+        },
+        required: ['description', 'amount_usd', 'cr_dr', 'account_id', 'date'],
+      },
+    })
+
     // ── Agentic loop — handles tool use ──────────────────────────────────────
     const messages: Anthropic.MessageParam[] = [
       { role: 'user', content: question },
@@ -403,7 +428,7 @@ Use these tools whenever the user asks to view, check, add, schedule, create, or
           let { stopReason, content: responseContent } = await streamOnce(messages)
 
           // Tool-use loop — mirrors original logic but uses streamOnce for each turn
-          while (stopReason === 'tool_use' && gcalIntegration) {
+          while (stopReason === 'tool_use') {
             const toolUseBlocks = responseContent.filter(
               (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
             )
@@ -413,7 +438,102 @@ Use these tools whenever the user asks to view, check, add, schedule, create, or
             const toolResults: Anthropic.ToolResultBlockParam[] = []
 
             for (const toolUse of toolUseBlocks) {
+              if (toolUse.name === 'create_transaction') {
+                const input = toolUse.input as {
+                  description: string
+                  amount_usd: number
+                  cr_dr: 'debit' | 'credit'
+                  account_id: string
+                  category_id?: string
+                  date: string
+                  notes?: string
+                }
+
+                // Validate account belongs to this user
+                const matchedAccount = accounts.find(a => a.id === input.account_id)
+                if (!matchedAccount) {
+                  toolResults.push({
+                    type: 'tool_result',
+                    tool_use_id: toolUse.id,
+                    content: 'Error: account_id not found in user accounts.',
+                    is_error: true,
+                  })
+                  continue
+                }
+
+                // Insert the transaction
+                const finalAmount = input.cr_dr === 'credit' ? input.amount_usd : -input.amount_usd
+                const { data: txnData, error: txnError } = await supabase
+                  .from('transactions')
+                  .insert({
+                    user_id: user.id,
+                    account_id: input.account_id,
+                    category_id: input.category_id ?? null,
+                    description: input.description,
+                    amount_usd: finalAmount,
+                    final_amount: finalAmount,
+                    amount_original: input.amount_usd,
+                    original_currency: 'USD',
+                    cr_dr: input.cr_dr,
+                    date: input.date,
+                    notes: input.notes ?? null,
+                    source: 'ai_chat',
+                    import_status: 'confirmed',
+                    flagged: false,
+                    is_recurring: false,
+                    ai_categorized: !!input.category_id,
+                    is_internal_transfer: false,
+                  })
+                  .select()
+                  .single()
+
+                if (txnError || !txnData) {
+                  toolResults.push({
+                    type: 'tool_result',
+                    tool_use_id: toolUse.id,
+                    content: `Error creating transaction: ${txnError?.message ?? 'unknown error'}`,
+                    is_error: true,
+                  })
+                  continue
+                }
+
+                // Update account balance
+                try {
+                  const { data: acct } = await supabase
+                    .from('accounts')
+                    .select('current_balance')
+                    .eq('id', input.account_id)
+                    .eq('user_id', user.id)
+                    .single()
+                  if (acct) {
+                    await supabase
+                      .from('accounts')
+                      .update({ current_balance: (acct.current_balance ?? 0) + finalAmount })
+                      .eq('id', input.account_id)
+                      .eq('user_id', user.id)
+                  }
+                } catch { /* non-fatal */ }
+
+                const categoryName = categories.find(c => c.id === input.category_id)?.name ?? 'Uncategorized'
+                toolResults.push({
+                  type: 'tool_result',
+                  tool_use_id: toolUse.id,
+                  content: `Transaction created successfully: "${input.description}" — $${input.amount_usd.toFixed(2)} ${input.cr_dr} on ${input.date} from account "${matchedAccount.name}", category: ${categoryName}. Transaction ID: ${txnData.id}`,
+                })
+                continue
+              }
+
               if (toolUse.name !== 'get_calendar_events' && toolUse.name !== 'create_calendar_event') continue
+
+              if (!gcalIntegration) {
+                toolResults.push({
+                  type: 'tool_result',
+                  tool_use_id: toolUse.id,
+                  content: 'Error: Google Calendar is not connected.',
+                  is_error: true,
+                })
+                continue
+              }
 
               try {
                 // Refresh token if expiring within 5 minutes
