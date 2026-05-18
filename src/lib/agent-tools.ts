@@ -920,11 +920,12 @@ async function execCreateTransaction(
     }
   }
 
-  // Atomically update account balance
-  await supabase.rpc('increment_account_balance', {
+  // Atomically update account balance (function defined in migration 010/011)
+  const { error: balErr } = await supabase.rpc('increment_account_balance', {
     p_account_id: accountRow.id,
-    p_amount: signedAmount,
+    p_delta: signedAmount,
   })
+  if (balErr) console.error('increment_account_balance error:', balErr)
 
   const sign = crDr === 'credit' ? '+' : '-'
   const text = [
