@@ -413,42 +413,45 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
     )}>
 
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
-      <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-[var(--color-border)]">
-        <div className="flex items-center gap-3">
+      <div className="shrink-0 border-b border-[var(--color-border)]">
+        {/* Row 1: identity */}
+        <div className="flex items-center gap-3 px-3 sm:px-4 py-3">
           {!onClose && (
             <button
               onClick={() => router.push( '/dashboard' )}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors lg:hidden"
-              aria-label="Close chat"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors lg:hidden"
+              aria-label="Back to dashboard"
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
           )}
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--color-accent)]/10">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[var(--color-accent)]/10">
             <BrainCircuit className="h-4 w-4 text-[var(--color-accent)]" />
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="text-sm font-semibold text-[var(--color-text-primary)] leading-tight">AI Finance Assistant</h1>
             <p className="text-[0.65rem] text-[var(--color-text-muted)] leading-tight mt-0.5 truncate">
               Ask anything • I&apos;ll use tools when needed
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
+
+        {/* Row 2: actions toolbar */}
+        <div className="flex items-center gap-1 px-3 sm:px-4 pb-2">
           {messages.length > 0 && (
             <button
               onClick={clearChat}
               className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors px-2.5 py-1.5 rounded-lg hover:bg-[var(--color-bg-tertiary)]"
             >
               <Trash2 className="h-3.5 w-3.5" />
-              Clear
+              <span>Clear</span>
             </button>
           )}
           <button
             onClick={() => {
-              const next = !showInsights
-              setShowInsights( next )
-              if ( next ) fetchInsights()
+              const next = !showInsights;
+              setShowInsights( next );
+              if ( next ) fetchInsights();
             }}
             className={cn(
               "relative flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors",
@@ -456,11 +459,11 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
                 ? "bg-[var(--color-accent)]/15 text-[var(--color-accent)]"
                 : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"
             )}
-            title="Alerts & Insights"
           >
             <Bell className="h-3.5 w-3.5" />
+            <span>Alerts</span>
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
                 {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
@@ -472,14 +475,14 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
               if ( next && sessions.length === 0 ) fetchSessions();
             }}
             className={cn(
-              "relative flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors mr-4",
+              "flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors",
               showSessions
                 ? "bg-[var(--color-accent)]/15 text-[var(--color-accent)]"
                 : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"
             )}
           >
             <History className="h-3.5 w-3.5" />
-            <p className="sm:hidden lg:block">Sessions</p>
+            <span>Sessions</span>
           </button>
         </div>
       </div>
