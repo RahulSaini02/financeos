@@ -405,14 +405,19 @@ export async function POST(request: NextRequest) {
         .select('current_balance')
         .eq('id', account_id)
         .single()
+      console.log('[balance] account_id:', account_id, 'acct:', acct, 'acctErr:', acctErr)
       if (acctErr) {
         console.error('Balance read error:', acctErr)
       } else if (acct) {
+        const oldBalance = Number(acct.current_balance ?? 0)
+        const delta = Number(data.amount_usd ?? 0)
+        const newBalance = oldBalance + delta
+        console.log('[balance] oldBalance:', oldBalance, 'delta:', delta, 'newBalance:', newBalance)
         const { error: balErr } = await adminClient
           .from('accounts')
-          .update({ current_balance: (acct.current_balance ?? 0) + (data.amount_usd ?? 0) })
+          .update({ current_balance: newBalance })
           .eq('id', account_id)
-        if (balErr) console.error('Balance update error:', balErr)
+        console.log('[balance] update error:', balErr)
       }
     }
 
