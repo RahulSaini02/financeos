@@ -219,16 +219,16 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
     setInsights( ( prev ) => prev.map( ( ins ) => ( ins.id === id ? { ...ins, is_read: true } : ins ) ) );
   }
 
-  async function markAllAsRead() {
-    if (!user) return
-    const unreadIds = insights.filter((i) => !i.is_read).map((i) => i.id)
-    if (unreadIds.length === 0) return
+  async function markAllAsRead () {
+    if ( !user ) return
+    const unreadIds = insights.filter( ( i ) => !i.is_read ).map( ( i ) => i.id )
+    if ( unreadIds.length === 0 ) return
     await supabase
-      .from('ai_insights')
-      .update({ is_read: true })
-      .in('id', unreadIds)
-      .eq('user_id', user.id)
-    setInsights((prev) => prev.map((i) => ({ ...i, is_read: true })))
+      .from( 'ai_insights' )
+      .update( { is_read: true } )
+      .in( 'id', unreadIds )
+      .eq( 'user_id', user.id )
+    setInsights( ( prev ) => prev.map( ( i ) => ( { ...i, is_read: true } ) ) )
   }
 
   // ── Send (unified agent message) ──────────────────────────────────────────
@@ -415,13 +415,15 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
       <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-[var(--color-border)]">
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => onClose ? onClose() : router.push('/dashboard')}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors lg:hidden"
-            aria-label="Close chat"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </button>
+          {!onClose && (
+            <button
+              onClick={() => router.push( '/dashboard' )}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors lg:hidden"
+              aria-label="Close chat"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+          )}
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--color-accent)]/10">
             <BrainCircuit className="h-4 w-4 text-[var(--color-accent)]" />
           </div>
@@ -445,8 +447,8 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
           <button
             onClick={() => {
               const next = !showInsights
-              setShowInsights(next)
-              if (next) fetchInsights()
+              setShowInsights( next )
+              if ( next ) fetchInsights()
             }}
             className={cn(
               "relative flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors",
@@ -477,7 +479,7 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
             )}
           >
             <History className="h-3.5 w-3.5" />
-            Sessions
+            <p className="sm:hidden lg:block">Sessions</p>
           </button>
         </div>
       </div>
@@ -663,50 +665,50 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
                 transition={{ duration: 0.2, ease: "easeInOut" }}
                 className="absolute top-0 right-0 bottom-0 z-50 w-72 border-l border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-xl flex flex-col"
               >
-              <div className="h-full flex flex-col p-4">
-                <div className="flex items-center gap-2 mb-3 shrink-0">
-                  <History className="h-4 w-4 text-[var(--color-accent)]" />
-                  <h2 className="text-sm font-semibold">Past Sessions</h2>
-                  <button
-                    onClick={() => setShowSessions( false )}
-                    className="ml-auto flex h-7 w-7 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
-                    aria-label="Close sessions"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
+                <div className="h-full flex flex-col p-4">
+                  <div className="flex items-center gap-2 mb-3 shrink-0">
+                    <History className="h-4 w-4 text-[var(--color-accent)]" />
+                    <h2 className="text-sm font-semibold">Past Sessions</h2>
+                    <button
+                      onClick={() => setShowSessions( false )}
+                      className="ml-auto flex h-7 w-7 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                      aria-label="Close sessions"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                    {sessionsLoading ? (
+                      <div className="flex justify-center py-10">
+                        <Loader2 className="h-5 w-5 animate-spin text-[var(--color-accent)]" />
+                      </div>
+                    ) : sessions.length === 0 ? (
+                      <div className="py-10 text-center text-sm text-[var(--color-text-muted)]">
+                        No past sessions yet.
+                      </div>
+                    ) : (
+                      sessions.map( ( session ) => (
+                        <button
+                          key={session.session_id}
+                          onClick={() => loadSession( session )}
+                          className="w-full text-left rounded-xl border border-[var(--color-border)] p-3 transition-colors hover:bg-[var(--color-bg-tertiary)] bg-[var(--color-bg-secondary)]"
+                        >
+                          <p className="text-xs font-medium text-[var(--color-text-primary)] line-clamp-2 mb-1.5">
+                            {session.first_message.slice( 0, 60 )}{session.first_message.length > 60 ? "…" : ""}
+                          </p>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[0.65rem] text-[var(--color-text-muted)]">
+                              {relativeTime( session.last_message_at )}
+                            </span>
+                            <span className="text-[0.65rem] font-medium bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] rounded-full px-2 py-0.5">
+                              {session.message_count} {session.message_count === 1 ? "msg" : "msgs"}
+                            </span>
+                          </div>
+                        </button>
+                      ) )
+                    )}
+                  </div>
                 </div>
-                <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-                  {sessionsLoading ? (
-                    <div className="flex justify-center py-10">
-                      <Loader2 className="h-5 w-5 animate-spin text-[var(--color-accent)]" />
-                    </div>
-                  ) : sessions.length === 0 ? (
-                    <div className="py-10 text-center text-sm text-[var(--color-text-muted)]">
-                      No past sessions yet.
-                    </div>
-                  ) : (
-                    sessions.map( ( session ) => (
-                      <button
-                        key={session.session_id}
-                        onClick={() => loadSession( session )}
-                        className="w-full text-left rounded-xl border border-[var(--color-border)] p-3 transition-colors hover:bg-[var(--color-bg-tertiary)] bg-[var(--color-bg-secondary)]"
-                      >
-                        <p className="text-xs font-medium text-[var(--color-text-primary)] line-clamp-2 mb-1.5">
-                          {session.first_message.slice( 0, 60 )}{session.first_message.length > 60 ? "…" : ""}
-                        </p>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[0.65rem] text-[var(--color-text-muted)]">
-                            {relativeTime( session.last_message_at )}
-                          </span>
-                          <span className="text-[0.65rem] font-medium bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] rounded-full px-2 py-0.5">
-                            {session.message_count} {session.message_count === 1 ? "msg" : "msgs"}
-                          </span>
-                        </div>
-                      </button>
-                    ) )
-                  )}
-                </div>
-              </div>
               </motion.div>
             </>
           )}
@@ -718,7 +720,7 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
             <>
               <div
                 className="absolute inset-0 z-40"
-                onClick={() => setShowInsights(false)}
+                onClick={() => setShowInsights( false )}
               />
               <motion.div
                 initial={{ x: '100%', opacity: 0 }}
@@ -749,7 +751,7 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
                         </button>
                       )}
                       <button
-                        onClick={() => setShowInsights(false)}
+                        onClick={() => setShowInsights( false )}
                         className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
                       >
                         <X className="h-4 w-4" />
@@ -768,10 +770,10 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
                         No insights yet.
                       </div>
                     ) : (
-                      insights.map((insight) => (
+                      insights.map( ( insight ) => (
                         <div
                           key={insight.id}
-                          onClick={() => !insight.is_read && markAsRead(insight.id)}
+                          onClick={() => !insight.is_read && markAsRead( insight.id )}
                           className={cn(
                             'rounded-xl border p-3 cursor-pointer transition-colors',
                             insight.is_read
@@ -782,14 +784,14 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
                           <div className="flex items-center justify-between mb-1">
                             <InsightBadge type={insight.type} />
                             <span className="text-[0.6rem] text-[var(--color-text-muted)]">
-                              {new Date(insight.created_at).toLocaleDateString()}
+                              {new Date( insight.created_at ).toLocaleDateString()}
                             </span>
                           </div>
                           <p className="text-xs text-[var(--color-text-secondary)] line-clamp-3">
                             {insight.content}
                           </p>
                         </div>
-                      ))
+                      ) )
                     )}
                   </div>
                 </div>
