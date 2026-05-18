@@ -449,7 +449,7 @@ Use these tools whenever the user asks to view, check, add, schedule, create, or
                   notes?: string
                 }
 
-                // Validate account belongs to this user
+                // Validate account belongs to this user (client-side guard before hitting the API)
                 const matchedAccount = accounts.find(a => a.id === input.account_id)
                 if (!matchedAccount) {
                   toolResults.push({
@@ -461,64 +461,46 @@ Use these tools whenever the user asks to view, check, add, schedule, create, or
                   continue
                 }
 
-                // Insert the transaction
-                const finalAmount = input.cr_dr === 'credit' ? input.amount_usd : -input.amount_usd
-                const { data: txnData, error: txnError } = await supabase
-                  .from('transactions')
-                  .insert({
-                    user_id: user.id,
+                // Delegate to the real transactions API so balance updates, anomaly
+                // detection, loan sync, and subscription advance all run correctly.
+                const txnApiUrl = new URL('/api/transactions', request.url).toString()
+                const txnRes = await fetch(txnApiUrl, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    // Forward the original request's cookies so the transactions
+                    // API authenticates as the same user session.
+                    'Cookie': request.headers.get('cookie') ?? '',
+                  },
+                  body: JSON.stringify({
                     account_id: input.account_id,
                     category_id: input.category_id ?? null,
                     description: input.description,
-                    amount_usd: finalAmount,
-                    final_amount: finalAmount,
-                    amount_original: input.amount_usd,
-                    original_currency: 'USD',
+                    amount_usd: input.amount_usd,
                     cr_dr: input.cr_dr,
                     date: input.date,
                     notes: input.notes ?? null,
-                    source: 'ai_chat',
-                    import_status: 'confirmed',
-                    flagged: false,
-                    is_recurring: false,
-                    ai_categorized: !!input.category_id,
-                    is_internal_transfer: false,
-                  })
-                  .select()
-                  .single()
+                    original_currency: 'USD',
+                  }),
+                })
 
-                if (txnError || !txnData) {
+                if (!txnRes.ok) {
+                  const errBody = await txnRes.json().catch(() => ({})) as { error?: string }
                   toolResults.push({
                     type: 'tool_result',
                     tool_use_id: toolUse.id,
-                    content: `Error creating transaction: ${txnError?.message ?? 'unknown error'}`,
+                    content: `Error creating transaction: ${errBody.error ?? txnRes.statusText}`,
                     is_error: true,
                   })
                   continue
                 }
 
-                // Update account balance
-                try {
-                  const { data: acct } = await supabase
-                    .from('accounts')
-                    .select('current_balance')
-                    .eq('id', input.account_id)
-                    .eq('user_id', user.id)
-                    .single()
-                  if (acct) {
-                    await supabase
-                      .from('accounts')
-                      .update({ current_balance: (acct.current_balance ?? 0) + finalAmount })
-                      .eq('id', input.account_id)
-                      .eq('user_id', user.id)
-                  }
-                } catch { /* non-fatal */ }
-
+                const txnData = await txnRes.json() as { id: string }
                 const categoryName = categories.find(c => c.id === input.category_id)?.name ?? 'Uncategorized'
                 toolResults.push({
                   type: 'tool_result',
                   tool_use_id: toolUse.id,
-                  content: `Transaction created successfully: "${input.description}" — $${input.amount_usd.toFixed(2)} ${input.cr_dr} on ${input.date} from account "${matchedAccount.name}", category: ${categoryName}. Transaction ID: ${txnData.id}`,
+                  content: `Transaction created successfully: "${input.description}" — $${input.amount_usd.toFixed(2)} ${input.cr_dr} on ${input.date} to account "${matchedAccount.name}", category: ${categoryName}. Transaction ID: ${txnData.id}`,
                 })
                 continue
               }
