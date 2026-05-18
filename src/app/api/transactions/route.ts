@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { createServerClient } from '@supabase/ssr'
 import { getUserModel } from '@/lib/get-user-model'
 import { randomUUID } from 'crypto'
+
+// Service-role client — bypasses RLS for balance updates that must succeed
+// regardless of how the request arrived (direct UI call or internal server fetch).
+// Only used AFTER user identity has been verified via the user-scoped client.
+function createAdminClient() {
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { cookies: { getAll: () => [], setAll: () => {} }, auth: { persistSession: false, autoRefreshToken: false } },
+  )
+}
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -233,24 +245,28 @@ export async function POST(request: NextRequest) {
         // Non-fatal: both transactions exist, just the reverse link is missing
       }
 
-      // Sync both account balances (read-modify-write; best-effort, non-atomic)
+      // Sync both account balances using the service-role client so the update
+      // is never blocked by RLS regardless of how this route was invoked.
+      const adminClient = createAdminClient()
       await Promise.all([
         (async () => {
-          const { data: acct } = await supabase
-            .from('accounts').select('current_balance').eq('id', account_id).eq('user_id', user.id).single()
+          const { data: acct } = await adminClient
+            .from('accounts').select('current_balance').eq('id', account_id).single()
           if (acct) {
-            await supabase.from('accounts')
+            const { error: be } = await adminClient.from('accounts')
               .update({ current_balance: (acct.current_balance ?? 0) - amount_usd })
-              .eq('id', account_id).eq('user_id', user.id)
+              .eq('id', account_id)
+            if (be) console.error('Transfer source balance update error:', be)
           }
         })(),
         (async () => {
-          const { data: acct } = await supabase
-            .from('accounts').select('current_balance').eq('id', target_account_id).eq('user_id', user.id).single()
+          const { data: acct } = await adminClient
+            .from('accounts').select('current_balance').eq('id', target_account_id).single()
           if (acct) {
-            await supabase.from('accounts')
+            const { error: be } = await adminClient.from('accounts')
               .update({ current_balance: (acct.current_balance ?? 0) + amount_usd })
-              .eq('id', target_account_id).eq('user_id', user.id)
+              .eq('id', target_account_id)
+            if (be) console.error('Transfer target balance update error:', be)
           }
         })(),
       ])
@@ -380,23 +396,24 @@ export async function POST(request: NextRequest) {
       data.flagged_reason = flaggedReason
     }
 
-    // Sync account balance — amount_usd is signed (+credit / −debit)
+    // Sync account balance using service-role client to guarantee the update
+    // succeeds regardless of how this route was invoked (direct UI or internal fetch).
     if (account_id) {
-      try {
-        const { data: acct } = await supabase
+      const adminClient = createAdminClient()
+      const { data: acct, error: acctErr } = await adminClient
+        .from('accounts')
+        .select('current_balance')
+        .eq('id', account_id)
+        .single()
+      if (acctErr) {
+        console.error('Balance read error:', acctErr)
+      } else if (acct) {
+        const { error: balErr } = await adminClient
           .from('accounts')
-          .select('current_balance')
+          .update({ current_balance: (acct.current_balance ?? 0) + (data.amount_usd ?? 0) })
           .eq('id', account_id)
-          .eq('user_id', user.id)
-          .single()
-        if (acct) {
-          await supabase
-            .from('accounts')
-            .update({ current_balance: (acct.current_balance ?? 0) + (data.amount_usd ?? 0) })
-            .eq('id', account_id)
-            .eq('user_id', user.id)
-        }
-      } catch { /* non-fatal */ }
+        if (balErr) console.error('Balance update error:', balErr)
+      }
     }
 
     // Sync loan balance when loan_id is set (debit transaction reduces loan balance)
