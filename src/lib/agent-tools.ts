@@ -310,28 +310,47 @@ async function execGetBudgetStatus(
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
   const month = typeof input.month === 'string' ? input.month : defaultMonth
 
-  const [budgetsRes, transactionsRes] = await Promise.all([
-    supabase
+  let budgetsRes = await supabase
+    .from('budgets')
+    .select('amount_usd, category_id, category:categories(name)')
+    .eq('user_id', userId)
+    .eq('month', month)
+
+  // Fallback: if no budgets for the requested month, use the most recent month that has budgets
+  let resolvedMonth = month
+  if (!budgetsRes.data?.length) {
+    const fallback = await supabase
       .from('budgets')
-      .select('amount_usd, category_id, category:categories(name)')
+      .select('month')
       .eq('user_id', userId)
-      .eq('month', month),
-    supabase
-      .from('transactions')
-      .select('amount_usd, cr_dr, category_id')
-      .eq('user_id', userId)
-      .eq('is_internal_transfer', false)
-      .gte('date', month)
-      .lt(
-        'date',
-        (() => {
-          const d = new Date(month)
-          d.setMonth(d.getMonth() + 1)
-          return d.toISOString().split('T')[0]
-        })(),
-      )
-      .eq('cr_dr', 'debit'),
-  ])
+      .order('month', { ascending: false })
+      .limit(1)
+      .single()
+    if (fallback.data?.month) {
+      resolvedMonth = fallback.data.month
+      budgetsRes = await supabase
+        .from('budgets')
+        .select('amount_usd, category_id, category:categories(name)')
+        .eq('user_id', userId)
+        .eq('month', resolvedMonth)
+    }
+  }
+
+  const transactionsRes = await supabase
+    .from('transactions')
+    .select('amount_usd, cr_dr, category_id')
+    .eq('user_id', userId)
+    .eq('is_internal_transfer', false)
+    .gte('date', resolvedMonth)
+    .lt(
+      'date',
+      (() => {
+        const d = new Date(resolvedMonth)
+        d.setMonth(d.getMonth() + 1)
+        return d.toISOString().split('T')[0]
+      })(),
+    )
+    .eq('cr_dr', 'debit')
 
   const budgets = budgetsRes.data ?? []
   const transactions = transactionsRes.data ?? []
@@ -355,7 +374,7 @@ async function execGetBudgetStatus(
   })
 
   const lines = [
-    `Budget Status for ${month}:`,
+    `Budget Status for ${resolvedMonth}${resolvedMonth !== month ? ` (most recent; no budgets found for ${month})` : ''}:`,
     `Total budget categories: ${rows.length}`,
     `Over budget: ${overCount}`,
     '',
@@ -366,7 +385,7 @@ async function execGetBudgetStatus(
     ),
   ]
 
-  const summary = `${rows.length} budget categories, ${overCount} over budget (${month})`
+  const summary = `${rows.length} budget categories, ${overCount} over budget (${resolvedMonth})`
   return { text: lines.join('\n'), summary }
 }
 
