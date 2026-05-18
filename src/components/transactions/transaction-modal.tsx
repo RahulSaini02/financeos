@@ -219,7 +219,7 @@ export function TransactionModal({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-[var(--color-text-muted)] mb-1 block">
                 Amount
@@ -248,7 +248,7 @@ export function TransactionModal({
             </div>
           </div>
 
-          <div className={mode === "transfer" ? "grid grid-cols-2 gap-3" : ""}>
+          <div className={mode === "transfer" ? "grid grid-cols-1 sm:grid-cols-2 gap-3" : ""}>
             <div>
               <label className="text-xs text-[var(--color-text-muted)] mb-1 block">
                 {mode === "transfer" ? "From Account" : "Account"}
