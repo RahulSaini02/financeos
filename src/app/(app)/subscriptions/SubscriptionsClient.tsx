@@ -148,23 +148,29 @@ function SubscriptionModal({
       notes: form.notes.trim() || null,
     };
 
-    let err;
-    if (editingSub) {
-      ({ error: err } = await supabase
-        .from("subscriptions")
-        .update(payload)
-        .eq("id", editingSub.id));
-    } else {
-      ({ error: err } = await supabase
-        .from("subscriptions")
-        .insert(payload));
-    }
+    try {
+      const res = editingSub
+        ? await fetch("/api/subscriptions", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: editingSub.id, ...payload }),
+          })
+        : await fetch("/api/subscriptions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
 
-    setSaving(false);
-    if (err) {
-      setError(err.message);
-    } else {
-      onSaved();
+      setSaving(false);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Request failed" }));
+        setError(body.error ?? "Request failed");
+      } else {
+        onSaved();
+      }
+    } catch {
+      setSaving(false);
+      setError("Network error");
     }
   };
 
@@ -446,15 +452,18 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
   const handleDelete = async () => {
     if (!confirmDeleteId) return;
     setDeleting(true);
-    const { error: err } = await supabase
-      .from("subscriptions")
-      .delete()
-      .eq("id", confirmDeleteId);
-    setDeleting(false);
-    if (err) {
-      setError(err.message);
-    } else {
-      setSubscriptions((prev) => prev.filter((s) => s.id !== confirmDeleteId));
+    try {
+      const res = await fetch(`/api/subscriptions?id=${confirmDeleteId}`, { method: "DELETE" });
+      setDeleting(false);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Delete failed" }));
+        setError(body.error ?? "Delete failed");
+      } else {
+        setSubscriptions((prev) => prev.filter((s) => s.id !== confirmDeleteId));
+      }
+    } catch {
+      setDeleting(false);
+      setError("Network error");
     }
     setConfirmDeleteId(null);
   };
