@@ -162,6 +162,19 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
 
   function openAdd() {
     loadAccounts();
+    const today = new Date().toISOString().split("T")[0];
+    const activeEmployer = employers[0];
+    if (activeEmployer) {
+      setForm({
+        ...emptyForm,
+        date: today,
+        employer: activeEmployer.name,
+        employer_id: activeEmployer.id,
+        account_id: activeEmployer.default_account_id ?? "",
+      });
+    } else {
+      setForm({ ...emptyForm, date: today });
+    }
     setShowModal(true);
   }
 
@@ -196,7 +209,48 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
     if (!user) return;
     const paycheck = paychecks.find((p) => p.id === id);
     if (paycheck?.transaction_id) {
+      // Reverse account balance before deleting the transaction
+      if (paycheck.account_id && paycheck.net_pay > 0) {
+        const { data: acct } = await supabase
+          .from("accounts")
+          .select("current_balance")
+          .eq("id", paycheck.account_id)
+          .single();
+        if (acct) {
+          await supabase
+            .from("accounts")
+            .update({ current_balance: (acct.current_balance ?? 0) - paycheck.net_pay })
+            .eq("id", paycheck.account_id);
+        }
+      }
       await supabase.from("transactions").delete().eq("id", paycheck.transaction_id);
+    }
+    // Reverse 401k investment sync
+    const employee401k = paycheck?.retirement_401k ?? 0;
+    const employee401kPct = paycheck?.employee_401k_pct ?? 0;
+    const gross = paycheck?.gross_pay ?? 0;
+    const employerMatch = calcEmployerMatch(gross, employee401kPct);
+    const total401k = employee401k + employerMatch;
+    if (total401k > 0) {
+      try {
+        const { data: investments } = await supabase
+          .from("investments")
+          .select("id, total_invested, current_value")
+          .eq("user_id", user.id)
+          .ilike("type", "%401%")
+          .order("created_at", { ascending: true })
+          .limit(1);
+        if (investments && investments.length > 0) {
+          const inv = investments[0];
+          await supabase
+            .from("investments")
+            .update({
+              total_invested: Math.max(0, (inv.total_invested ?? 0) - total401k),
+              current_value: Math.max(0, (inv.current_value ?? 0) - total401k),
+            })
+            .eq("id", inv.id);
+        }
+      } catch { /* non-fatal */ }
     }
     const { error: err } = await supabase
       .from("paychecks")
