@@ -369,17 +369,38 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
 
         const existing = paychecks.find((p) => p.id === editingId);
         if (existing?.transaction_id) {
+          const oldNetPay = existing.net_pay ?? 0;
+          const delta = netPay - oldNetPay;
+
           const { error: txnUpdateErr } = await supabase
             .from("transactions")
             .update({
               account_id: payload.account_id || existing.account_id,
               description: `Paycheck — ${payload.employer || "Employer"}`,
               amount_usd: netPay,
+              final_amount: netPay,
+              amount_original: netPay,
               date: payload.date,
             })
             .eq("id", existing.transaction_id);
           if (txnUpdateErr) {
             console.warn("Paycheck transaction sync failed:", txnUpdateErr.message);
+          }
+
+          // Adjust account balance by the difference
+          if (delta !== 0 && (payload.account_id || existing.account_id)) {
+            const acctId = payload.account_id || existing.account_id;
+            const { data: acct } = await supabase
+              .from("accounts")
+              .select("current_balance")
+              .eq("id", acctId)
+              .single();
+            if (acct) {
+              await supabase
+                .from("accounts")
+                .update({ current_balance: (acct.current_balance ?? 0) + delta })
+                .eq("id", acctId);
+            }
           }
         }
 
