@@ -187,31 +187,42 @@ export default function EmployersClient({
       notes: form.notes.trim() || null,
     };
 
-    let err;
-    if (editingId) {
-      ({ error: err } = await supabase
-        .from("employers")
-        .update({ ...payload, updated_at: new Date().toISOString() })
-        .eq("id", editingId));
-    } else {
-      ({ error: err } = await supabase.from("employers").insert(payload));
-    }
+    try {
+      const res = editingId
+        ? await fetch("/api/employers", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: editingId, ...payload }),
+          })
+        : await fetch("/api/employers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
 
-    if (err) {
-      setSaveError(err.message);
-    } else {
-      success(editingId ? "Employer updated" : "Employer added");
-      closeModal();
-      fetchEmployers();
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Request failed" }));
+        setSaveError(body.error ?? "Request failed");
+      } else {
+        success(editingId ? "Employer updated" : "Employer added");
+        closeModal();
+        fetchEmployers();
+      }
+    } catch {
+      setSaveError("Network error");
     }
     setSaving(false);
   }
 
   async function handleDelete(id: string) {
     setDeletingId(id);
-    const { error: err } = await supabase.from("employers").delete().eq("id", id);
-    if (err) toastError("Failed to delete employer");
-    else success("Employer deleted");
+    try {
+      const res = await fetch(`/api/employers?id=${id}`, { method: "DELETE" });
+      if (!res.ok) toastError("Failed to delete employer");
+      else success("Employer deleted");
+    } catch {
+      toastError("Failed to delete employer");
+    }
     setDeletingId(null);
     fetchEmployers();
   }

@@ -215,7 +215,11 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
   }
 
   async function markAsRead ( id: string ) {
-    await supabase.from( "ai_insights" ).update( { is_read: true } ).eq( "id", id ).eq( "user_id", user?.id ?? "" );
+    await fetch( "/api/ai-insights", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify( { id, is_read: true } ),
+    } );
     setInsights( ( prev ) => prev.map( ( ins ) => ( ins.id === id ? { ...ins, is_read: true } : ins ) ) );
   }
 
@@ -223,11 +227,11 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
     if ( !user ) return
     const unreadIds = insights.filter( ( i ) => !i.is_read ).map( ( i ) => i.id )
     if ( unreadIds.length === 0 ) return
-    await supabase
-      .from( 'ai_insights' )
-      .update( { is_read: true } )
-      .in( 'id', unreadIds )
-      .eq( 'user_id', user.id )
+    await fetch( "/api/ai-insights", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify( { ids: unreadIds, is_read: true } ),
+    } );
     setInsights( ( prev ) => prev.map( ( i ) => ( { ...i, is_read: true } ) ) )
   }
 

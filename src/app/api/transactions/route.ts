@@ -304,7 +304,7 @@ export async function POST(request: NextRequest) {
           if (suggestedId !== 'none' && cats.some(c => c.id === suggestedId)) {
             resolvedCategoryId = suggestedId
             aiCategorized = true
-            aiConfidence = confStr ? parseInt(confStr, 10) : null
+            aiConfidence = confStr ? parseInt(confStr, 10) / 100 : null
           }
         }
       } catch {

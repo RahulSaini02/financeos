@@ -302,15 +302,24 @@ export default function BudgetsClient({
   const handleSave = async (amount: number) => {
     if (!editing) return;
     setSaving(true);
-    const supabase = createClient();
 
-    const { error: upsertErr } = await supabase.from("budgets").upsert(
-      { user_id: userId, category_id: editing.category.id, month: monthParam, amount_usd: amount },
-      { onConflict: "user_id,category_id,month" }
-    );
-    if (upsertErr) { setSaving(false); setError(upsertErr.message); return; }
-
-    await supabase.from("categories").update({ monthly_budget: amount }).eq("id", editing.category.id).eq("user_id", userId);
+    try {
+      const res = await fetch("/api/budgets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category_id: editing.category.id, month: monthParam, amount_usd: amount }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Request failed" }));
+        setError(body.error ?? "Request failed");
+        setSaving(false);
+        return;
+      }
+    } catch {
+      setError("Network error");
+      setSaving(false);
+      return;
+    }
 
     setSaving(false);
     setEditing(null);
@@ -320,8 +329,9 @@ export default function BudgetsClient({
   const handleClearOverride = async () => {
     if (!editing?.budgetRowId) return;
     setSaving(true);
-    const supabase = createClient();
-    await supabase.from("budgets").delete().eq("id", editing.budgetRowId);
+    try {
+      await fetch(`/api/budgets/${editing.budgetRowId}`, { method: "DELETE" });
+    } catch { /* non-fatal */ }
     setSaving(false);
     setEditing(null);
     await refetch();

@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     // client would yield zero rows from RLS-protected tables.
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SECRET_KEY!
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
     const today = new Date().toISOString().split('T')[0]
 
@@ -230,6 +230,7 @@ function advanceDate(dateStr: string, frequency: string, dayOfMonth?: number | n
       d.setMonth(d.getMonth() + 3)
       break
     case 'annually':
+    case 'yearly':
       d.setFullYear(d.getFullYear() + 1)
       break
     default:

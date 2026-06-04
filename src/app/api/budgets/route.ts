@@ -109,6 +109,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create/update budget' }, { status: 500 })
     }
 
+    // Also update the category's default monthly_budget
+    if (category_id) {
+      await supabase
+        .from('categories')
+        .update({ monthly_budget: amount_usd })
+        .eq('id', category_id)
+        .eq('user_id', user.id)
+    }
+
     return NextResponse.json(data, { status: 201 })
   } catch (err) {
     console.error('Budgets POST error:', err)

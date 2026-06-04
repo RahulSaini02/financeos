@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { Sparkles, X } from 'lucide-react'
-import { createClient } from '@/lib/supabase'
 import { Card } from '@/components/ui/card'
 import { InsightExpander } from '@/components/dashboard/InsightExpander'
 
@@ -19,11 +18,11 @@ export function DashboardInsightCard({ insightId, content, isRead }: Props) {
 
   async function handleDismiss() {
     setDismissed(true)
-    const supabase = createClient()
-    await supabase
-      .from('ai_insights')
-      .update({ is_read: true })
-      .eq('id', insightId)
+    await fetch('/api/ai-insights', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: insightId }),
+    })
   }
 
   return (

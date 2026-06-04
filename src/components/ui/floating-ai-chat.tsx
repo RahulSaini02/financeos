@@ -6,37 +6,37 @@ import { AnimatePresence, motion } from "motion/react";
 import { usePathname } from "next/navigation";
 import AiChatClient from "@/app/(app)/ai-chat/AiChatClient";
 
-export function FloatingAiChat() {
+export function FloatingAiChat () {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState( false );
 
   // Prevent body scroll when overlay is open
-  useEffect(() => {
-    if (open) {
+  useEffect( () => {
+    if ( open ) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
     }
     return () => { document.body.style.overflow = ""; };
-  }, [open]);
+  }, [open] );
 
   // Close on Escape
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+  useEffect( () => {
+    function onKey ( e: KeyboardEvent ) {
+      if ( e.key === "Escape" ) setOpen( false );
     }
-    if (open) window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+    if ( open ) window.addEventListener( "keydown", onKey );
+    return () => window.removeEventListener( "keydown", onKey );
+  }, [open] );
 
   // Don't render on the AI chat page — it's redundant there
-  if (pathname === "/ai-chat") return null;
+  if ( pathname === "/ai-chat" ) return null;
 
   return (
     <>
       {/* Floating trigger button */}
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => setOpen( true )}
         className="fixed right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-accent)] text-white shadow-lg hover:opacity-90 active:scale-95 transition-all lg:bottom-6 lg:right-6"
         style={{ bottom: "calc(env(safe-area-inset-bottom) + 5rem)" }}
         aria-label="Open AI Chat"
@@ -56,7 +56,7 @@ export function FloatingAiChat() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
               className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
-              onClick={() => setOpen(false)}
+              onClick={() => setOpen( false )}
               aria-hidden="true"
             />
 
@@ -71,19 +71,19 @@ export function FloatingAiChat() {
                 inset-x-0 bottom-0 top-[5vh] rounded-t-2xl
                 sm:inset-auto sm:bottom-6 sm:right-6 sm:top-6 sm:left-auto sm:w-[520px] sm:rounded-2xl
                 lg:w-[50vw] lg:max-w-[900px]"
-              onClick={(e) => e.stopPropagation()}
+              onClick={( e ) => e.stopPropagation()}
             >
               {/* Close button — floats top-right inside panel */}
               <button
-                onClick={() => setOpen(false)}
-                className="absolute top-3 right-3 z-10 flex h-7 w-7 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors"
+                onClick={() => setOpen( false )}
+                className="absolute top-4 right-2 z-10 flex h-7 w-7 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] transition-colors"
                 aria-label="Close AI Chat"
               >
                 <X className="h-4 w-4" />
               </button>
 
               {/* The full AI chat client — same component as /ai-chat page */}
-              <AiChatClient initialInsights={[]} onClose={() => setOpen(false)} />
+              <AiChatClient initialInsights={[]} onClose={() => setOpen( false )} />
             </motion.div>
           </>
         )}

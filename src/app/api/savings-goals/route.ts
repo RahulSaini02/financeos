@@ -76,3 +76,81 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
+
+export async function PUT(request: NextRequest) {
+  try {
+    const supabase = await createServerSupabaseClient()
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { id, ...payload } = body
+
+    if (!id) {
+      return NextResponse.json({ error: 'id is required' }, { status: 400 })
+    }
+
+    if (Object.keys(payload).length === 0) {
+      return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
+    }
+
+    const { data, error } = await supabase
+      .from('savings_goals')
+      .update(payload)
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Savings goal update error:', error)
+      return NextResponse.json({ error: 'Failed to update savings goal' }, { status: 500 })
+    }
+
+    if (!data) {
+      return NextResponse.json({ error: 'Savings goal not found' }, { status: 404 })
+    }
+
+    return NextResponse.json(data)
+  } catch (err) {
+    console.error('Savings goals PUT error:', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const supabase = await createServerSupabaseClient()
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { searchParams } = request.nextUrl
+    const id = searchParams.get('id')
+
+    if (!id) {
+      return NextResponse.json({ error: 'id query parameter is required' }, { status: 400 })
+    }
+
+    const { error } = await supabase
+      .from('savings_goals')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id)
+
+    if (error) {
+      console.error('Savings goal delete error:', error)
+      return NextResponse.json({ error: 'Failed to delete savings goal' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    console.error('Savings goals DELETE error:', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}

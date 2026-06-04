@@ -294,13 +294,13 @@ export default function AccountsClient({
   const handleDelete = async () => {
     if (!deletingAccountId) return;
     setIsSaving(true);
-    const { error: err } = await supabase
-      .from("accounts")
-      .update({ is_active: false })
-      .eq("id", deletingAccountId)
-      .eq("user_id", userId);
+    const res = await fetch("/api/accounts", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: deletingAccountId, is_active: false }),
+    });
 
-    if (err) {
+    if (!res.ok) {
       toastError("Failed to delete account");
     } else {
       setAccounts((prev) => prev.filter((a) => a.id !== deletingAccountId));
@@ -313,13 +313,13 @@ export default function AccountsClient({
 
   const handleToggleActive = async (account: Account) => {
     const newActive = !account.is_active;
-    const { error: err } = await supabase
-      .from("accounts")
-      .update({ is_active: newActive })
-      .eq("id", account.id)
-      .eq("user_id", userId);
+    const res = await fetch("/api/accounts", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: account.id, is_active: newActive }),
+    });
 
-    if (err) {
+    if (!res.ok) {
       toastError(`Failed to ${newActive ? "activate" : "deactivate"} account`);
     } else {
       setAccounts((prev) =>
@@ -360,33 +360,37 @@ export default function AccountsClient({
     let savedOk = false;
 
     if (editingAccount) {
-      const { data, error: err } = await supabase
-        .from("accounts")
-        .update(accountData)
-        .eq("id", editingAccount.id)
-        .eq("user_id", userId)
-        .select()
-        .single();
-      if (err) {
+      const res = await fetch("/api/accounts", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editingAccount.id, ...accountData }),
+      });
+      if (!res.ok) {
         setError("Failed to update account");
-      } else if (data) {
-        setAccounts((prev) => {
-          const updated = prev.map((a) => (a.id === editingAccount.id ? data : a));
-          return showInactive ? updated : updated.filter((a) => a.is_active);
-        });
-        savedOk = true;
+      } else {
+        const { data } = await res.json();
+        if (data) {
+          setAccounts((prev) => {
+            const updated = prev.map((a) => (a.id === editingAccount.id ? data : a));
+            return showInactive ? updated : updated.filter((a) => a.is_active);
+          });
+          savedOk = true;
+        }
       }
     } else {
-      const { data, error: err } = await supabase
-        .from("accounts")
-        .insert(accountData)
-        .select()
-        .single();
-      if (err) {
+      const res = await fetch("/api/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(accountData),
+      });
+      if (!res.ok) {
         setError("Failed to create account");
-      } else if (data) {
-        setAccounts((prev) => [...prev, data]);
-        savedOk = true;
+      } else {
+        const { data } = await res.json();
+        if (data) {
+          setAccounts((prev) => [...prev, data]);
+          savedOk = true;
+        }
       }
     }
 

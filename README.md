@@ -137,7 +137,7 @@ cp .env.example .env.local
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 ANTHROPIC_API_KEY=your_anthropic_key
 GOOGLE_CLIENT_ID=your_google_client_id         # optional

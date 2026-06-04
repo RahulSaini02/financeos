@@ -121,13 +121,19 @@ export default function ImportClient({
 
   // Reject handler
   async function handleReject(id: string) {
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("pending_imports")
-      .update({ status: "rejected", reviewed_at: new Date().toISOString() })
-      .eq("id", id);
-    if (error) {
-      showToast("Failed to reject: " + error.message);
+    try {
+      const res = await fetch("/api/imports", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status: "rejected", reviewed_at: new Date().toISOString() }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Failed to reject" }));
+        showToast("Failed to reject: " + (body.error ?? "Unknown error"));
+        return;
+      }
+    } catch {
+      showToast("Failed to reject: network error");
       return;
     }
     setImports((prev) =>
@@ -141,13 +147,19 @@ export default function ImportClient({
 
   // Mark safe handler
   async function handleMarkSafe(id: string) {
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("pending_imports")
-      .update({ flagged: false, status: "pending", flagged_reason: null })
-      .eq("id", id);
-    if (error) {
-      showToast("Failed to mark safe: " + error.message);
+    try {
+      const res = await fetch("/api/imports", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, flagged: false, status: "pending", flagged_reason: null }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Failed to mark safe" }));
+        showToast("Failed to mark safe: " + (body.error ?? "Unknown error"));
+        return;
+      }
+    } catch {
+      showToast("Failed to mark safe: network error");
       return;
     }
     setImports((prev) =>
@@ -177,25 +189,36 @@ export default function ImportClient({
 
     // Skip header row
     const dataLines = lines.slice(1);
-    const supabase = createClient();
-    let successCount = 0;
+    const items = [];
 
     for (const line of dataLines) {
       const cols = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
       const [date, description, amount, last_four] = cols;
       if (!date || !description || !amount) continue;
 
-      const { error } = await supabase.from("pending_imports").insert({
-        user_id: user.id,
+      items.push({
         raw_data: { date, description, amount, last_four: last_four ?? null },
         parsed_merchant: description,
         parsed_amount: Math.abs(parseFloat(amount)),
         parsed_date: date,
         parsed_last_four: last_four?.slice(-4) ?? null,
         source: "import" as TxnSource,
-        status: "pending",
       });
-      if (!error) successCount++;
+    }
+
+    let successCount = 0;
+    if (items.length > 0) {
+      try {
+        const res = await fetch("/api/imports", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items }),
+        });
+        if (res.ok) {
+          const body = await res.json();
+          successCount = body.created ?? 0;
+        }
+      } catch { /* non-fatal */ }
     }
 
     showToast(`${successCount} row${successCount !== 1 ? "s" : ""} imported.`);
@@ -348,7 +371,6 @@ export default function ImportClient({
           item={confirmingItem}
           accounts={accounts}
           categories={categories}
-          userId={user?.id ?? ""}
           onConfirmed={(updatedItem) => {
             setImports((prev) =>
               prev.map((i) => (i.id === updatedItem.id ? updatedItem : i))
@@ -541,7 +563,6 @@ function ConfirmModal({
   item,
   accounts,
   categories,
-  userId,
   onConfirmed,
   onClose,
   onError,
@@ -549,7 +570,6 @@ function ConfirmModal({
   item: PendingImportWithJoins;
   accounts: Account[];
   categories: Category[];
-  userId: string;
   onConfirmed: (updated: PendingImportWithJoins) => void;
   onClose: () => void;
   onError: (msg: string) => void;
@@ -570,51 +590,58 @@ function ConfirmModal({
     if (!description || !amount || !accountId) return;
     setSaving(true);
 
-    const supabase = createClient();
     const numAmount = parseFloat(amount);
-    const finalAmount = crDr === "credit" ? numAmount : -numAmount;
 
-    // 1. Insert transaction
-    const { data: txn, error: txnError } = await supabase
-      .from("transactions")
-      .insert({
-        user_id: userId,
-        account_id: accountId,
-        category_id: categoryId || null,
-        description,
-        amount_usd: numAmount,
-        amount_original: numAmount,
-        original_currency: "USD",
-        cr_dr: crDr,
-        final_amount: finalAmount,
-        date,
-        notes: notes || null,
-        source: item.source,
-        import_status: "confirmed",
-        flagged: false,
-        is_recurring: false,
-      })
-      .select()
-      .single();
-
-    if (txnError) {
-      onError("Failed to create transaction: " + txnError.message);
+    // 1. Insert transaction via API route
+    let txnId: string | null = null;
+    try {
+      const txnRes = await fetch("/api/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: accountId,
+          category_id: categoryId || null,
+          description,
+          amount_usd: numAmount,
+          cr_dr: crDr,
+          date,
+          notes: notes || null,
+        }),
+      });
+      if (!txnRes.ok) {
+        const body = await txnRes.json().catch(() => ({ error: "Failed to create transaction" }));
+        onError("Failed to create transaction: " + (body.error ?? "Unknown error"));
+        setSaving(false);
+        return;
+      }
+      const txnData = await txnRes.json();
+      txnId = txnData.id ?? null;
+    } catch {
+      onError("Failed to create transaction: network error");
       setSaving(false);
       return;
     }
 
-    // 2. Update pending_import
-    const { error: updateError } = await supabase
-      .from("pending_imports")
-      .update({
-        status: "confirmed",
-        transaction_id: txn.id,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq("id", item.id);
-
-    if (updateError) {
-      onError("Transaction created but failed to update import: " + updateError.message);
+    // 2. Update pending_import via API route
+    try {
+      const updateRes = await fetch("/api/imports", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: item.id,
+          status: "confirmed",
+          transaction_id: txnId,
+          reviewed_at: new Date().toISOString(),
+        }),
+      });
+      if (!updateRes.ok) {
+        const body = await updateRes.json().catch(() => ({ error: "Failed to update import" }));
+        onError("Transaction created but failed to update import: " + (body.error ?? "Unknown error"));
+        setSaving(false);
+        return;
+      }
+    } catch {
+      onError("Transaction created but failed to update import: network error");
       setSaving(false);
       return;
     }
@@ -622,7 +649,7 @@ function ConfirmModal({
     onConfirmed({
       ...item,
       status: "confirmed",
-      transaction_id: txn.id,
+      transaction_id: txnId,
       reviewed_at: new Date().toISOString(),
     });
     setSaving(false);

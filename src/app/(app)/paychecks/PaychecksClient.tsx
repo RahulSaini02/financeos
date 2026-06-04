@@ -136,17 +136,20 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
   async function handleAddNewEmployer() {
     const name = newEmployerInput.trim();
     if (!name) return;
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    const { data } = await supabase
-      .from("employers")
-      .insert({ user_id: user.id, name })
-      .select()
-      .single();
-    if (data) {
-      setEmployers((prev) => [...prev, data as Employer].sort((a, b) => a.name.localeCompare(b.name)));
-      setForm((prev) => ({ ...prev, employer: data.name, employer_id: data.id }));
-    }
+    try {
+      const res = await fetch("/api/employers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.id) {
+          setEmployers((prev) => [...prev, data as Employer].sort((a, b) => a.name.localeCompare(b.name)));
+          setForm((prev) => ({ ...prev, employer: data.name, employer_id: data.id }));
+        }
+      }
+    } catch { /* non-fatal */ }
     setNewEmployerInput("");
     setAddingEmployer(false);
   }

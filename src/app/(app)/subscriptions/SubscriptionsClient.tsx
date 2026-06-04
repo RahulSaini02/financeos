@@ -113,7 +113,6 @@ function SubscriptionModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const supabase = createClient();
   const [form, setForm] = useState<SubscriptionFormData>(() => {
     if (editingSub) {
       return {

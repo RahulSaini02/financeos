@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   // Use service-role / secret key so we can read all users' accounts without RLS
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SECRET_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
   const now = new Date()

@@ -120,7 +120,6 @@ function RecurringRuleModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const supabase = createClient();
   const [form, setForm] = useState<RecurringRuleFormData>(() => {
     if (editingRule) {
       return {
@@ -160,25 +159,29 @@ function RecurringRuleModal({
       notes: form.notes.trim() || null,
     };
 
-    let err;
-    if (editingRule) {
-      ({ error: err } = await supabase
-        .from("recurring_rules")
-        .update(payload)
-        .eq("id", editingRule.id));
-    } else {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setSaving(false); return; }
-      ({ error: err } = await supabase
-        .from("recurring_rules")
-        .insert({ ...payload, user_id: user.id }));
-    }
+    try {
+      const res = editingRule
+        ? await fetch("/api/recurring-rules", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: editingRule.id, ...payload }),
+          })
+        : await fetch("/api/recurring-rules", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
 
-    setSaving(false);
-    if (err) {
-      setError(err.message);
-    } else {
-      onSaved();
+      setSaving(false);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Request failed" }));
+        setError(body.error ?? "Request failed");
+      } else {
+        onSaved();
+      }
+    } catch {
+      setSaving(false);
+      setError("Network error");
     }
   };
 
@@ -493,24 +496,22 @@ export function RecurringClient({
 
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this recurring rule?")) return;
-    const { error: err } = await supabase
-      .from("recurring_rules")
-      .delete()
-      .eq("id", id);
-    if (err) {
-      alert(err.message);
+    const res = await fetch(`/api/recurring-rules?id=${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      alert("Failed to delete rule");
     } else {
       setRules((prev) => prev.filter((r) => r.id !== id));
     }
   };
 
   const handleToggleActive = async (rule: RecurringRule) => {
-    const { error: err } = await supabase
-      .from("recurring_rules")
-      .update({ is_active: !rule.is_active })
-      .eq("id", rule.id);
-    if (err) {
-      alert(err.message);
+    const res = await fetch("/api/recurring-rules", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: rule.id, is_active: !rule.is_active }),
+    });
+    if (!res.ok) {
+      alert("Failed to toggle rule");
     } else {
       setRules((prev) =>
         prev.map((r) => r.id === rule.id ? { ...r, is_active: !r.is_active } : r)

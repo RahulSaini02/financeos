@@ -203,17 +203,14 @@ const emptyForm: SavingsGoalFormData = {
 function SavingsGoalModal ( {
   editingGoal,
   accounts,
-  userId,
   onClose,
   onSaved,
 }: {
   editingGoal: SavingsGoal | null;
   accounts: AccountOption[];
-  userId: string;
   onClose: () => void;
   onSaved: () => void;
 } ) {
-  const supabase = createClient();
   const defaultAccountId = accounts[0]?.id ?? "";
   const [form, setForm] = useState<SavingsGoalFormData>( () => {
     if ( editingGoal ) {
@@ -257,24 +254,29 @@ function SavingsGoalModal ( {
       linked_account_id: form.linked_account_id || null,
     };
 
-    let err;
-    if ( editingGoal ) {
-      ( { error: err } = await supabase
-        .from( "savings_goals" )
-        .update( payload )
-        .eq( "id", editingGoal.id )
-        .eq( "user_id", userId ) );
-    } else {
-      ( { error: err } = await supabase
-        .from( "savings_goals" )
-        .insert( { ...payload, user_id: userId } ) );
-    }
+    try {
+      const res = editingGoal
+        ? await fetch( "/api/savings-goals", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify( { id: editingGoal.id, ...payload } ),
+          } )
+        : await fetch( "/api/savings-goals", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify( payload ),
+          } );
 
-    setSaving( false );
-    if ( err ) {
-      setError( err.message );
-    } else {
-      onSaved();
+      setSaving( false );
+      if ( !res.ok ) {
+        const body = await res.json().catch( () => ( { error: "Request failed" } ) );
+        setError( body.error ?? "Request failed" );
+      } else {
+        onSaved();
+      }
+    } catch {
+      setSaving( false );
+      setError( "Network error" );
     }
   };
 
@@ -486,7 +488,6 @@ function GoalIconPopover ( {
   userId: string;
   onIconSaved: ( goalId: string, newIcon: string ) => void;
 } ) {
-  const supabase = createClient();
   const [open, setOpen] = useState( false );
   const [saving, setSaving] = useState( false );
   const containerRef = useRef<HTMLDivElement>( null );
@@ -506,11 +507,12 @@ function GoalIconPopover ( {
   const handleSelect = async ( value: string ) => {
     if ( !userId ) return;
     setSaving( true );
-    const { error } = await supabase
-      .from( "savings_goals" )
-      .update( { icon: value } )
-      .eq( "id", goalId )
-      .eq( "user_id", userId );
+    const res = await fetch( "/api/savings-goals", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify( { id: goalId, icon: value } ),
+    } );
+    const error = res.ok ? null : { message: "Failed to update icon" };
     setSaving( false );
     if ( !error ) {
       onIconSaved( goalId, value );
@@ -589,14 +591,10 @@ export function SavingsGoalsClient ( { initialGoals, accounts }: SavingsGoalsCli
   const handleDelete = async () => {
     if ( !confirmDeleteId ) return;
     setDeleting( true );
-    const { error: err } = await supabase
-      .from( "savings_goals" )
-      .delete()
-      .eq( "id", confirmDeleteId )
-      .eq( "user_id", userId );
+    const res = await fetch( `/api/savings-goals?id=${confirmDeleteId}`, { method: "DELETE" } );
     setDeleting( false );
-    if ( err ) {
-      setError( err.message );
+    if ( !res.ok ) {
+      setError( "Failed to delete savings goal" );
     } else {
       setGoals( ( prev ) => prev.filter( ( g ) => g.id !== confirmDeleteId ) );
     }
@@ -919,7 +917,6 @@ export function SavingsGoalsClient ( { initialGoals, accounts }: SavingsGoalsCli
         <SavingsGoalModal
           editingGoal={editingGoal}
           accounts={accounts}
-          userId={userId}
           onClose={() => {
             setModalOpen( false );
             setEditingGoal( null );

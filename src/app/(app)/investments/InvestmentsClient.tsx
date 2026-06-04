@@ -248,11 +248,8 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
   }
 
   async function handleSave(form: InvestmentForm) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
     setSaving(true);
     const payload = {
-      user_id: user.id,
       type: form.type.trim(),
       platform: form.platform.trim(),
       ticker: form.ticker.trim(),
@@ -263,30 +260,20 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
       last_updated: new Date().toISOString().split("T")[0],
     };
 
-    if (editingInv) {
-      await supabase.from("investments").update(payload).eq("id", editingInv.id);
-    } else {
-      await supabase.from("investments").insert(payload);
-    }
+    const res = editingInv
+      ? await fetch("/api/investments", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: editingInv.id, ...payload }),
+        })
+      : await fetch("/api/investments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
 
-    // Sync linked account balance
-    const accountsToSync = new Set<string>();
-    if (form.account_id) accountsToSync.add(form.account_id);
-    if (editingInv?.account_id && editingInv.account_id !== form.account_id) {
-      accountsToSync.add(editingInv.account_id);
-    }
-    for (const acctId of accountsToSync) {
-      const { data: siblings } = await supabase
-        .from("investments")
-        .select("current_value")
-        .eq("user_id", user.id)
-        .eq("account_id", acctId);
-      const total = (siblings ?? []).reduce((s, i) => s + (i.current_value ?? 0), 0);
-      await supabase
-        .from("accounts")
-        .update({ current_balance: total, last_updated: new Date().toISOString().split("T")[0] })
-        .eq("id", acctId)
-        .eq("user_id", user.id);
+    if (!res.ok) {
+      console.error("Investment save failed:", await res.text());
     }
 
     setSaving(false);
@@ -296,26 +283,11 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
   }
 
   async function handleDelete(id: string) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
     setDeleting(true);
-    const deletingInv = investments.find((i) => i.id === id);
-    await supabase.from("investments").delete().eq("id", id).eq("user_id", user.id);
-
-    if (deletingInv?.account_id) {
-      const { data: remaining } = await supabase
-        .from("investments")
-        .select("current_value")
-        .eq("user_id", user.id)
-        .eq("account_id", deletingInv.account_id);
-      const total = (remaining ?? []).reduce((s, i) => s + (i.current_value ?? 0), 0);
-      await supabase
-        .from("accounts")
-        .update({ current_balance: total, last_updated: new Date().toISOString().split("T")[0] })
-        .eq("id", deletingInv.account_id)
-        .eq("user_id", user.id);
+    const res = await fetch(`/api/investments?id=${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      console.error("Investment delete failed:", await res.text());
     }
-
     setDeleting(false);
     setConfirmDeleteId(null);
     setInvestments((prev) => prev.filter((i) => i.id !== id));
