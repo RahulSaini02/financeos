@@ -31,6 +31,21 @@ test.beforeAll(() => {
 test.describe("Authenticated — smoke tests", () => {
   test.skip(!EMAIL || !PASSWORD, "TEST_USER_EMAIL / TEST_USER_PASSWORD not set");
 
+  // Block Next.js App Router prefetch requests so the router cache stays empty.
+  // Without this, sidebar links are prefetched after the dashboard loads, and the
+  // router intercepts subsequent page.goto() calls as client-side navigations,
+  // causing ERR_ABORTED because Playwright initiated a hard navigation.
+  test.beforeEach(async ({ page }) => {
+    await page.route("**/*", async (route) => {
+      const headers = route.request().headers();
+      if (headers["next-router-prefetch"] || headers["rsc"] === "1") {
+        await route.abort();
+      } else {
+        await route.continue();
+      }
+    });
+  });
+
   test("dashboard loads with main sections", async ({ page }) => {
     await login(page);
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
