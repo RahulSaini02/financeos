@@ -173,11 +173,11 @@ export async function POST(request: NextRequest) {
   if (gcalIntegration) {
     gcalTools.push({
       name: 'get_calendar_events',
-      description: `Fetch events from the user's Google Calendar. Use whenever the user asks about their schedule, upcoming events, appointments, or calendar-related info. Default start_date: today (${todayStr}). Default end_date: 7 days later.`,
+      description: `Fetch events from the user's Google Calendar. Use whenever the user asks about their schedule, upcoming events, appointments, or calendar-related info. Refer to today's date from the system prompt context. Default end_date: 7 days after start.`,
       input_schema: {
         type: 'object' as const,
         properties: {
-          start_date: { type: 'string', description: `Start date YYYY-MM-DD. Default: today (${todayStr}).` },
+          start_date: { type: 'string', description: 'Start date YYYY-MM-DD.' },
           end_date: { type: 'string', description: 'End date YYYY-MM-DD (inclusive). Default: 7 days after start.' },
         },
         required: ['start_date', 'end_date'],
@@ -229,11 +229,22 @@ export async function POST(request: NextRequest) {
             emit({ event: 'error', message: 'Reached maximum reasoning steps.' })
             break
           }
+          // Block 1 (stable per user): safety guardrail + agent template — cached.
+          // Block 2 (volatile): today's date + conversation memory — uncached so
+          // block 1 stays byte-identical across tool-use iterations and cache hits.
+          // Tools: last entry carries cache_control to cache the full static list.
+          const agentSystemBlocks: Anthropic.TextBlockParam[] = [
+            { type: 'text', text: safetyPrefix + agentPromptTemplate, cache_control: { type: 'ephemeral' } },
+            { type: 'text', text: dateContext + memoryContext },
+          ]
+          const cachedAllTools = allTools.map((t, i) =>
+            i === allTools.length - 1 ? { ...t, cache_control: { type: 'ephemeral' as const } } : t
+          )
           const response = await anthropic.messages.create({
             model: aiModel,
             max_tokens: 8192,
-            system: safetyPrefix + agentSystemPrompt,
-            tools: allTools,
+            system: agentSystemBlocks,
+            tools: cachedAllTools,
             messages: currentMessages,
           })
 
