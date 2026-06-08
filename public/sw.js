@@ -4,10 +4,9 @@ const STATIC_CACHE = `financeos-static-${CACHE_VERSION}`;
 const API_CACHE = `financeos-api-${CACHE_VERSION}`;
 const SYNC_TAG = 'financeos-sync';
 
-// Static assets to cache immediately
+// Static assets to cache immediately (auth-required pages excluded — they SSR and need cookies)
 const STATIC_ASSETS = [
   '/',
-  '/dashboard',
   '/manifest.json',
   '/favicon.ico',
 ];
@@ -73,9 +72,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Next.js JS/CSS chunks — network-first so recompiled chunks are never stale
-  if (url.pathname.startsWith('/_next/static/chunks/') || url.pathname.startsWith('/_next/static/css/')) {
-    event.respondWith(networkFirstWithCache(request, STATIC_CACHE));
+  // Next.js static assets — all content-hashed and immutable, safe to serve from cache
+  if (url.pathname.startsWith('/_next/static/')) {
+    event.respondWith(cacheFirstWithNetwork(request, STATIC_CACHE));
     return;
   }
 
@@ -177,9 +176,10 @@ function storeGetAll(store) {
   });
 }
 
-// ── Message (skip waiting for manual update flow) ─────────────────────────────
+// ── Message (skip waiting for manual update flow + cache clearing on logout) ──
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+  if (event.data?.type === 'CLEAR_API_CACHE') caches.delete(API_CACHE);
 });
 
 // ── Push notifications (placeholder) ─────────────────────────────────────────

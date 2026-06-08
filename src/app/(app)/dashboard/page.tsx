@@ -175,8 +175,8 @@ async function getDashboardData ( userId: string ) {
     return { month: key, label, income: Math.round( ( monthMap[key]?.income ?? 0 ) * 100 ) / 100, expenses: Math.round( ( monthMap[key]?.expenses ?? 0 ) * 100 ) / 100 };
   } );
 
-  // Upsert net worth snapshot
-  await supabase.from( 'networth_snapshots' ).upsert( { user_id: userId, month: lastDay, assets_total: total_assets, liabilities_total: total_liabilities, net_worth }, { onConflict: 'user_id,month' } );
+  // Upsert net worth snapshot — fire-and-forget; result not needed for page render
+  supabase.from( 'networth_snapshots' ).upsert( { user_id: userId, month: lastDay, assets_total: total_assets, liabilities_total: total_liabilities, net_worth }, { onConflict: 'user_id,month' } );
 
   // ── Build actionable alerts ─────────────────────────────────────────────────
   const alerts: DashboardAlert[] = [];

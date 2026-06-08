@@ -461,6 +461,7 @@ export default function SettingsClient({
 
   async function handleSignOut() {
     setSigningOut(true);
+    navigator.serviceWorker?.controller?.postMessage({ type: 'CLEAR_API_CACHE' });
     await supabase.auth.signOut();
     router.push("/login");
   }
@@ -471,6 +472,7 @@ export default function SettingsClient({
       const res = await fetch("/api/user/delete", { method: "DELETE" });
       const json = await res.json() as { error?: string };
       if (!res.ok) throw new Error(json.error ?? "Failed to delete account");
+      navigator.serviceWorker?.controller?.postMessage({ type: 'CLEAR_API_CACHE' });
       await supabase.auth.signOut();
       router.push("/login");
     } catch (err) {
