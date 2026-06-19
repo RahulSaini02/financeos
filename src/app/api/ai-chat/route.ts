@@ -244,7 +244,9 @@ ${calendarEvents.length === 0 ? '- No upcoming financial events' : calendarEvent
       DEFAULT_PROMPTS.ai_chat.content,
     )
     const memoryContext = buildMemoryContext(conversationHistory, userPrefs, activeMemories)
-    const chatSystemPrompt = chatPromptTemplate.replaceAll('{{context}}', context) + memoryContext
+    // Keep the stable financial context separate from volatile conversation history so
+    // the cached block stays byte-identical across turns in the same session.
+    const chatSystemPrompt = chatPromptTemplate.replaceAll('{{context}}', context)
 
     // Safety guardrail — prepended unconditionally, cannot be overridden by user prompts
     const calendarCapabilities = gcalIntegration
@@ -387,8 +389,19 @@ Use these tools whenever the user asks to view, check, add, schedule, create, or
             const chunks: Anthropic.ContentBlock[] = []
             let stopReason: string | null = null
 
-            // Cache the system prompt + tools so repeat messages in the same session
-            // skip reprocessing the large financial context block (5-min TTL).
+            // Block 1 (stable per session): financial context + template — cached.
+            // Block 2 (volatile): conversation history — uncached so block 1 stays
+            // byte-identical across turns and the cache hits on every follow-up.
+            // Tools: last tool carries cache_control so the full tool list is cached.
+            const stableSystemBlock: Anthropic.TextBlockParam = {
+              type: 'text',
+              text: safetyPrefix + chatSystemPrompt,
+              cache_control: { type: 'ephemeral' },
+            }
+            const systemBlocks: Anthropic.TextBlockParam[] = memoryContext
+              ? [stableSystemBlock, { type: 'text', text: memoryContext }]
+              : [stableSystemBlock]
+
             const cachedTools = tools.length > 0
               ? tools.map((t, i) =>
                   i === tools.length - 1
@@ -400,13 +413,7 @@ Use these tools whenever the user asks to view, check, add, schedule, create, or
             const sdkStream = anthropic.messages.stream({
               model: aiModel,
               max_tokens: 1024,
-              system: [
-                {
-                  type: 'text' as const,
-                  text: safetyPrefix + chatSystemPrompt,
-                  cache_control: { type: 'ephemeral' as const },
-                },
-              ],
+              system: systemBlocks,
               tools: cachedTools,
               messages: msgs,
             })
