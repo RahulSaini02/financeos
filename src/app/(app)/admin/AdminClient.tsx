@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Loader2,
@@ -84,10 +85,12 @@ function UserRow({
   user,
   processingId,
   onAction,
+  onRequestEnableAi,
 }: {
   user: AdminUser;
   processingId: string | null;
   onAction: (userId: string, action: AdminAction) => void;
+  onRequestEnableAi: (userId: string, email: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const isProcessing = processingId === user.id;
@@ -163,9 +166,9 @@ function UserRow({
         {/* Actions */}
         <td className="px-4 py-3">
           <div className="flex flex-wrap gap-1.5">
-            {!user.ai_enabled && hasPendingRequest && (
+            {!user.ai_enabled && (
               <button
-                onClick={() => onAction(user.id, "approve_ai")}
+                onClick={() => onRequestEnableAi(user.id, user.email)}
                 disabled={isProcessing}
                 className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-success)]/30 bg-[var(--color-success)]/10 px-2 py-1 text-[11px] font-medium text-[var(--color-success)] hover:bg-[var(--color-success)]/20 disabled:opacity-50 transition-colors"
               >
@@ -174,7 +177,7 @@ function UserRow({
                 ) : (
                   <CheckCircle className="h-3 w-3" />
                 )}
-                Approve AI
+                {hasPendingRequest ? "Approve AI" : "Enable AI"}
               </button>
             )}
             {user.ai_enabled && (
@@ -291,6 +294,7 @@ export default function AdminClient({
   const [usersLoading, setUsersLoading] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [alert, setAlert] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<{ userId: string; email: string } | null>(null);
   const [modelSettings, setModelSettings] = useState<Record<string, string>>({})
   const [modelSaving, setModelSaving] = useState<string | null>(null)
 
@@ -628,6 +632,7 @@ export default function AdminClient({
                         user={user}
                         processingId={processingId}
                         onAction={handleAction}
+                        onRequestEnableAi={(userId, email) => setConfirmTarget({ userId, email })}
                       />
                     ))}
                   </tbody>
@@ -750,6 +755,53 @@ export default function AdminClient({
             )}
           </Card></div>
         )}
+
+        {/* ── Enable AI Confirmation Modal ──────────────────────────────────── */}
+        <Modal
+          open={confirmTarget !== null}
+          onClose={() => setConfirmTarget(null)}
+          title="Enable AI Access"
+          size="sm"
+          footer={
+            <>
+              <Button variant="secondary" size="sm" onClick={() => setConfirmTarget(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={processingId === confirmTarget?.userId}
+                onClick={async () => {
+                  if (!confirmTarget) return;
+                  const { userId } = confirmTarget;
+                  setConfirmTarget(null);
+                  await handleAction(userId, "approve_ai");
+                }}
+              >
+                {processingId === confirmTarget?.userId ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <>
+                    <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                    Confirm Enable
+                  </>
+                )}
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-tertiary)]">
+              <BrainCircuit className="h-5 w-5 shrink-0 text-[var(--color-success)]" />
+              <p className="text-sm font-medium text-[var(--color-text-primary)] break-all">
+                {confirmTarget?.email}
+              </p>
+            </div>
+            <p className="text-sm text-[var(--color-text-secondary)]">
+              This will grant full access to <strong className="text-[var(--color-text-primary)]">AI Review</strong> and <strong className="text-[var(--color-text-primary)]">AI Chat</strong> for this user.
+            </p>
+          </div>
+        </Modal>
 
         {/* ── AI Models Tab ──────────────────────────────────────────────────── */}
         {activeTab === "models" && (
