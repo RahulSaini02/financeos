@@ -32,6 +32,10 @@ const FloatingAiChat = dynamic(
   () => import("@/components/ui/floating-ai-chat").then((m) => m.FloatingAiChat),
   { ssr: false }
 );
+const AppTour = dynamic(
+  () => import("@/components/ui/app-tour").then((m) => m.AppTour),
+  { ssr: false }
+);
 import { KeyboardShortcuts } from "@/components/ui/keyboard-shortcuts";
 import { useAuth } from "@/components/auth-provider";
 
@@ -101,6 +105,25 @@ export function AppShell({ children }: AppShellProps) {
   });
   const [navPrefs, setNavPrefs] = useState<NavPref[]>(() => getNavPrefs());
   const [isAdmin, setIsAdmin] = useState(false);
+  // tourDismissed tracks whether the user has seen (or skipped) the tour.
+  // Initialised from localStorage so it persists across page refreshes.
+  const [tourDismissed, setTourDismissed] = useState(() => {
+    try { return !!localStorage.getItem("has_seen_tour"); } catch { return false; }
+  });
+  // Derived — no setState needed in an effect
+  const showTour = pathname === "/dashboard" && !tourDismissed;
+
+  // Listen for tour-complete and start-tour custom events
+  useEffect(() => {
+    function onTourComplete() { setTourDismissed(true); }
+    function onStartTour() { setTourDismissed(false); }
+    window.addEventListener("tour-complete", onTourComplete);
+    window.addEventListener("start-tour", onStartTour);
+    return () => {
+      window.removeEventListener("tour-complete", onTourComplete);
+      window.removeEventListener("start-tour", onStartTour);
+    };
+  }, []);
 
   // Listen for nav pref changes from other tabs / same-tab updates
   useEffect(() => {
@@ -193,6 +216,7 @@ export function AppShell({ children }: AppShellProps) {
             <Link
               key={item.href}
               href={item.href}
+              data-tour={`nav-${item.href.replace("/", "")}`}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 isActive
@@ -209,6 +233,7 @@ export function AppShell({ children }: AppShellProps) {
       <div className="border-t border-[var(--color-border)] p-2">
         <Link
           href="/settings"
+          data-tour="nav-settings"
           className={cn(
             "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
             pathname === "/settings"
@@ -260,6 +285,7 @@ export function AppShell({ children }: AppShellProps) {
             <Link
               key={item.href}
               href={item.href}
+              data-tour={`nav-${item.href.replace("/", "")}`}
               title={sidebarCollapsed ? item.label : undefined}
               aria-label={sidebarCollapsed ? item.label : undefined}
               className={cn(
@@ -283,6 +309,7 @@ export function AppShell({ children }: AppShellProps) {
       <div className="border-t border-[var(--color-border)] p-2">
         <Link
           href="/settings"
+          data-tour="nav-settings"
           title={sidebarCollapsed ? displayName : undefined}
           aria-label={sidebarCollapsed ? `${displayName} — Settings` : undefined}
           className={cn(
@@ -397,6 +424,7 @@ export function AppShell({ children }: AppShellProps) {
         </div>
       </nav>
 
+      <AppTour startTour={showTour} />
       <FloatingAiChat />
       <KeyboardShortcuts />
     </div>

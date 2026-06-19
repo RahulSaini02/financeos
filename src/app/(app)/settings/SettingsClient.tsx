@@ -1120,6 +1120,33 @@ export default function SettingsClient({
           )}
         </Card>
 
+        {/* ── Tour & Help ───────────────────────────────────────────────── */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Tour &amp; Help</CardTitle>
+          </CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium" style={{ color: "var(--color-text-primary)" }}>
+                Replay App Tour
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
+                Walk through the guided tour again to rediscover features.
+              </p>
+            </div>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => {
+                localStorage.removeItem("has_seen_tour");
+                window.dispatchEvent(new CustomEvent("start-tour"));
+              }}
+            >
+              Replay App Tour
+            </Button>
+          </div>
+        </Card>
+
         {/* ── Danger Zone ───────────────────────────────────────────────── */}
         <Card>
           <CardHeader>
