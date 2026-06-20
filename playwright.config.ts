@@ -15,9 +15,27 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   projects: [
+    // Unauthenticated tests — no saved session
     {
-      name: "chromium",
+      name: "unauthenticated",
+      testMatch: "**/auth.spec.ts",
       use: { ...devices["Desktop Chrome"] },
+    },
+    // Login once and persist the session to playwright/.auth/user.json
+    {
+      name: "setup",
+      testMatch: "**/auth.setup.ts",
+      use: { ...devices["Desktop Chrome"] },
+    },
+    // Authenticated tests — reuse saved session, no repeated logins
+    {
+      name: "authenticated",
+      testMatch: "**/authenticated.spec.ts",
+      dependencies: ["setup"],
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: "playwright/.auth/user.json",
+      },
     },
   ],
   // Do NOT auto-start a dev server — run `npm run dev` separately before testing
