@@ -49,7 +49,7 @@ export const ALL_NAV_ITEMS = [
   { href: "/recurring", label: "Recurring", icon: Repeat },
   { href: "/loans", label: "Loans", icon: Landmark },
   { href: "/investments", label: "Investments", icon: TrendingUp },
-  { href: "/subscriptions", label: "Subscriptions", icon: CreditCard },
+  { href: "/subscriptions", label: "Bills & Subs", icon: CreditCard },
   { href: "/paychecks", label: "Paychecks", icon: FileText },
   { href: "/employers", label: "Employers", icon: Briefcase },
   { href: "/tax-estimator", label: "Taxes", icon: ArrowRightLeft },

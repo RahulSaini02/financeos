@@ -26,7 +26,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 
-type FilterTab = "all" | BillingStatus;
+type FilterTab = "all" | BillingStatus | "overdue" | "upcoming";
 
 const BILLING_CYCLE_OPTIONS = [
   { value: 1, label: "Monthly" },
@@ -52,6 +52,7 @@ function getDaysUntil(dateStr: string | null): number | null {
 
 function getDueBadgeStyle(days: number | null): string {
   if (days === null) return "text-[var(--color-text-muted)]";
+  if (days < 0) return "text-[var(--color-danger)]";
   if (days <= 3) return "text-[var(--color-danger)]";
   if (days <= 7) return "text-[var(--color-warning)]";
   return "text-[var(--color-text-muted)]";
@@ -383,6 +384,26 @@ interface SubscriptionsClientProps {
   accounts: Account[];
 }
 
+type TimeGroup = { key: string; label: string; labelColor: string; subs: Subscription[] };
+
+function buildTimelineGroups(subs: Subscription[]): TimeGroup[] {
+  const groups: { key: string; label: string; labelColor: string; filter: (d: number | null) => boolean }[] = [
+    { key: "overdue",  label: "Overdue",      labelColor: "text-[var(--color-danger)]",          filter: (d) => d !== null && d < 0 },
+    { key: "today",    label: "Due Today",    labelColor: "text-[var(--color-warning)]",          filter: (d) => d === 0 },
+    { key: "week",     label: "This Week",    labelColor: "text-amber-400",                       filter: (d) => d !== null && d >= 1 && d <= 7 },
+    { key: "month",    label: "Next 30 Days", labelColor: "text-[var(--color-text-secondary)]",   filter: (d) => d !== null && d >= 8 && d <= 30 },
+    { key: "later",    label: "Later",        labelColor: "text-[var(--color-text-muted)]",       filter: (d) => d === null || d > 30 },
+  ];
+  return groups
+    .map(({ key, label, labelColor, filter }) => ({
+      key,
+      label,
+      labelColor,
+      subs: subs.filter((s) => filter(getDaysUntil(s.next_billing_date))),
+    }))
+    .filter((g) => g.subs.length > 0);
+}
+
 export function SubscriptionsClient({ initialSubscriptions, accounts }: SubscriptionsClientProps) {
   const supabase = createClient();
   const { success: toastSuccess, error: toastError } = useToast();
@@ -522,8 +543,18 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
     return d >= today && d <= weekLater;
   }).length;
 
+  const overdueCount = activeSubscriptions.filter((s) => {
+    const d = getDaysUntil(s.next_billing_date);
+    return d !== null && d < 0;
+  }).length;
+
   const filteredSubscriptions = subscriptions.filter((s) => {
     if (activeFilter === "all") return true;
+    if (activeFilter === "upcoming") return s.status === "active";
+    if (activeFilter === "overdue") {
+      const d = getDaysUntil(s.next_billing_date);
+      return s.status === "active" && d !== null && d < 0;
+    }
     return s.status === activeFilter;
   });
 
@@ -532,6 +563,8 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
     { key: "active", label: "Active" },
     { key: "inactive", label: "Inactive" },
     { key: "cancelled", label: "Cancelled" },
+    { key: "overdue", label: "Overdue" },
+    { key: "upcoming", label: "Timeline" },
   ];
 
   return (
@@ -601,28 +634,28 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
           </p>
         </Card>
         <Card>
-          <CardTitle>Due This Week</CardTitle>
+          <CardTitle>Overdue</CardTitle>
           <CardValue
             className={`mt-2 ${
-              dueThisWeek > 0
-                ? "text-[var(--color-warning)]"
+              overdueCount > 0
+                ? "text-[var(--color-danger)]"
                 : "text-[var(--color-text-primary)]"
             }`}
           >
-            {dueThisWeek}
+            {overdueCount}
           </CardValue>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
-            upcoming renewals
+            {dueThisWeek > 0 ? `${dueThisWeek} due this week` : "none due this week"}
           </p>
         </Card>
       </div>
 
-      <div className="flex items-center gap-1 border-b border-[var(--color-border)] pb-0">
+      <div className="flex items-center gap-1 border-b border-[var(--color-border)] pb-0 overflow-x-auto">
         {TABS.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveFilter(tab.key)}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
               activeFilter === tab.key
                 ? "border-[var(--color-accent)] text-[var(--color-accent)]"
                 : "border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
@@ -645,20 +678,120 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
           description={
             activeFilter === "all"
               ? "Add your first subscription to get started."
+              : activeFilter === "overdue"
+              ? "No overdue subscriptions."
+              : activeFilter === "upcoming"
+              ? "No active subscriptions to display."
               : `No ${activeFilter} subscriptions.`
           }
         />
+      ) : activeFilter === "upcoming" ? (
+        <div className="space-y-6">
+          {buildTimelineGroups(filteredSubscriptions).map(({ key, label, labelColor, subs }) => (
+            <div key={key}>
+              <div className="flex items-center gap-2 mb-3">
+                <span className={`text-xs font-semibold uppercase tracking-wider ${labelColor}`}>
+                  {label}
+                </span>
+                <span className="text-xs text-[var(--color-text-muted)] bg-[var(--color-bg-tertiary)] rounded-full px-2 py-0.5">
+                  {subs.length}
+                </span>
+                <span className="text-xs text-[var(--color-text-muted)] ml-auto font-medium">
+                  {formatCurrency(subs.reduce((s, sub) => s + sub.billing_cost, 0))} total
+                </span>
+              </div>
+              <div className="rounded-xl border border-[var(--color-border)] overflow-hidden divide-y divide-[var(--color-border)]">
+                {subs.map((sub) => {
+                  const days = getDaysUntil(sub.next_billing_date);
+                  const monthlyCostSub = sub.billing_cost / sub.billing_cycle_months;
+                  return (
+                    <div
+                      key={sub.id}
+                      className={`flex items-center gap-4 px-4 py-3 bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-tertiary)] transition-colors ${
+                        key === "overdue" ? "border-l-2 border-l-[var(--color-danger)]" : ""
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">
+                          {sub.name}
+                        </p>
+                        <p className="text-xs text-[var(--color-text-muted)]">
+                          {getBillingCycleLabel(sub.billing_cycle_months)}
+                          {sub.billing_cycle_months !== 1 && ` · ${formatCurrency(monthlyCostSub)}/mo`}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right hidden sm:block">
+                        <p className="text-xs text-[var(--color-text-muted)]">
+                          {sub.next_billing_date
+                            ? new Date(sub.next_billing_date).toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                              })
+                            : "No date"}
+                        </p>
+                        <p className={`text-xs font-medium ${getDueBadgeStyle(days)}`}>
+                          {days === null
+                            ? ""
+                            : days < 0
+                            ? `${Math.abs(days)}d overdue`
+                            : days === 0
+                            ? "Due today"
+                            : `in ${days}d`}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-sm font-semibold text-[var(--color-text-primary)]">
+                        {formatCurrency(sub.billing_cost)}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {sub.status === "active" && days !== null && days <= 3 && (
+                          <button
+                            onClick={() => handleLogPayment(sub.id)}
+                            disabled={loggingPayment === sub.id}
+                            className="text-xs px-2 py-1 rounded-lg bg-[var(--color-accent)]/10 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/20 transition-colors disabled:opacity-60 flex items-center gap-1"
+                          >
+                            {loggingPayment === sub.id ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="h-3 w-3" />
+                            )}
+                            <span>Log</span>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => openEdit(sub)}
+                          className="rounded-lg p-1.5 hover:bg-[var(--color-bg-tertiary)] transition-colors"
+                        >
+                          <Pencil className="h-3.5 w-3.5 text-[var(--color-text-muted)]" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filteredSubscriptions.map((sub) => {
             const monthlyCostSub = sub.billing_cost / sub.billing_cycle_months;
             const days = getDaysUntil(sub.next_billing_date);
             const dueBadgeClass = getDueBadgeStyle(days);
+            const isOverdue =
+              sub.status === "active" &&
+              (() => {
+                const d = getDaysUntil(sub.next_billing_date);
+                return d !== null && d < 0;
+              })();
 
             return (
               <Card
                 key={sub.id}
-                className="flex flex-col gap-3 hover:border-[var(--color-accent)]/50 transition-colors"
+                className={`flex flex-col gap-3 transition-colors ${
+                  isOverdue
+                    ? "border-[var(--color-danger)]/60 hover:border-[var(--color-danger)]"
+                    : "hover:border-[var(--color-accent)]/50"
+                }`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">

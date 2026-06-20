@@ -45,6 +45,7 @@ interface TransactionFilters {
   startDate?: string;
   endDate?: string;
   txnType?: "all" | "credit" | "debit" | "transfer";
+  flagged?: boolean;
 }
 
 // ── CSV export: fetches all matching transactions (no page limit) ────────────
@@ -104,6 +105,7 @@ function buildParams (
   if ( filters.categoryId ) p.set( "categoryId", filters.categoryId );
   if ( search ) p.set( "search", search );
   if ( filters.txnType && filters.txnType !== "all" ) p.set( "txnType", filters.txnType );
+  if ( filters.flagged ) p.set( "flagged", "true" );
   return p.toString();
 }
 
@@ -142,6 +144,7 @@ function TransactionsContent ( {
     startDate: searchParams.get( "startDate" ) ?? undefined,
     endDate: searchParams.get( "endDate" ) ?? undefined,
     txnType: "all",
+    flagged: searchParams.get( "flagged" ) === "true" ? true : undefined,
   } ) );
   const [searchQuery, setSearchQuery] = useState( "" );
   const [debouncedSearch, setDebouncedSearch] = useState( "" );
@@ -315,6 +318,7 @@ function TransactionsContent ( {
     filters.startDate,
     filters.endDate,
     filters.txnType && filters.txnType !== "all" ? filters.txnType : undefined,
+    filters.flagged ? true : undefined,
   ].filter( Boolean ).length;
 
   const drillDownCategory = filters.categoryId && filters.categoryId !== "__uncategorized__"
@@ -507,11 +511,26 @@ function TransactionsContent ( {
                 onChange={( e ) => handleFilterChange( { ...filters, endDate: e.target.value || undefined } )}
               />
             </div>
-            <div className="flex items-end">
-              <Button variant="ghost" size="sm" onClick={() => handleFilterChange( { txnType: "all" } )}>
-                Clear
-              </Button>
+            <div className="flex flex-col justify-end">
+              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Flagged Only</label>
+              <div className="h-8 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="flagged-filter"
+                  checked={!!filters.flagged}
+                  onChange={( e ) => handleFilterChange( { ...filters, flagged: e.target.checked ? true : undefined } )}
+                  className="h-4 w-4 rounded accent-[var(--color-accent)] cursor-pointer"
+                />
+                <label htmlFor="flagged-filter" className="text-sm text-[var(--color-text-secondary)] cursor-pointer select-none">
+                  Show flagged
+                </label>
+              </div>
             </div>
+          </div>
+          <div className="mt-3 flex justify-end">
+            <Button variant="ghost" size="sm" onClick={() => handleFilterChange( { txnType: "all" } )}>
+              Clear filters
+            </Button>
           </div>
         </Card>
       )}
