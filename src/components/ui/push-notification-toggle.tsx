@@ -78,11 +78,12 @@ export function PushNotificationToggle({ className, showLabel }: PushNotificatio
           await existingSub.unsubscribe()
         }
 
-        // Fetch VAPID public key from server
         const vapidRes = await fetch('/api/push/vapid-key')
-        const { publicKey } = (await vapidRes.json()) as { publicKey: string }
+        const vapidData = await vapidRes.json()
+        console.log('VAPID response:', vapidData)
+        const publicKey = vapidData.publicKey as string | undefined
         if (!publicKey) {
-          setError('Push not configured on server')
+          setError('Push not configured — VAPID key missing on server')
           return
         }
 
@@ -104,12 +105,8 @@ export function PushNotificationToggle({ className, showLabel }: PushNotificatio
       }
     } catch (err) {
       console.error('Push toggle error:', err)
-      const isLocalhost = window.location.hostname === 'localhost'
-      if (isLocalhost && err instanceof DOMException && err.name === 'AbortError') {
-        setError('Push notifications require HTTPS — deploy to test')
-      } else {
-        setError('Failed to register — check browser notification settings')
-      }
+      const msg = err instanceof Error ? err.message : String(err)
+      setError(msg)
     } finally {
       setLoading(false)
     }
