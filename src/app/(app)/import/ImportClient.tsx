@@ -13,6 +13,7 @@ import {
   Loader2,
   FileText,
   RefreshCw,
+  CheckCheck,
 } from "lucide-react";
 import { TablePageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -56,6 +57,8 @@ export default function ImportClient({
   const [activeTab, setActiveTab] = useState<TabKey>("pending");
   const [confirmingItem, setConfirmingItem] = useState<PendingImportWithJoins | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [confirmAllOpen, setConfirmAllOpen] = useState(false);
+  const [confirmAllLoading, setConfirmAllLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [csvLoading, setCsvLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -170,6 +173,65 @@ export default function ImportClient({
     showToast("Marked as safe.");
   }
 
+  // Confirm All handler — processes all non-flagged pending imports using suggested values
+  async function handleConfirmAll() {
+    const pendingItems = imports.filter((i) => i.status === "pending" && !i.flagged);
+    if (pendingItems.length === 0 || accounts.length === 0) return;
+
+    setConfirmAllLoading(true);
+    const now = new Date().toISOString();
+    let confirmed = 0;
+    let failed = 0;
+
+    await Promise.all(
+      pendingItems.map(async (item) => {
+        const accountId = item.suggested_account_id ?? accounts[0]?.id;
+        if (!accountId) { failed++; return; }
+
+        try {
+          const txnRes = await fetch("/api/transactions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              account_id: accountId,
+              category_id: item.suggested_category_id ?? null,
+              description: item.parsed_merchant ?? "Import",
+              amount_usd: item.parsed_amount ?? 0,
+              cr_dr: "debit",
+              date: item.parsed_date ?? now.split("T")[0],
+              notes: null,
+            }),
+          });
+          if (!txnRes.ok) { failed++; return; }
+          const txnData = await txnRes.json() as { id?: string };
+
+          await fetch("/api/imports", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: item.id,
+              status: "confirmed",
+              transaction_id: txnData.id ?? null,
+              reviewed_at: now,
+            }),
+          });
+          confirmed++;
+        } catch {
+          failed++;
+        }
+      })
+    );
+
+    setConfirmAllLoading(false);
+    setConfirmAllOpen(false);
+    showToast(
+      failed === 0
+        ? `${confirmed} transaction${confirmed !== 1 ? "s" : ""} confirmed.`
+        : `${confirmed} confirmed, ${failed} failed.`
+    );
+    fetchData();
+  }
+
   // CSV upload handler
   async function handleCsvUpload(e: React.ChangeEvent<HTMLInputElement>) {
     if (!user || !e.target.files?.[0]) return;
@@ -189,14 +251,22 @@ export default function ImportClient({
 
     // Skip header row
     const dataLines = lines.slice(1);
-    const items = [];
+    const rawItems: Array<{
+      raw_data: Record<string, string | null>;
+      parsed_merchant: string;
+      parsed_amount: number;
+      parsed_date: string;
+      parsed_last_four: string | null;
+      source: TxnSource;
+      suggested_category_id?: string | null;
+    }> = [];
 
     for (const line of dataLines) {
       const cols = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
       const [date, description, amount, last_four] = cols;
       if (!date || !description || !amount) continue;
 
-      items.push({
+      rawItems.push({
         raw_data: { date, description, amount, last_four: last_four ?? null },
         parsed_merchant: description,
         parsed_amount: Math.abs(parseFloat(amount)),
@@ -205,6 +275,30 @@ export default function ImportClient({
         source: "import" as TxnSource,
       });
     }
+
+    // Auto-categorize all rows in parallel before inserting
+    const items = await Promise.all(
+      rawItems.map(async (item) => {
+        try {
+          const res = await fetch("/api/transactions/categorize", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              description: item.parsed_merchant,
+              amount: item.parsed_amount,
+              date: item.parsed_date,
+              transaction_type: item.parsed_amount != null && item.parsed_amount >= 0 ? 'credit' : 'debit',
+              createIfMissing: true,
+            }),
+          });
+          if (res.ok) {
+            const body = await res.json() as { categoryId: string | null };
+            return { ...item, suggested_category_id: body.categoryId };
+          }
+        } catch { /* non-fatal */ }
+        return item;
+      })
+    );
 
     let successCount = 0;
     if (items.length > 0) {
@@ -215,13 +309,13 @@ export default function ImportClient({
           body: JSON.stringify({ items }),
         });
         if (res.ok) {
-          const body = await res.json();
+          const body = await res.json() as { created?: number };
           successCount = body.created ?? 0;
         }
       } catch { /* non-fatal */ }
     }
 
-    showToast(`${successCount} row${successCount !== 1 ? "s" : ""} imported.`);
+    showToast(`${successCount} row${successCount !== 1 ? "s" : ""} imported with categories suggested.`);
     setCsvLoading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
     fetchData();
@@ -345,6 +439,25 @@ export default function ImportClient({
         ))}
       </div>
 
+      {/* Confirm All bar — pending tab only */}
+      {activeTab === "pending" && tabItems.length > 0 && (
+        <div className="flex items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-3">
+          <p className="text-sm text-[var(--color-text-secondary)]">
+            <span className="font-semibold text-[var(--color-text-primary)]">{tabItems.length}</span>{" "}
+            pending import{tabItems.length !== 1 ? "s" : ""} — confirm each one, or confirm all at once using suggested values.
+          </p>
+          <Button
+            size="sm"
+            className="shrink-0 ml-4 bg-[var(--color-success)] text-white hover:opacity-90"
+            onClick={() => setConfirmAllOpen(true)}
+            disabled={accounts.length === 0}
+          >
+            <CheckCheck className="h-3.5 w-3.5 mr-1.5" />
+            Confirm All
+          </Button>
+        </div>
+      )}
+
       {/* Cards */}
       {tabItems.length === 0 ? (
         <ImportEmptyState tab={activeTab} onUpload={() => fileInputRef.current?.click()} />
@@ -381,6 +494,47 @@ export default function ImportClient({
           onClose={() => setConfirmingItem(null)}
           onError={(msg) => showToast(msg)}
         />
+      )}
+
+      {/* Confirm All Dialog */}
+      {confirmAllOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <Card className="w-full max-w-sm mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-success)]/10">
+                <CheckCheck className="h-5 w-5 text-[var(--color-success)]" />
+              </div>
+              <div>
+                <h3 className="font-semibold">Confirm all pending imports?</h3>
+                <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                  {tabItems.length} import{tabItems.length !== 1 ? "s" : ""} will be confirmed as debits using suggested categories. Flagged items are skipped.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                className="flex-1"
+                onClick={() => setConfirmAllOpen(false)}
+                disabled={confirmAllLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-[var(--color-success)] text-white hover:opacity-90"
+                onClick={handleConfirmAll}
+                disabled={confirmAllLoading}
+              >
+                {confirmAllLoading ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <CheckCheck className="h-3.5 w-3.5 mr-1.5" />
+                )}
+                {confirmAllLoading ? "Confirming…" : "Confirm All"}
+              </Button>
+            </div>
+          </Card>
+        </div>
       )}
 
       {/* Reject Dialog */}

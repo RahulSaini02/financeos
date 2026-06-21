@@ -1,8 +1,10 @@
 import MarketingNav from "@/components/marketing/MarketingNav";
 import HeroSection from "@/components/marketing/HeroSection";
+import TrustBar from "@/components/marketing/TrustBar";
+import HowItWorks from "@/components/marketing/HowItWorks";
 import FeaturesGrid from "@/components/marketing/FeaturesGrid";
-import SocialProof from "@/components/marketing/SocialProof";
-import DemoPreview from "@/components/marketing/DemoPreview";
+import AIHighlight from "@/components/marketing/AIHighlight";
+import FinalCTA from "@/components/marketing/FinalCTA";
 import Footer from "@/components/marketing/Footer";
 
 export const metadata = {
@@ -22,9 +24,12 @@ export default function HeroPage() {
       <MarketingNav />
       <main>
         <HeroSection />
+        <TrustBar />
+        <div className="h-px bg-[var(--color-border)]/20" />
+        <HowItWorks />
         <FeaturesGrid />
-        <DemoPreview />
-        <SocialProof />
+        <AIHighlight />
+        <FinalCTA />
       </main>
       <Footer />
     </div>

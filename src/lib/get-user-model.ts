@@ -28,7 +28,7 @@ export async function getUserModel(
     .eq('is_active', true)
     .maybeSingle()
 
-  if (data?.content && AI_MODELS.some((m) => m.value === data.content)) {
+  if (data?.content && data.content.trim().length > 0) {
     return data.content
   }
 

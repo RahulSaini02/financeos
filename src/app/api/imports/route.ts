@@ -9,6 +9,7 @@ interface ImportItem {
   parsed_date: string | null
   parsed_last_four: string | null
   source: TxnSource
+  suggested_category_id?: string | null
 }
 
 export async function POST(request: NextRequest) {
@@ -39,6 +40,7 @@ export async function POST(request: NextRequest) {
       parsed_last_four: item.parsed_last_four ?? null,
       source: item.source,
       status: 'pending' as ImportStatus,
+      suggested_category_id: item.suggested_category_id ?? null,
     }))
 
     const { data, error } = await supabase

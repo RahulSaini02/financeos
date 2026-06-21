@@ -287,7 +287,17 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify( { messages: newHistory, model: selectedModel, timezone: localStorage.getItem( "pref_timezone" ) ?? "America/Los_Angeles", sessionId } ),
       } );
-      if ( !res.ok || !res.body ) throw new Error( "Agent request failed" );
+      if ( !res.ok ) {
+        const errBody = await res.json().catch( () => ({}) ) as { error?: string; code?: string }
+        const msg = res.status === 429
+          ? ( errBody.error ?? "You've reached your AI usage limit. Please try again later." )
+          : "Sorry, I couldn't process that. Please try again."
+        stopTypewriter()
+        setMessages( ( prev ) => [...prev, { id: crypto.randomUUID(), role: "assistant", content: msg }] )
+        setIsSending( false )
+        return
+      }
+      if ( !res.body ) throw new Error( "Agent request failed" );
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let sseBuffer = "";

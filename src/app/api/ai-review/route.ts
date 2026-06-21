@@ -4,6 +4,7 @@ import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
 import { getUserPrompt } from '@/lib/get-user-prompt'
 import { getUserModel } from '@/lib/get-user-model'
+import { checkAndLogAiUsage } from '@/lib/ai-rate-limit'
 import { formatCurrency } from '@/lib/utils'
 import {
   getDefaultPeriodKey,
@@ -21,19 +22,9 @@ export async function GET(request: Request) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // ── AI access guard ───────────────────────────────────────────────────────
-    const { data: profileRow } = await supabase
-      .from('profiles')
-      .select('ai_enabled')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    if (!profileRow?.ai_enabled) {
-      return NextResponse.json(
-        { error: 'AI access not enabled', code: 'AI_DISABLED' },
-        { status: 403 },
-      )
-    }
+    // ── Rate limit ────────────────────────────────────────────────────────────
+    const rateLimit = await checkAndLogAiUsage(supabase, user.id, 'review')
+    if (!rateLimit.allowed) return rateLimit.response
 
     const aiModel = await getUserModel(supabase, user.id)
 

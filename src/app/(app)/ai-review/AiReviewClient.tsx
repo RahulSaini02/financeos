@@ -161,7 +161,10 @@ export default function AiReviewClient({
       if (force) params.set("force", "true");
       if (key) params.set("period", key);
       const res = await fetch(`/api/ai-review?${params}`);
-      if (!res.ok) throw new Error("Failed to load review");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? "Failed to load review");
+      }
       setData(await res.json());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");

@@ -107,6 +107,15 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   animation: heroFadeIn 0.6s ease-out forwards;
 }
 
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+.cursor-blink {
+  animation: cursorBlink 0.7s ease infinite;
+}
+
 /* ── App Tour (driver.js) ─────────────────────────── */
 .financeos-tour-popover {
   background: var(--color-bg-secondary) !important;
@@ -151,4 +160,35 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 .financeos-tour-popover .driver-popover-close-btn:hover {
   color: var(--color-text-primary) !important;
+}
+
+/* Landing page animations */
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.pulse-badge {
+  animation: pulse-badge 2s ease-in-out infinite;
+}
+
+@keyframes chat-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes float-up-down {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+.float-chip {
+  animation: float-up-down 4s ease-in-out infinite;
+}
+.float-chip-delay {
+  animation: float-up-down 4s ease-in-out infinite;
+  animation-delay: 2s;
+}
+
+.chat-message-animate {
+  animation: chat-fade-in 0.4s ease forwards;
 }

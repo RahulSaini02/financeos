@@ -11,6 +11,8 @@ import {
   Bell,
   Plus,
   ChevronRight,
+  Receipt,
+  CalendarClock,
 } from "lucide-react";
 import Link from "next/link";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -19,6 +21,8 @@ import { DashboardCharts } from "./DashboardCharts";
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
 import { DashboardInsightLoader } from "./DashboardInsightLoader";
+import { DashboardWelcomeBanner } from "@/components/dashboard/DashboardWelcomeBanner";
+import { EmptySection } from "@/components/dashboard/EmptySection";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -27,6 +31,7 @@ interface UpcomingBill {
   due_date: string;
   amount: number;
   paid: boolean;
+  overdue: boolean;
 }
 
 interface Transaction {
@@ -48,6 +53,14 @@ interface DashboardAlert {
   body: string;
   actionUrl: string;
   actionLabel: string;
+}
+
+function getDaysUntilDue( dateStr: string ): number {
+  const today = new Date();
+  today.setHours( 0, 0, 0, 0 );
+  const due = new Date( dateStr );
+  due.setHours( 0, 0, 0, 0 );
+  return Math.round( ( due.getTime() - today.getTime() ) / ( 1000 * 60 * 60 * 24 ) );
 }
 
 // ── MetricCard sub-component ───────────────────────────────────────────────────
@@ -108,20 +121,29 @@ async function getDashboardData ( userId: string ) {
   const sevenDaysFromNow = new Date( now );
   sevenDaysFromNow.setDate( sevenDaysFromNow.getDate() + 7 );
   const sevenDaysStr = sevenDaysFromNow.toISOString().split( 'T' )[0];
+  const thirtyDaysFromNow = new Date( now );
+  thirtyDaysFromNow.setDate( thirtyDaysFromNow.getDate() + 30 );
+  const thirtyDaysStr = thirtyDaysFromNow.toISOString().split( 'T' )[0];
+  const thirtyDaysAgo = new Date( now );
+  thirtyDaysAgo.setDate( thirtyDaysAgo.getDate() - 30 );
+  const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split( 'T' )[0];
 
   const twelveMonthsAgoDate = new Date( now.getFullYear(), now.getMonth() - 11, 1 );
   const twelveMonthsAgoStr = `${ twelveMonthsAgoDate.getFullYear() }-${ pad( twelveMonthsAgoDate.getMonth() + 1 ) }-01`;
 
   const [
     accountsRes, transactionsRes, flaggedRes, networthRes,
-    billsRes, twelveMonthTxnsRes, recentTxnsRes,
+    billsRes, overdueBillsRes, twelveMonthTxnsRes, recentTxnsRes,
     budgetsRes, flaggedTxnsRes,
   ] = await Promise.all( [
     supabase.from( 'accounts' ).select( '*' ).eq( 'user_id', userId ).eq( 'is_active', true ),
     supabase.from( 'transactions' ).select( '*, category:categories(name, id)' ).eq( 'user_id', userId ).gte( 'date', firstDay ).lte( 'date', lastDay ),
     supabase.from( 'transactions' ).select( '*', { count: 'exact', head: true } ).eq( 'user_id', userId ).eq( 'flagged', true ),
     supabase.from( 'networth_snapshots' ).select( '*' ).eq( 'user_id', userId ).order( 'month', { ascending: false } ).limit( 12 ),
-    supabase.from( 'subscriptions' ).select( 'name, next_billing_date, billing_cost' ).eq( 'user_id', userId ).eq( 'status', 'active' ).not( 'next_billing_date', 'is', null ).gte( 'next_billing_date', todayStr ).lte( 'next_billing_date', sevenDaysStr ).order( 'next_billing_date', { ascending: true } ),
+    // upcoming: today → today+30
+    supabase.from( 'subscriptions' ).select( 'name, next_billing_date, billing_cost' ).eq( 'user_id', userId ).eq( 'status', 'active' ).not( 'next_billing_date', 'is', null ).gte( 'next_billing_date', todayStr ).lte( 'next_billing_date', thirtyDaysStr ).order( 'next_billing_date', { ascending: true } ),
+    // overdue: today-30 → yesterday
+    supabase.from( 'subscriptions' ).select( 'name, next_billing_date, billing_cost' ).eq( 'user_id', userId ).eq( 'status', 'active' ).not( 'next_billing_date', 'is', null ).gte( 'next_billing_date', thirtyDaysAgoStr ).lt( 'next_billing_date', todayStr ).order( 'next_billing_date', { ascending: false } ),
     supabase.from( 'transactions' ).select( 'amount_usd, cr_dr, date' ).eq( 'user_id', userId ).eq( 'is_internal_transfer', false ).gte( 'date', twelveMonthsAgoStr ).lte( 'date', lastDay ),
     supabase.from( 'transactions' ).select( 'id, description, final_amount, date, flagged, categories(name), accounts(name)' ).eq( 'user_id', userId ).order( 'date', { ascending: false } ).limit( 5 ),
     supabase.from( 'budgets' ).select( '*, category:categories(id, name)' ).eq( 'user_id', userId ).eq( 'month', firstDay ),
@@ -133,6 +155,7 @@ async function getDashboardData ( userId: string ) {
   const flagged_count = flaggedRes.count ?? 0;
   const snapshots = networthRes.data ?? [];
   const bills = billsRes.data ?? [];
+  const overdueBills = overdueBillsRes.data ?? [];
 
   const total_assets = accounts.filter( ( a ) => a.kind === 'asset' || a.kind === 'investment' ).reduce( ( s, a ) => s + ( a.current_balance ?? 0 ), 0 );
   const total_liabilities = accounts.filter( ( a ) => a.kind === 'liability' ).reduce( ( s, a ) => s + Math.abs( a.current_balance ?? 0 ), 0 );
@@ -142,7 +165,10 @@ async function getDashboardData ( userId: string ) {
   const monthly_expenses = transactions.filter( ( t ) => t.cr_dr === 'debit' && !t.is_internal_transfer ).reduce( ( s, t ) => s + Math.abs( t.amount_usd ?? 0 ), 0 );
   const savings_rate = monthly_income > 0 ? ( ( monthly_income - monthly_expenses ) / monthly_income ) * 100 : 0;
 
-  const upcoming_bills: UpcomingBill[] = bills.map( ( b ) => ( { name: b.name, due_date: b.next_billing_date, amount: b.billing_cost, paid: false } ) );
+  const upcoming_bills: UpcomingBill[] = [
+    ...overdueBills.map( ( b ) => ( { name: b.name, due_date: b.next_billing_date!, amount: b.billing_cost, paid: false, overdue: true } ) ),
+    ...bills.map( ( b ) => ( { name: b.name, due_date: b.next_billing_date!, amount: b.billing_cost, paid: false, overdue: false } ) ),
+  ];
 
   // Category breakdown
   const catSpend: Record<string, number> = {};
@@ -175,8 +201,15 @@ async function getDashboardData ( userId: string ) {
     return { month: key, label, income: Math.round( ( monthMap[key]?.income ?? 0 ) * 100 ) / 100, expenses: Math.round( ( monthMap[key]?.expenses ?? 0 ) * 100 ) / 100 };
   } );
 
-  // Upsert net worth snapshot — fire-and-forget; result not needed for page render
-  supabase.from( 'networth_snapshots' ).upsert( { user_id: userId, month: lastDay, assets_total: total_assets, liabilities_total: total_liabilities, net_worth }, { onConflict: 'user_id,month' } );
+  // Upsert net worth snapshot and await so the chart reflects the current state
+  await supabase.from( 'networth_snapshots' ).upsert( { user_id: userId, month: lastDay, assets_total: total_assets, liabilities_total: total_liabilities, net_worth }, { onConflict: 'user_id,month' } );
+
+  // Build trend: existing snapshots (excluding current month) + current month injected fresh
+  const historicalSnapshots = snapshots.filter( ( s ) => s.month !== lastDay );
+  const networthTrend = [
+    ...historicalSnapshots,
+    { month: lastDay, net_worth },
+  ].sort( ( a, b ) => a.month.localeCompare( b.month ) );
 
   // ── Build actionable alerts ─────────────────────────────────────────────────
   const alerts: DashboardAlert[] = [];
@@ -237,17 +270,33 @@ async function getDashboardData ( userId: string ) {
     } );
   }
 
-  // Upcoming bill alerts (from bills already fetched, limited to 7-day window)
-  for ( const bill of bills ) {
-    const now2 = new Date();
-    const due = new Date( bill.next_billing_date );
-    const diffMs = due.getTime() - now2.getTime();
+  // Upcoming bill alerts (limited to 7-day window)
+  for ( const bill of bills.filter( b => {
+    const due = new Date( b.next_billing_date! );
+    return due.getTime() - now.getTime() <= 7 * 24 * 60 * 60 * 1000;
+  } ) ) {
+    const due = new Date( bill.next_billing_date! );
+    const diffMs = due.getTime() - now.getTime();
     const daysUntil = Math.ceil( diffMs / ( 1000 * 60 * 60 * 24 ) );
     alerts.push( {
       id: `bill_${ bill.name }_${ bill.next_billing_date }`,
       type: 'upcoming_bill',
       title: `Upcoming Bill: ${ bill.name }`,
       body: `Due in ${ daysUntil } day${ daysUntil !== 1 ? 's' : '' } — ${ formatCurrency( bill.billing_cost ?? 0 ) }`,
+      actionUrl: `/subscriptions`,
+      actionLabel: 'View Subscriptions',
+    } );
+  }
+
+  // Overdue bill alerts
+  for ( const bill of overdueBills ) {
+    const due = new Date( bill.next_billing_date! );
+    const daysOverdue = Math.ceil( ( now.getTime() - due.getTime() ) / ( 1000 * 60 * 60 * 24 ) );
+    alerts.push( {
+      id: `bill_overdue_${ bill.name }_${ bill.next_billing_date }`,
+      type: 'upcoming_bill',
+      title: `Overdue Bill: ${ bill.name }`,
+      body: `${ daysOverdue } day${ daysOverdue !== 1 ? 's' : '' } past due — ${ formatCurrency( bill.billing_cost ?? 0 ) }`,
       actionUrl: `/subscriptions`,
       actionLabel: 'View Subscriptions',
     } );
@@ -267,10 +316,11 @@ async function getDashboardData ( userId: string ) {
     net_worth, total_assets, total_liabilities,
     monthly_income, monthly_expenses, savings_rate,
     flagged_count, upcoming_bills,
-    networth_trend: [...snapshots].reverse(),
+    networth_trend: networthTrend,
     categoryBreakdown, monthlyData,
     recentTransactions,
     alerts,
+    hasAccounts: accounts.length > 0,
   };
 }
 
@@ -332,6 +382,9 @@ export default async function DashboardPage () {
         </Link>
       </PageHeader>
 
+      {/* Welcome banner — only for new users with no accounts */}
+      {!data.hasAccounts && <DashboardWelcomeBanner />}
+
       {/* Key Metrics */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <MetricCard
@@ -376,143 +429,227 @@ export default async function DashboardPage () {
         categoryBreakdown={data.categoryBreakdown ?? []}
         monthlyData={data.monthlyData ?? []}
         networthTrend={data.networth_trend}
+        isNewUser={!data.hasAccounts}
       />
 
-      {/* Two-column layout */}
+      {/* Bottom row — three equal columns */}
       <div className="grid gap-4 sm:gap-6 lg:grid-cols-3">
-        {/* Recent Transactions */}
-        <div className="lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Transactions</CardTitle>
-              <Link href="/transactions">
-                <Button variant="ghost" size="sm">
-                  View all <ChevronRight className="h-3.5 w-3.5 ml-1" />
-                </Button>
-              </Link>
-            </CardHeader>
-            {data.recentTransactions.length === 0 ? (
-              <p className="text-sm text-[var(--color-text-muted)]">No recent transactions.</p>
-            ) : (
-              <div className="space-y-3">
-                {data.recentTransactions.map( ( txn ) => {
-                  const isCredit = txn.final_amount > 0;
-                  return (
-                    <div
-                      key={txn.id}
-                      className="flex items-center justify-between py-2 border-b border-[var(--color-border)] last:border-0"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`flex h-8 w-8 items-center justify-center rounded-lg ${ isCredit
-                            ? "bg-[var(--color-success)]/10 text-[var(--color-success)]"
-                            : "bg-[var(--color-danger)]/10 text-[var(--color-danger)]"
-                            }`}
-                        >
-                          {isCredit ? (
-                            <TrendingUp className="h-4 w-4" />
-                          ) : (
-                            <TrendingDown className="h-4 w-4" />
-                          )}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium flex items-center gap-2">
-                            {txn.description}
-                            {txn.flagged && (
-                              <AlertTriangle className="h-3 w-3 text-[var(--color-warning)]" />
-                            )}
-                          </p>
-                          <p className="text-xs text-[var(--color-text-muted)]">
-                            {txn.categories?.name ?? "Uncategorized"}
-                            {txn.accounts?.name ? ` · ${ txn.accounts.name }` : ""}
-                            {" · "}
-                            {formatDate( txn.date )}
-                          </p>
-                        </div>
-                      </div>
-                      <span
-                        className={`text-sm font-medium ${ isCredit
-                          ? "text-[var(--color-success)]"
-                          : "text-[var(--color-danger)]"
-                          }`}
-                      >
-                        {isCredit ? "+" : ""}
-                        {formatCurrency( txn.final_amount )}
-                      </span>
-                    </div>
-                  );
-                } )}
-              </div>
-            )}
-          </Card>
-        </div>
 
-        {/* Upcoming Bills */}
-        <div>
-          <Card>
-            <CardHeader>
-              <CardTitle>Upcoming Bills</CardTitle>
-              <Link href="/subscriptions" aria-label="View all subscriptions">
-                <Button variant="ghost" size="sm" aria-label="View all subscriptions">
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </Button>
-              </Link>
-            </CardHeader>
-            {data.upcoming_bills.length === 0 ? (
-              <p className="text-sm text-[var(--color-text-muted)]">No upcoming bills.</p>
-            ) : (
-              <div className="space-y-3">
-                {data.upcoming_bills.map( ( bill, i ) => (
+        {/* Recent Transactions */}
+        <Card className="flex flex-col">
+          <CardHeader>
+            <CardTitle>Recent Transactions</CardTitle>
+            <Link href="/transactions">
+              <Button variant="ghost" size="sm">
+                View all <ChevronRight className="h-3.5 w-3.5 ml-1" />
+              </Button>
+            </Link>
+          </CardHeader>
+          {data.recentTransactions.length === 0 ? (
+            <EmptySection
+              icon={Receipt}
+              title="No transactions yet"
+              description="Your recent transactions will appear here once you add them."
+              ctaLabel="Import transactions"
+              ctaHref="/import"
+            />
+          ) : (
+            <div className="overflow-y-auto max-h-72 pr-1 space-y-1">
+              {data.recentTransactions.map( ( txn ) => {
+                const isCredit = txn.final_amount > 0;
+                return (
                   <div
-                    key={i}
+                    key={txn.id}
                     className="flex items-center justify-between py-2 border-b border-[var(--color-border)] last:border-0"
                   >
-                    <div>
-                      <p className="text-sm font-medium">{bill.name}</p>
-                      <p className="text-xs text-[var(--color-text-muted)]">
-                        Due {formatDate( bill.due_date )}
-                      </p>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${ isCredit ? "bg-[var(--color-success)]/10 text-[var(--color-success)]" : "bg-[var(--color-danger)]/10 text-[var(--color-danger)]" }`}>
+                        {isCredit ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate flex items-center gap-1">
+                          {txn.description}
+                          {txn.flagged && <AlertTriangle className="h-3 w-3 shrink-0 text-[var(--color-warning)]" />}
+                        </p>
+                        <p className="text-xs text-[var(--color-text-muted)] truncate">
+                          {txn.categories?.name ?? "Uncategorized"} · {formatDate( txn.date )}
+                        </p>
+                      </div>
                     </div>
-                    <span className="text-sm font-medium">
-                      {formatCurrency( bill.amount )}
+                    <span className={`text-sm font-medium shrink-0 ml-2 ${ isCredit ? "text-[var(--color-success)]" : "text-[var(--color-danger)]" }`}>
+                      {isCredit ? "+" : ""}{formatCurrency( txn.final_amount )}
                     </span>
                   </div>
-                ) )}
-              </div>
-            )}
-            <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-[var(--color-text-secondary)]">Total upcoming</span>
-                <span className="font-medium">
-                  {formatCurrency( data.upcoming_bills.reduce( ( s, b ) => s + b.amount, 0 ) )}
-                </span>
-              </div>
+                );
+              } )}
             </div>
-          </Card>
+          )}
+        </Card>
 
-          {/* Quick Stats */}
-          <Card className="mt-4">
-            <CardHeader>
-              <CardTitle>Quick Stats</CardTitle>
-            </CardHeader>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-[var(--color-text-secondary)]">Flagged transactions</span>
-                <span className="font-medium text-[var(--color-warning)]">{data.flagged_count}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-[var(--color-text-secondary)]">Total assets</span>
-                <span className="font-medium">{formatCurrency( data.total_assets )}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-[var(--color-text-secondary)]">Total liabilities</span>
-                <span className="font-medium text-[var(--color-danger)]">
-                  {formatCurrency( data.total_liabilities )}
+        {/* Upcoming Bills */}
+        <Card className="flex flex-col">
+          <CardHeader>
+            <CardTitle>Upcoming Bills</CardTitle>
+            <Link href="/subscriptions" aria-label="View all subscriptions">
+              <Button variant="ghost" size="sm">
+                View all <ChevronRight className="h-3.5 w-3.5 ml-1" />
+              </Button>
+            </Link>
+          </CardHeader>
+          {data.upcoming_bills.length === 0 ? (
+            <EmptySection
+              icon={CalendarClock}
+              title="No upcoming bills"
+              description="Track subscriptions and recurring bills to see them here."
+              ctaLabel="Add subscription"
+              ctaHref="/subscriptions"
+            />
+          ) : ( () => {
+            const overdueBillsList = data.upcoming_bills.filter( b => b.overdue );
+            const thisWeekBills = data.upcoming_bills.filter( b => !b.overdue && getDaysUntilDue( b.due_date ) <= 7 );
+            const laterBills = data.upcoming_bills.filter( b => !b.overdue && getDaysUntilDue( b.due_date ) > 7 );
+
+            const BillRow = ( { bill, urgency }: { bill: typeof data.upcoming_bills[0]; urgency: 'danger' | 'warning' | 'normal' } ) => (
+              <div className="flex items-center justify-between py-2 border-b border-[var(--color-border)] last:border-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  {urgency !== 'normal' && (
+                    <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${ urgency === 'danger' ? 'bg-[var(--color-danger)]' : 'bg-[var(--color-warning)]' }`} />
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{bill.name}</p>
+                    <p className="text-xs text-[var(--color-text-muted)]">
+                      { bill.overdue ? `${ Math.abs( getDaysUntilDue( bill.due_date ) ) }d overdue`
+                        : getDaysUntilDue( bill.due_date ) === 0 ? 'Due today'
+                        : `Due ${ formatDate( bill.due_date ) }` }
+                    </p>
+                  </div>
+                </div>
+                <span className={`text-sm font-medium shrink-0 ml-2 ${ urgency === 'danger' ? 'text-[var(--color-danger)]' : '' }`}>
+                  {formatCurrency( bill.amount )}
                 </span>
               </div>
+            );
+
+            return (
+              <div className="overflow-y-auto max-h-72 pr-1 space-y-4">
+                {overdueBillsList.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-[var(--color-danger)] uppercase tracking-wider mb-2">Overdue</p>
+                    {overdueBillsList.map( ( bill, i ) => <BillRow key={i} bill={bill} urgency="danger" /> )}
+                  </div>
+                )}
+                {thisWeekBills.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-[var(--color-warning)] uppercase tracking-wider mb-2">This Week</p>
+                    {thisWeekBills.map( ( bill, i ) => <BillRow key={i} bill={bill} urgency="warning" /> )}
+                  </div>
+                )}
+                {laterBills.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Later</p>
+                    {laterBills.map( ( bill, i ) => <BillRow key={i} bill={bill} urgency="normal" /> )}
+                  </div>
+                )}
+              </div>
+            );
+          } )() }
+          <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-[var(--color-text-secondary)]">Total (30 days)</span>
+              <span className="font-medium">{formatCurrency( data.upcoming_bills.reduce( ( s, b ) => s + b.amount, 0 ) )}</span>
             </div>
-          </Card>
-        </div>
+          </div>
+        </Card>
+
+        {/* Quick Stats */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Quick Stats</CardTitle>
+          </CardHeader>
+          <div className="space-y-4">
+
+            {/* Balance */}
+            <div>
+              <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Balance</p>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-[var(--color-text-secondary)]">Total assets</span>
+                  <span className="font-medium">{formatCurrency( data.total_assets )}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-[var(--color-text-secondary)]">Total liabilities</span>
+                  <span className="font-medium text-[var(--color-danger)]">{formatCurrency( data.total_liabilities )}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-[var(--color-text-secondary)]">Monthly savings</span>
+                  <span className={`font-medium ${ ( data.monthly_income - data.monthly_expenses ) >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]" }`}>
+                    {formatCurrency( data.monthly_income - data.monthly_expenses )}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-[var(--color-text-secondary)]">Savings rate</span>
+                  <span className={`font-medium ${ data.savings_rate >= 20 ? "text-[var(--color-success)]" : data.savings_rate >= 0 ? "" : "text-[var(--color-danger)]" }`}>
+                    {data.savings_rate.toFixed( 1 )}%
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Bills */}
+            <div className="pt-3 border-t border-[var(--color-border)]">
+              <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Bills</p>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-[var(--color-text-secondary)]">Overdue</span>
+                  <span className={`font-medium ${ data.upcoming_bills.filter( b => b.overdue ).length > 0 ? "text-[var(--color-danger)]" : "" }`}>
+                    {data.upcoming_bills.filter( b => b.overdue ).length}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-[var(--color-text-secondary)]">Due this week</span>
+                  <span className={`font-medium ${ data.upcoming_bills.filter( b => !b.overdue && getDaysUntilDue( b.due_date ) <= 7 ).length > 0 ? "text-[var(--color-warning)]" : "" }`}>
+                    {data.upcoming_bills.filter( b => !b.overdue && getDaysUntilDue( b.due_date ) <= 7 ).length}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-[var(--color-text-secondary)]">Next 30 days</span>
+                  <span className="font-medium">{data.upcoming_bills.filter( b => !b.overdue ).length}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-[var(--color-text-secondary)]">Total upcoming</span>
+                  <span className="font-medium">{formatCurrency( data.upcoming_bills.reduce( ( s, b ) => s + b.amount, 0 ) )}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Activity */}
+            <div className="pt-3 border-t border-[var(--color-border)]">
+              <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">Activity</p>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-[var(--color-text-secondary)]">Flagged transactions</span>
+                  <Link href="/transactions?flagged=true" className={`font-medium ${ data.flagged_count > 0 ? "text-[var(--color-warning)] hover:underline" : "" }`}>
+                    {data.flagged_count}
+                  </Link>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-[var(--color-text-secondary)]">Active alerts</span>
+                  <span className={`font-medium ${ data.alerts.length > 0 ? "text-[var(--color-warning)]" : "" }`}>
+                    {data.alerts.length}
+                  </span>
+                </div>
+                { data.categoryBreakdown[0] && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-[var(--color-text-secondary)]">Top spending</span>
+                    <span className="font-medium truncate max-w-[130px] text-right">{data.categoryBreakdown[0].name}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
+        </Card>
+
       </div>
     </div>
   );

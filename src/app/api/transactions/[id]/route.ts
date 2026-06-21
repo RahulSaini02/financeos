@@ -208,6 +208,14 @@ export async function DELETE(
       if (linked) linkedTxn = linked
     }
 
+    // Nullify any pending_import that references this transaction before deleting
+    // (guards against the FK constraint on pending_imports.transaction_id)
+    await supabase
+      .from('pending_imports')
+      .update({ transaction_id: null })
+      .eq('transaction_id', id)
+      .eq('user_id', user.id)
+
     // Delete this transaction
     const { error } = await supabase
       .from('transactions')

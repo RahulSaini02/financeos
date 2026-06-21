@@ -8,6 +8,8 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChartEmptyState } from "@/components/charts/ChartEmptyState";
+import { PieChart as PieChartIcon } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 
 interface CategoryPieChartProps {
@@ -22,9 +24,13 @@ export function CategoryPieChart({ data }: CategoryPieChartProps) {
           <CardTitle>Spending by Category</CardTitle>
           <span className="text-xs text-[var(--color-text-muted)]">This month</span>
         </CardHeader>
-        <p className="text-sm text-[var(--color-text-muted)] mt-2">
-          No expenses recorded yet.
-        </p>
+        <ChartEmptyState
+          icon={PieChartIcon}
+          title="No spending data yet"
+          description="Add transactions this month to see your category breakdown."
+          ctaLabel="Import transactions"
+          ctaHref="/import"
+        />
       </Card>
     );
   }

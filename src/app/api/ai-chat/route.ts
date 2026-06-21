@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
-import { getUserPrompt } from '@/lib/get-user-prompt'
 import { getUserModel } from '@/lib/get-user-model'
+import { checkAndLogAiUsage } from '@/lib/ai-rate-limit'
 import { formatCurrency } from '@/lib/utils'
 import { getCalendarEvents, createCalendarEvent, refreshAccessToken } from '@/lib/google-oauth'
 import {
@@ -28,19 +28,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // ── AI access guard ───────────────────────────────────────────────────────
-    const { data: profileRow } = await supabase
-      .from('profiles')
-      .select('ai_enabled')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    if (!profileRow?.ai_enabled) {
-      return NextResponse.json(
-        { error: 'AI access not enabled', code: 'AI_DISABLED' },
-        { status: 403 },
-      )
-    }
+    // ── Rate limit ────────────────────────────────────────────────────────────
+    const rateLimit = await checkAndLogAiUsage(supabase, user.id, 'chat')
+    if (!rateLimit.allowed) return rateLimit.response
 
     const userDefaultModel = await getUserModel(supabase, user.id)
 
@@ -236,13 +226,13 @@ ${calendarEvents.length === 0 ? '- No upcoming financial events' : calendarEvent
 }).join('\n')}
 `.trim()
 
-    // Fetch user's custom chat system prompt (or fall back to default)
-    const chatPromptTemplate = await getUserPrompt(
-      supabase,
-      user.id,
-      'ai_chat',
-      DEFAULT_PROMPTS.ai_chat.content,
-    )
+    // Fetch admin-controlled global chat system prompt (falls back to hardcoded default)
+    const { data: chatPromptSetting } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'ai_chat_system_prompt')
+      .maybeSingle()
+    const chatPromptTemplate = chatPromptSetting?.value ?? DEFAULT_PROMPTS.ai_chat.content
     const memoryContext = buildMemoryContext(conversationHistory, userPrefs, activeMemories)
     // Keep the stable financial context separate from volatile conversation history so
     // the cached block stays byte-identical across turns in the same session.
