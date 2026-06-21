@@ -72,7 +72,6 @@ export function PushNotificationToggle({ className, showLabel }: PushNotificatio
           return
         }
 
-        // Clear any stale subscription from a previous VAPID key
         const existingSub = await reg.pushManager.getSubscription()
         if (existingSub) {
           await existingSub.unsubscribe()
@@ -80,16 +79,21 @@ export function PushNotificationToggle({ className, showLabel }: PushNotificatio
 
         const vapidRes = await fetch('/api/push/vapid-key')
         const vapidData = await vapidRes.json()
-        console.log('VAPID response:', vapidData)
         const publicKey = vapidData.publicKey as string | undefined
         if (!publicKey) {
-          setError('Push not configured — VAPID key missing on server')
+          setError('VAPID key missing — add NEXT_PUBLIC_VAPID_PUBLIC_KEY env var')
+          return
+        }
+
+        const keyBytes = urlBase64ToUint8Array(publicKey)
+        if (keyBytes.length !== 65) {
+          setError(`Invalid VAPID key (${keyBytes.length} bytes, expected 65)`)
           return
         }
 
         const sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
+          applicationServerKey: keyBytes.buffer as ArrayBuffer,
         })
 
         const subJson = sub.toJSON() as {
