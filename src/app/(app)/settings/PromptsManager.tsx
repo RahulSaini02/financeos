@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Maximize2, Minimize2, RotateCcw, Save, ChevronDown } from "lucide-react";
+import { Loader2, Maximize2, Minimize2, RotateCcw, Save, ChevronDown, Eye, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MarkdownContent } from "@/components/ui/markdown-content";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -31,13 +31,22 @@ const PROMPT_VARIABLES: Record<string, Array<{ name: string; hint: string }>> = 
     { name: "prev_savings_rate", hint: "Last month savings rate %" },
     { name: "top_categories", hint: "Top spending categories breakdown" },
   ],
-  ai_review: [],
+  ai_review: [
+    { name: "month_label", hint: 'e.g. "April 2026"' },
+    { name: "prev_income", hint: "Last month total income" },
+    { name: "prev_expenses", hint: "Last month total expenses" },
+    { name: "prev_savings_rate", hint: "Last month savings rate %" },
+    { name: "top_categories", hint: "Top spending categories breakdown" },
+  ],
   ai_chat: [
     { name: "context", hint: "Full financial data snapshot injected at runtime" },
   ],
   auto_categorize: [
     { name: "description", hint: "Raw transaction description / merchant name" },
-    { name: "category_list", hint: "List of available categories (ID + name)" },
+    { name: "amount", hint: "Transaction amount (positive = credit, negative = debit)" },
+    { name: "date", hint: "Transaction date (YYYY-MM-DD)" },
+    { name: "transaction_type", hint: '"credit" or "debit"' },
+    { name: "category_list", hint: "List of available categories (ID + name + type)" },
   ],
 };
 
@@ -189,7 +198,10 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
         const res = await fetch("/api/prompts");
         if (!res.ok) throw new Error("Failed to load prompts");
         const data = await res.json();
-        let fetched: PromptEntry[] = data.prompts ?? [];
+        // ai_chat and ai_agent are system-controlled — hide from user-facing prompt editor
+        let fetched: PromptEntry[] = (data.prompts ?? []).filter(
+          (p: PromptEntry) => p.key !== "ai_chat" && p.key !== "ai_agent",
+        );
 
         if (initialPrompts && initialPrompts.length > 0) {
           fetched = fetched.map((p) => {
@@ -434,6 +446,27 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
             Reset to Default
           </button>
 
+          {/* Edit / Preview toggle */}
+          <div
+            className="flex items-center rounded-lg border overflow-hidden"
+            style={{ borderColor: "var(--color-border)" }}
+          >
+            {(["edit", "preview"] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setEditorTab(tab)}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors"
+                style={{
+                  background: editorTab === tab ? "var(--color-accent)" : "transparent",
+                  color: editorTab === tab ? "#fff" : "var(--color-text-muted)",
+                }}
+              >
+                {tab === "edit" ? <Pencil className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                <span className="capitalize">{tab}</span>
+              </button>
+            ))}
+          </div>
+
           {/* Fullscreen toggle */}
           <button
             onClick={() => setFullscreen((f) => !f)}
@@ -510,132 +543,46 @@ export default function PromptsManager({ initialPrompts }: PromptsManagerProps) 
         )}
       </div>
 
-      {/* ── Mobile tab toggle ─────────────────────────────────────────── */}
-      <div
-        className="flex sm:hidden gap-0 border-b shrink-0"
-        style={{ borderColor: "var(--color-border)" }}
-      >
-        {(["edit", "preview"] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setEditorTab(tab)}
-            className="flex-1 py-2 text-xs font-medium capitalize transition-colors"
+      {/* ── Editor / Preview (single pane, toggled) ──────────────────── */}
+      <div className={`p-4 ${fullscreen ? "flex-1 overflow-auto min-h-0 flex flex-col" : ""}`}>
+        {editorTab === "edit" ? (
+          <textarea
+            ref={textareaRef}
+            value={editorContent}
+            onChange={(e) => {
+              setEditorContent(e.target.value);
+              setDirty(true);
+            }}
+            className={`w-full rounded-lg border px-3 py-2.5 text-sm font-mono outline-none transition-colors focus:ring-1 focus:ring-[var(--color-accent)] ${fullscreen ? "flex-1 resize-none" : "resize-y"}`}
             style={{
-              color: editorTab === tab ? "var(--color-accent)" : "var(--color-text-muted)",
-              borderBottom:
-                editorTab === tab ? "2px solid var(--color-accent)" : "2px solid transparent",
+              background: "var(--color-bg-secondary)",
+              borderColor: "var(--color-border)",
+              color: "var(--color-text-primary)",
+              minHeight: "200px",
+              height: fullscreen ? "100%" : undefined,
+            }}
+            placeholder="Enter prompt content…"
+            spellCheck={false}
+          />
+        ) : (
+          <div
+            className={`rounded-lg border px-3 py-2.5 text-sm overflow-auto ${fullscreen ? "flex-1" : ""}`}
+            style={{
+              background: "var(--color-bg-secondary)",
+              borderColor: "var(--color-border)",
+              color: "var(--color-text-secondary)",
+              minHeight: "200px",
             }}
           >
-            {tab}
-          </button>
-        ))}
-      </div>
-
-      {/* ── Editor + Preview ──────────────────────────────────────────── */}
-      <div className={`p-4 ${fullscreen ? "flex-1 overflow-auto min-h-0" : ""}`}>
-        {/* Desktop: side-by-side */}
-        <div
-          className={`hidden sm:grid grid-cols-2 gap-4 ${fullscreen ? "h-full" : ""}`}
-        >
-          {/* Edit pane */}
-          <div className={`flex flex-col gap-1 ${fullscreen ? "min-h-0" : ""}`}>
-            <span
-              className="text-[10px] font-semibold uppercase tracking-wider shrink-0"
-              style={{ color: "var(--color-text-muted)" }}
-            >
-              Edit
-            </span>
-            <textarea
-              ref={textareaRef}
-              value={editorContent}
-              onChange={(e) => {
-                setEditorContent(e.target.value);
-                setDirty(true);
-              }}
-              rows={fullscreen ? undefined : 8}
-              className={`w-full rounded-lg border px-3 py-2.5 text-sm font-mono outline-none resize-y transition-colors focus:ring-1 focus:ring-[var(--color-accent)] ${fullscreen ? "flex-1 resize-none" : ""}`}
-              style={{
-                background: "var(--color-bg-secondary)",
-                borderColor: "var(--color-border)",
-                color: "var(--color-text-primary)",
-                minHeight: fullscreen ? undefined : "200px",
-                maxHeight: fullscreen ? undefined : "200px",
-                height: fullscreen ? "100%" : undefined,
-              }}
-              placeholder="Enter prompt content…"
-              spellCheck={false}
-            />
+            {editorContent.trim() ? (
+              <MarkdownContent content={editorContent} className="text-sm leading-relaxed" />
+            ) : (
+              <p className="text-xs italic" style={{ color: "var(--color-text-muted)" }}>
+                Nothing to preview yet.
+              </p>
+            )}
           </div>
-
-          {/* Preview pane */}
-          <div className={`flex flex-col gap-1 ${fullscreen ? "min-h-0" : ""}`}>
-            <span
-              className="text-[10px] font-semibold uppercase tracking-wider shrink-0"
-              style={{ color: "var(--color-text-muted)" }}
-            >
-              Preview
-            </span>
-            <div
-              className={`rounded-lg border px-3 py-2.5 text-sm overflow-auto ${fullscreen ? "flex-1" : ""}`}
-              style={{
-                background: "var(--color-bg-secondary)",
-                borderColor: "var(--color-border)",
-                color: "var(--color-text-secondary)",
-                minHeight: fullscreen ? undefined : "200px",
-                maxHeight: fullscreen ? undefined : "200px",
-              }}
-            >
-              {editorContent.trim() ? (
-                <MarkdownContent content={editorContent} className="text-sm leading-relaxed" />
-              ) : (
-                <p className="text-xs italic" style={{ color: "var(--color-text-muted)" }}>
-                  Nothing to preview yet.
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Mobile: single pane */}
-        <div className="sm:hidden">
-          {editorTab === "edit" ? (
-            <textarea
-              value={editorContent}
-              onChange={(e) => {
-                setEditorContent(e.target.value);
-                setDirty(true);
-              }}
-              rows={8}
-              className="w-full rounded-lg border px-3 py-2.5 text-sm font-mono outline-none resize-y transition-colors focus:ring-1 focus:ring-[var(--color-accent)]"
-              style={{
-                background: "var(--color-bg-secondary)",
-                borderColor: "var(--color-border)",
-                color: "var(--color-text-primary)",
-              }}
-              placeholder="Enter prompt content…"
-              spellCheck={false}
-            />
-          ) : (
-            <div
-              className="rounded-lg border px-3 py-2.5 text-sm overflow-auto"
-              style={{
-                background: "var(--color-bg-secondary)",
-                borderColor: "var(--color-border)",
-                color: "var(--color-text-secondary)",
-                minHeight: "200px",
-                maxHeight: "200px",
-              }}
-            >
-              {editorContent.trim() ? (
-                <MarkdownContent content={editorContent} className="text-sm leading-relaxed" />
-              ) : (
-                <p className="text-xs italic" style={{ color: "var(--color-text-muted)" }}>
-                  Nothing to preview yet.
-                </p>
-              )}
-            </div>
-          )}
-        </div>
+        )}
       </div>
 
       {/* ── Footer ────────────────────────────────────────────────────── */}

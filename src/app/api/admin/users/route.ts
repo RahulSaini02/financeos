@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 
-type AdminAction = 'approve_ai' | 'revoke_ai' | 'set_admin' | 'verify_email'
+type AdminAction = 'approve_ai' | 'revoke_ai' | 'set_admin' | 'set_user' | 'verify_email'
 
 interface PatchBody {
   userId?: unknown
@@ -109,6 +109,8 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    const serviceClient = createServiceRoleClient()
+
     const body = await request.json() as PatchBody
     const { userId, action } = body
 
@@ -116,12 +118,24 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'userId is required' }, { status: 400 })
     }
 
-    const validActions: AdminAction[] = ['approve_ai', 'revoke_ai', 'set_admin', 'verify_email']
+    const validActions: AdminAction[] = ['approve_ai', 'revoke_ai', 'set_admin', 'set_user', 'verify_email']
     if (typeof action !== 'string' || !validActions.includes(action as AdminAction)) {
       return NextResponse.json(
         { error: `action must be one of: ${validActions.join(', ')}` },
         { status: 400 },
       )
+    }
+
+    const SUPER_ADMIN_EMAIL = 'sainirahul0802@gmail.com'
+
+    if (action === 'set_user' || action === 'set_admin') {
+      const { data: targetAuthUser } = await serviceClient.auth.admin.getUserById(userId)
+      if (targetAuthUser?.user?.email === SUPER_ADMIN_EMAIL) {
+        return NextResponse.json(
+          { error: 'The owner account cannot be changed.' },
+          { status: 403 },
+        )
+      }
     }
 
     const updates: Record<string, unknown> = {}
@@ -135,12 +149,13 @@ export async function PATCH(request: NextRequest) {
       case 'set_admin':
         updates.role = 'admin'
         break
+      case 'set_user':
+        updates.role = 'user'
+        break
       case 'verify_email':
         updates.email_verified = true
         break
     }
-
-    const serviceClient = createServiceRoleClient()
     const { data: updated, error: updateError } = await serviceClient
       .from('profiles')
       .update(updates)

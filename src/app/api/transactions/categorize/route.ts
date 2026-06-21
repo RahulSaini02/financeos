@@ -20,23 +20,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ categoryId: null }, { status: 200 })
     }
 
-    // Check ai_enabled — graceful fallback, not an error
-    const { data: profileRow } = await supabase
-      .from('profiles')
-      .select('ai_enabled')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    if (!profileRow?.ai_enabled) {
-      return NextResponse.json({ categoryId: null }, { status: 200 })
-    }
-
     const [aiModel, body] = await Promise.all([
       getUserModel(supabase, user.id),
       request.json(),
     ])
-    const { description, createIfMissing = false } = body as {
+    const { description, amount, date, transaction_type, createIfMissing = false } = body as {
       description: string
+      amount?: number | string | null
+      date?: string | null
+      transaction_type?: string | null
       createIfMissing?: boolean
     }
 
@@ -63,6 +55,9 @@ export async function POST(request: NextRequest) {
       const catList = cats.map((c) => `${c.id} | ${c.name} (${c.type})`).join('\n')
       prompt = categorizeTemplate
         .replaceAll('{{description}}', description.trim())
+        .replaceAll('{{amount}}', amount != null ? String(amount) : 'N/A')
+        .replaceAll('{{date}}', date ?? 'N/A')
+        .replaceAll('{{transaction_type}}', transaction_type ?? 'unknown')
         .replaceAll('{{category_list}}', catList)
     } else {
       // No categories — fall back to a simple suggestion prompt

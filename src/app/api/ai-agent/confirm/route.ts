@@ -11,20 +11,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // ── AI access guard ───────────────────────────────────────────────────
-    const { data: profileRow } = await supabase
-      .from('profiles')
-      .select('ai_enabled')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    if (!profileRow?.ai_enabled) {
-      return NextResponse.json(
-        { error: 'AI access not enabled', code: 'AI_DISABLED' },
-        { status: 403 },
-      )
-    }
-
     const body = await request.json() as { action_id: string; confirmed: boolean }
     const { action_id, confirmed } = body
 

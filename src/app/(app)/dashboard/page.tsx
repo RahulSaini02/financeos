@@ -11,6 +11,8 @@ import {
   Bell,
   Plus,
   ChevronRight,
+  Receipt,
+  CalendarClock,
 } from "lucide-react";
 import Link from "next/link";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -19,6 +21,8 @@ import { DashboardCharts } from "./DashboardCharts";
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
 import { DashboardInsightLoader } from "./DashboardInsightLoader";
+import { DashboardWelcomeBanner } from "@/components/dashboard/DashboardWelcomeBanner";
+import { EmptySection } from "@/components/dashboard/EmptySection";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -197,8 +201,15 @@ async function getDashboardData ( userId: string ) {
     return { month: key, label, income: Math.round( ( monthMap[key]?.income ?? 0 ) * 100 ) / 100, expenses: Math.round( ( monthMap[key]?.expenses ?? 0 ) * 100 ) / 100 };
   } );
 
-  // Upsert net worth snapshot — fire-and-forget; result not needed for page render
-  supabase.from( 'networth_snapshots' ).upsert( { user_id: userId, month: lastDay, assets_total: total_assets, liabilities_total: total_liabilities, net_worth }, { onConflict: 'user_id,month' } );
+  // Upsert net worth snapshot and await so the chart reflects the current state
+  await supabase.from( 'networth_snapshots' ).upsert( { user_id: userId, month: lastDay, assets_total: total_assets, liabilities_total: total_liabilities, net_worth }, { onConflict: 'user_id,month' } );
+
+  // Build trend: existing snapshots (excluding current month) + current month injected fresh
+  const historicalSnapshots = snapshots.filter( ( s ) => s.month !== lastDay );
+  const networthTrend = [
+    ...historicalSnapshots,
+    { month: lastDay, net_worth },
+  ].sort( ( a, b ) => a.month.localeCompare( b.month ) );
 
   // ── Build actionable alerts ─────────────────────────────────────────────────
   const alerts: DashboardAlert[] = [];
@@ -305,10 +316,11 @@ async function getDashboardData ( userId: string ) {
     net_worth, total_assets, total_liabilities,
     monthly_income, monthly_expenses, savings_rate,
     flagged_count, upcoming_bills,
-    networth_trend: [...snapshots].reverse(),
+    networth_trend: networthTrend,
     categoryBreakdown, monthlyData,
     recentTransactions,
     alerts,
+    hasAccounts: accounts.length > 0,
   };
 }
 
@@ -370,6 +382,9 @@ export default async function DashboardPage () {
         </Link>
       </PageHeader>
 
+      {/* Welcome banner — only for new users with no accounts */}
+      {!data.hasAccounts && <DashboardWelcomeBanner />}
+
       {/* Key Metrics */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <MetricCard
@@ -414,6 +429,7 @@ export default async function DashboardPage () {
         categoryBreakdown={data.categoryBreakdown ?? []}
         monthlyData={data.monthlyData ?? []}
         networthTrend={data.networth_trend}
+        isNewUser={!data.hasAccounts}
       />
 
       {/* Bottom row — three equal columns */}
@@ -430,7 +446,13 @@ export default async function DashboardPage () {
             </Link>
           </CardHeader>
           {data.recentTransactions.length === 0 ? (
-            <p className="text-sm text-[var(--color-text-muted)]">No recent transactions.</p>
+            <EmptySection
+              icon={Receipt}
+              title="No transactions yet"
+              description="Your recent transactions will appear here once you add them."
+              ctaLabel="Import transactions"
+              ctaHref="/import"
+            />
           ) : (
             <div className="overflow-y-auto max-h-72 pr-1 space-y-1">
               {data.recentTransactions.map( ( txn ) => {
@@ -475,7 +497,13 @@ export default async function DashboardPage () {
             </Link>
           </CardHeader>
           {data.upcoming_bills.length === 0 ? (
-            <p className="text-sm text-[var(--color-text-muted)]">No upcoming bills in the next 30 days.</p>
+            <EmptySection
+              icon={CalendarClock}
+              title="No upcoming bills"
+              description="Track subscriptions and recurring bills to see them here."
+              ctaLabel="Add subscription"
+              ctaHref="/subscriptions"
+            />
           ) : ( () => {
             const overdueBillsList = data.upcoming_bills.filter( b => b.overdue );
             const thisWeekBills = data.upcoming_bills.filter( b => !b.overdue && getDaysUntilDue( b.due_date ) <= 7 );

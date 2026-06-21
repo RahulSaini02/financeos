@@ -73,6 +73,13 @@ export async function POST(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: 'Unknown prompt key' }, { status: 404 })
     }
 
+    if (key === 'ai_chat') {
+      return NextResponse.json(
+        { error: 'The AI chat system prompt is controlled by an administrator.' },
+        { status: 403 },
+      )
+    }
+
     const body = await req.json()
     const { content, version_label, model } = body as {
       content?: string

@@ -5,8 +5,8 @@ import { BrainCircuit } from "lucide-react";
 
 export default function MarketingNav() {
   return (
-    <nav className="sticky top-0 z-50 backdrop-blur-md bg-[var(--color-bg-primary)]/80 border-b border-[var(--color-border)]">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+    <nav className="sticky top-0 z-50 backdrop-blur-md bg-[var(--color-bg-primary)]/80 border-b border-[var(--color-border)]/40">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2">
           <BrainCircuit className="h-5 w-5 text-[var(--color-accent)]" />
@@ -17,8 +17,8 @@ export default function MarketingNav() {
 
         {/* Section links */}
         <div className="hidden sm:flex items-center gap-5 text-sm text-[var(--color-text-muted)]">
+          <a href="#how-it-works" className="hover:text-[var(--color-text-primary)] transition-colors">How it works</a>
           <a href="#features" className="hover:text-[var(--color-text-primary)] transition-colors">Features</a>
-          <a href="#demo" className="hover:text-[var(--color-text-primary)] transition-colors">Demo</a>
         </div>
 
         {/* Nav actions */}

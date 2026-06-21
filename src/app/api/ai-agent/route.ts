@@ -5,6 +5,7 @@ import { getUserModel } from '@/lib/get-user-model'
 import { getUserPrompt } from '@/lib/get-user-prompt'
 import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
 import { READ_TOOLS, WRITE_TOOLS, WRITE_TOOL_NAMES, executeReadTool } from '@/lib/agent-tools'
+import { checkAndLogAiUsage } from '@/lib/ai-rate-limit'
 import { getCalendarEvents, createCalendarEvent, refreshAccessToken } from '@/lib/google-oauth'
 import {
   fetchRecentConversationHistory,
@@ -42,18 +43,13 @@ export async function POST(request: NextRequest) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
   }
 
-  // ── AI access guard ─────────────────────────────────────────────────────
-  const { data: profileRow } = await supabase
-    .from('profiles')
-    .select('ai_enabled')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (!profileRow?.ai_enabled) {
-    return new Response(
-      JSON.stringify({ error: 'AI access not enabled', code: 'AI_DISABLED' }),
-      { status: 403 },
-    )
+  // ── Rate limit ────────────────────────────────────────────────────────────
+  const rateLimit = await checkAndLogAiUsage(supabase, user.id, 'agent')
+  if (!rateLimit.allowed) {
+    return new Response(await rateLimit.response.text(), {
+      status: rateLimit.response.status,
+      headers: { 'Content-Type': 'application/json' },
+    })
   }
 
   const userDefaultModel = await getUserModel(supabase, user.id)

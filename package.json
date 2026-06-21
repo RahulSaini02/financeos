@@ -13,7 +13,7 @@
     "generate-icons": "node scripts/generate-icon.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.85.0",
+    "@anthropic-ai/sdk": "^0.105.0",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-slot": "^1.2.4",
     "@supabase/ssr": "^0.10.0",
@@ -24,13 +24,12 @@
     "driver.js": "^1.4.0",
     "lucide-react": "^1.7.0",
     "motion": "^12.38.0",
-    "next": "16.2.2",
+    "next": "16.2.9",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
     "recharts": "^3.8.1",
-    "remark-gfm": "^4.0.1",
-    "supabase": "^2.89.1"
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
@@ -41,7 +40,8 @@
     "babel-plugin-react-compiler": "1.0.0",
     "dotenv": "^17.4.2",
     "eslint": "^9",
-    "eslint-config-next": "16.2.2",
+    "eslint-config-next": "16.2.9",
+    "supabase": "^2.89.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

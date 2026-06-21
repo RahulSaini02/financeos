@@ -13,6 +13,8 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChartEmptyState } from "@/components/charts/ChartEmptyState";
+import { BarChart3 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 
 interface MonthlyDataPoint {
@@ -24,6 +26,7 @@ interface MonthlyDataPoint {
 
 interface MonthComparisonChartProps {
   monthlyData: MonthlyDataPoint[];
+  isNewUser?: boolean;
 }
 
 type Period = "3m" | "6m" | "12m";
@@ -34,8 +37,26 @@ const PERIODS: { value: Period; label: string; count: number }[] = [
   { value: "12m", label: "12M", count: 12 },
 ];
 
-export function MonthComparisonChart({ monthlyData }: MonthComparisonChartProps) {
+export function MonthComparisonChart({ monthlyData, isNewUser }: MonthComparisonChartProps) {
   const [period, setPeriod] = useState<Period>("3m");
+
+  const isEmpty = isNewUser || monthlyData.every((d) => d.income === 0 && d.expenses === 0);
+  if (isEmpty) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Month Comparison</CardTitle>
+        </CardHeader>
+        <ChartEmptyState
+          icon={BarChart3}
+          title="Income vs Expenses"
+          description="Add transactions to see your monthly cash flow comparison."
+          ctaLabel="Import transactions"
+          ctaHref="/import"
+        />
+      </Card>
+    );
+  }
 
   const selected = PERIODS.find((p) => p.value === period)!;
   // Always take the last N months from the 12-month array

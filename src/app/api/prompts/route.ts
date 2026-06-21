@@ -1,5 +1,6 @@
 // GET /api/prompts
-// Returns all 5 prompt keys with active content (user override or default).
+// Returns user-editable prompt keys with active content (user override or default).
+// ai_chat and ai_agent are system-controlled and excluded from this list.
 
 import { NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
@@ -14,7 +15,8 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const keys = Object.keys(DEFAULT_PROMPTS)
+    const SYSTEM_KEYS = new Set(['ai_chat', 'ai_agent'])
+    const keys = Object.keys(DEFAULT_PROMPTS).filter((k) => !SYSTEM_KEYS.has(k))
 
     // Fetch all active user prompts in one query
     const { data: userPrompts, error: dbError } = await supabase
