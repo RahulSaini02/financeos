@@ -428,6 +428,16 @@ export interface UserFinancialPreferencesPayload {
   custom_instructions?: string | null
 }
 
+export interface UserPushSubscription {
+  id: string
+  user_id: string
+  endpoint: string
+  p256dh: string
+  auth: string
+  created_at: string
+  updated_at: string
+}
+
 export interface DashboardSummary {
   net_worth: number
   total_assets: number
