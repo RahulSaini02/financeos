@@ -171,7 +171,6 @@ export async function POST(request: NextRequest) {
   )
   const memoryContext = buildMemoryContext(conversationHistory, userPrefs, activeMemories)
   const dateContext = `\n\nToday's date: ${todayStr}. User timezone: ${tz}.`
-  const agentSystemPrompt = agentPromptTemplate + dateContext + memoryContext
 
   const gcalTools: Anthropic.Tool[] = []
   if (gcalIntegration) {
@@ -233,12 +232,14 @@ export async function POST(request: NextRequest) {
             emit({ event: 'error', message: 'Reached maximum reasoning steps.' })
             break
           }
-          // Block 1 (stable per user): safety guardrail + agent template — cached.
-          // Block 2 (volatile): today's date + conversation memory — uncached so
-          // block 1 stays byte-identical across tool-use iterations and cache hits.
+          // Block 1: hardcoded safety guardrail — structurally first, never overridable.
+          // Block 2: admin/user-configured agent template — cached per user.
+          // Block 3: volatile date + memory context — uncached so blocks 1-2 stay
+          //          byte-identical across tool-use iterations and keep cache hits.
           // Tools: last entry carries cache_control to cache the full static list.
           const agentSystemBlocks: Anthropic.TextBlockParam[] = [
-            { type: 'text', text: safetyPrefix + agentPromptTemplate, cache_control: { type: 'ephemeral' } },
+            { type: 'text', text: safetyPrefix },
+            { type: 'text', text: agentPromptTemplate, cache_control: { type: 'ephemeral' } },
             { type: 'text', text: dateContext + memoryContext },
           ]
           const cachedAllTools = allTools.map((t, i) =>
@@ -361,7 +362,6 @@ export async function POST(request: NextRequest) {
                       toolUseId: toolUse.id,
                       toolName: toolUse.name,
                       model: aiModel,
-                      system: safetyPrefix + agentSystemPrompt,
                       allOtherToolResults: toolResults,
                     }),
                   })

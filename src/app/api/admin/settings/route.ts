@@ -166,6 +166,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'value must be a non-empty string' }, { status: 400 })
     }
 
+    const MAX_FREE_TEXT_LENGTH = 20_000
+    if (value.length > MAX_FREE_TEXT_LENGTH) {
+      return NextResponse.json(
+        { error: `value must be ${MAX_FREE_TEXT_LENGTH.toLocaleString()} characters or fewer` },
+        { status: 400 },
+      )
+    }
+
     const serviceClient = createServiceRoleClient()
 
     const { data: updated, error: upsertError } = await serviceClient
