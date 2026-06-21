@@ -3,7 +3,6 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
 import { getUserPrompt } from '@/lib/get-user-prompt'
-import { getUserModel } from '@/lib/get-user-model'
 import { getAppSetting } from '@/lib/get-app-setting'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -27,10 +26,12 @@ export async function GET() {
       .maybeSingle()
     const aiEnabled = profileRow?.ai_enabled ?? false
 
-    const aiModel = aiEnabled
-      ? (await getUserModel(supabase, user.id)) ||
-        (await getAppSetting(supabase, 'ai_model_daily_insight', 'claude-haiku-4-5-20251001'))
-      : ''
+    const [aiModel, aiModelMonthlySummary] = aiEnabled
+      ? await Promise.all([
+          getAppSetting(supabase, 'ai_model_daily_insight', 'claude-haiku-4-5-20251001'),
+          getAppSetting(supabase, 'ai_model_monthly_summary', 'claude-haiku-4-5-20251001'),
+        ])
+      : ['', '']
 
     const now = new Date()
     const firstDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
@@ -306,7 +307,7 @@ export async function GET() {
               .replaceAll('{{top_categories}}', topCats || 'none')
 
             const summaryMsg = await anthropic.messages.create({
-              model: aiModel,
+              model: aiModelMonthlySummary,
               max_tokens: 200,
               messages: [{ role: 'user', content: summaryPrompt }],
             })

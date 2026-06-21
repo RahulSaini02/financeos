@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
 import { getUserPrompt } from '@/lib/get-user-prompt'
-import { getUserModel } from '@/lib/get-user-model'
+import { getAppSetting } from '@/lib/get-app-setting'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     }
 
     const [aiModel, body] = await Promise.all([
-      getUserModel(supabase, user.id),
+      getAppSetting(supabase, 'ai_model_auto_categorize', 'claude-haiku-4-5-20251001'),
       request.json(),
     ])
     const { description, amount, date, transaction_type, createIfMissing = false } = body as {

@@ -11,11 +11,11 @@ const ALLOWED_KEYS = [
   'ai_model_monthly_summary',
   'ai_model_monthly_review',
   'ai_model_auto_categorize',
-  'ai_model_chat_default',
+  'ai_model_agent_default',
 ] as const
 
 // Keys that accept free-text values (not constrained to model names)
-const FREE_TEXT_KEYS = ['ai_chat_system_prompt', 'ai_models_registry'] as const
+const FREE_TEXT_KEYS = ['ai_agent_system_prompt', 'ai_models_registry'] as const
 
 // Model ID validation: allow any non-empty string so custom registry models work.
 // Invalid IDs will fail at Anthropic's API, not silently here.

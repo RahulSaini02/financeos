@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
 import { getUserPrompt } from '@/lib/get-user-prompt'
-import { getUserModel } from '@/lib/get-user-model'
+import { getAppSetting } from '@/lib/get-app-setting'
 import { checkAndLogAiUsage } from '@/lib/ai-rate-limit'
 import { formatCurrency } from '@/lib/utils'
 import {
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     const rateLimit = await checkAndLogAiUsage(supabase, user.id, 'review')
     if (!rateLimit.allowed) return rateLimit.response
 
-    const aiModel = await getUserModel(supabase, user.id)
+    const aiModel = await getAppSetting(supabase, 'ai_model_monthly_review', 'claude-haiku-4-5-20251001')
 
     const url = new URL(request.url)
     const force = url.searchParams.get('force') === 'true'

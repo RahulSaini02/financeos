@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { createServerClient } from '@supabase/ssr'
-import { getUserModel } from '@/lib/get-user-model'
+import { getAppSetting } from '@/lib/get-app-setting'
 import { randomUUID } from 'crypto'
 
 // Service-role client — bypasses RLS for balance updates that must succeed
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
     }
 
     const [aiModel, body] = await Promise.all([
-      getUserModel(supabase, user.id),
+      getAppSetting(supabase, 'ai_model_auto_categorize', 'claude-haiku-4-5-20251001'),
       request.json(),
     ])
     const {

@@ -19,6 +19,7 @@ export type AIModelValue = typeof AI_MODELS[number]['value']
 export async function getUserModel(
   supabase: SupabaseClient,
   userId: string,
+  appSettingKey: string = 'ai_model_chat_default',
 ): Promise<string> {
   const { data } = await supabase
     .from('user_prompts')
@@ -33,5 +34,5 @@ export async function getUserModel(
   }
 
   // No user override — fall back to the admin-configured default from app_settings
-  return getAppSetting(supabase, 'ai_model_chat_default', DEFAULT_AI_MODEL)
+  return getAppSetting(supabase, appSettingKey, DEFAULT_AI_MODEL)
 }
