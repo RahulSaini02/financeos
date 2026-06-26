@@ -154,8 +154,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   cursor: pointer !important;
 }
 .financeos-tour-popover .driver-popover-footer .driver-popover-btn-disabled {
-  opacity: 0.4 !important;
-  cursor: not-allowed !important;
+  display: none !important;
 }
 .financeos-tour-popover .driver-popover-progress-text {
   color: var(--color-text-secondary) !important;
