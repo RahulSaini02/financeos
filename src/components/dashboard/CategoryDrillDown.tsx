@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, ExternalLink } from "lucide-react";
+import { X, ExternalLink, ChevronUp } from "lucide-react";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/utils";
 
@@ -10,6 +10,8 @@ interface CategoryDrillDownProps {
   categoryId: string;
   color: string;
   month: string; // "YYYY-MM-DD" (first day of viewed month)
+  expanded: boolean;
+  onExpand: () => void;
   onClose: () => void;
 }
 
@@ -35,17 +37,17 @@ export function CategoryDrillDown({
   categoryId,
   color,
   month,
+  expanded,
+  onExpand,
   onClose,
 }: CategoryDrillDownProps) {
   const [transactions, setTransactions] = useState<TxnRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
 
-  // Compute last day of month from "YYYY-MM-DD"
   const [year, mon] = month.split("-").map(Number);
   const lastDay = new Date(year, mon, 0).toISOString().split("T")[0];
 
-  // Human-readable month label
   const monthLabel = new Intl.DateTimeFormat("en-US", {
     month: "long",
     year: "numeric",
@@ -87,25 +89,54 @@ export function CategoryDrillDown({
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Backdrop — mobile: only when expanded; desktop: always */}
       <div
-        className="fixed inset-0 bg-black/40 z-30"
+        className={`fixed inset-0 bg-black/40 z-30 ${expanded ? "block" : "hidden lg:block"}`}
         onClick={onClose}
         aria-hidden="true"
       />
 
-      {/* Panel — bottom sheet on mobile, right slide-over on lg+ */}
-      <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col rounded-t-2xl max-h-[72vh] bg-[var(--color-bg-secondary)] border-t border-[var(--color-border)] shadow-2xl lg:inset-x-auto lg:bottom-auto lg:right-0 lg:top-0 lg:h-full lg:w-96 lg:max-h-none lg:rounded-none lg:border-t-0 lg:border-l">
+      {/* Peek bar — mobile only, when panel is collapsed */}
+      {!expanded && (
+        <div className="lg:hidden fixed inset-x-0 bottom-[4rem] z-40 flex items-center gap-3 px-4 h-12 bg-[var(--color-bg-secondary)] border-t border-[var(--color-border)] shadow-lg">
+          <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: color }} />
+          <span className="flex-1 text-sm font-medium text-[var(--color-text-primary)] truncate">
+            {categoryName}
+          </span>
+          <span className="text-sm font-semibold text-[var(--color-text-secondary)] whitespace-nowrap">
+            {loading ? "…" : formatCurrency(total)}
+          </span>
+          <button
+            onClick={onExpand}
+            className="flex items-center gap-0.5 text-xs font-medium text-[var(--color-accent)] px-2 py-1 rounded-md hover:bg-[var(--color-accent)]/10 transition-colors"
+          >
+            <ChevronUp className="h-3.5 w-3.5" />
+            View
+          </button>
+          <button
+            onClick={onClose}
+            className="p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
+            aria-label="Dismiss"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Full panel — hidden on mobile until expanded; always shown on desktop as slide-over */}
+      <div
+        className={`fixed z-40 bg-[var(--color-bg-secondary)] shadow-2xl flex-col
+          inset-x-0 bottom-0 max-h-[72vh] rounded-t-2xl border-t border-[var(--color-border)]
+          ${expanded ? "flex" : "hidden lg:flex"}
+          lg:inset-x-auto lg:bottom-auto lg:right-0 lg:top-0 lg:h-full lg:w-96 lg:max-h-none lg:rounded-none lg:border-t-0 lg:border-l`}
+      >
         {/* Drag handle — mobile only */}
         <div className="w-10 h-1 bg-[var(--color-border)] rounded-full mx-auto mt-3 mb-1 lg:hidden" />
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
           <div className="flex items-center gap-3 min-w-0">
-            <div
-              className="h-3 w-3 rounded-full shrink-0"
-              style={{ background: color }}
-            />
+            <div className="h-3 w-3 rounded-full shrink-0" style={{ background: color }} />
             <div className="min-w-0">
               <h2 className="text-base font-semibold text-[var(--color-text-primary)] truncate">
                 {categoryName}
@@ -119,7 +150,7 @@ export function CategoryDrillDown({
           <button
             onClick={onClose}
             className="ml-3 shrink-0 rounded-lg p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
-            aria-label="Close drill-down"
+            aria-label="Close"
           >
             <X className="h-4 w-4" />
           </button>
@@ -130,10 +161,7 @@ export function CategoryDrillDown({
           {loading ? (
             <div className="space-y-3">
               {Array.from({ length: 4 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="flex items-center justify-between py-2 animate-pulse"
-                >
+                <div key={i} className="flex items-center justify-between py-2 animate-pulse">
                   <div className="flex flex-col gap-1.5 flex-1">
                     <div className="h-3.5 w-2/3 rounded bg-[var(--color-bg-tertiary)]" />
                     <div className="h-2.5 w-1/3 rounded bg-[var(--color-bg-tertiary)]" />
@@ -165,9 +193,7 @@ export function CategoryDrillDown({
                     </div>
                     <span
                       className={`text-sm font-semibold shrink-0 ml-3 ${
-                        isCredit
-                          ? "text-[var(--color-success)]"
-                          : "text-[var(--color-danger)]"
+                        isCredit ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
                       }`}
                     >
                       {isCredit ? "+" : "-"}

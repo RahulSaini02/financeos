@@ -47,16 +47,16 @@ export function DashboardCharts({
   selectedMonth,
 }: DashboardChartsProps) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [showDrillDown, setShowDrillDown] = useState(false);
+  const [drillDownExpanded, setDrillDownExpanded] = useState(false);
 
   const handleCategorySelect = (name: string | null) => {
     setSelectedCategory(name);
-    setShowDrillDown(name !== null);
+    setDrillDownExpanded(false); // always start collapsed (peek bar on mobile)
   };
 
   const handleCloseDrillDown = () => {
-    setShowDrillDown(false);
     setSelectedCategory(null);
+    setDrillDownExpanded(false);
   };
 
   const selectedCategoryEntry = selectedCategory
@@ -99,12 +99,14 @@ export function DashboardCharts({
         )}
       </div>
 
-      {showDrillDown && selectedCategoryEntry && selectedCategoryEntry.name !== "Other" && (
+      {selectedCategoryEntry && selectedCategoryEntry.name !== "Other" && (
         <CategoryDrillDown
           categoryName={selectedCategoryEntry.name}
           categoryId={selectedCategoryEntry.id}
           color={selectedCategoryEntry.color}
           month={selectedMonth}
+          expanded={drillDownExpanded}
+          onExpand={() => setDrillDownExpanded(true)}
           onClose={handleCloseDrillDown}
         />
       )}

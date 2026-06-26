@@ -23,6 +23,7 @@ import {
   ChevronRight,
   History,
   X,
+  CheckSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -163,6 +164,16 @@ function TransactionsContent ( {
   const [selectedIds, setSelectedIds] = useState<Set<string>>( new Set() );
   const [inlineEditId, setInlineEditId] = useState<string | null>( null );
   const [bulkRecategory, setBulkRecategory] = useState<string>( "" );
+  const [selectMode, setSelectMode] = useState( false );
+  const [alertTooltipId, setAlertTooltipId] = useState<string | null>( null );
+
+  // Close alert tooltip on any document click
+  useEffect( () => {
+    if ( !alertTooltipId ) return;
+    function handleDocClick() { setAlertTooltipId( null ); }
+    document.addEventListener( "click", handleDocClick );
+    return () => document.removeEventListener( "click", handleDocClick );
+  }, [alertTooltipId] );
 
   // Debounce search input
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>( null );
@@ -480,6 +491,16 @@ function TransactionsContent ( {
           <span className="hidden sm:inline">Filters</span>
           {activeFilterCount > 0 && ` (${ activeFilterCount })`}
         </Button>
+        <button
+          onClick={() => { setSelectMode( v => !v ); if ( selectMode ) setSelectedIds( new Set() ); }}
+          className={`flex items-center gap-1 h-8 rounded-lg border px-2.5 text-xs font-medium transition-colors ${ selectMode
+            ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
+            : "border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"
+          }`}
+        >
+          <CheckSquare className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline ml-0.5">{selectMode ? "Cancel" : "Select"}</span>
+        </button>
         <select
           className="h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 text-xs text-[var(--color-text-secondary)] flex items-center self-center"
           value={groupBy}
@@ -772,25 +793,27 @@ function TransactionsContent ( {
                   className="flex items-start gap-3 px-3 py-3 hover:bg-[var(--color-bg-tertiary)] transition-colors cursor-pointer sm:items-center sm:px-4"
                   onClick={() => handleEdit( txn )}
                 >
-                  {/* Bulk select checkbox */}
-                  <div
-                    className="flex items-center shrink-0 self-center"
-                    onClick={( e ) => e.stopPropagation()}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has( txn.id )}
-                      onChange={() => {
-                        setSelectedIds( ( prev ) => {
-                          const next = new Set( prev );
-                          if ( next.has( txn.id ) ) next.delete( txn.id );
-                          else next.add( txn.id );
-                          return next;
-                        } );
-                      }}
-                      className="h-4 w-4 rounded accent-[var(--color-accent)] cursor-pointer"
-                    />
-                  </div>
+                  {/* Bulk select checkbox — only visible in select mode */}
+                  {selectMode && (
+                    <div
+                      className="flex items-center shrink-0 self-center"
+                      onClick={( e ) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has( txn.id )}
+                        onChange={() => {
+                          setSelectedIds( ( prev ) => {
+                            const next = new Set( prev );
+                            if ( next.has( txn.id ) ) next.delete( txn.id );
+                            else next.add( txn.id );
+                            return next;
+                          } );
+                        }}
+                        className="h-4 w-4 rounded accent-[var(--color-accent)] cursor-pointer"
+                      />
+                    </div>
+                  )}
 
                   {/* Icon */}
                   <div
@@ -815,7 +838,21 @@ function TransactionsContent ( {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium truncate">{txn.description}</span>
                       {txn.flagged && (
-                        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-[var(--color-warning)]" />
+                        <div className="relative shrink-0" onClick={( e ) => e.stopPropagation()}>
+                          <button
+                            onClick={() => setAlertTooltipId( alertTooltipId === txn.id ? null : txn.id )}
+                            className="flex items-center"
+                            aria-label="View flag reason"
+                          >
+                            <AlertTriangle className="h-3.5 w-3.5 text-[var(--color-warning)]" />
+                          </button>
+                          {alertTooltipId === txn.id && txn.flagged_reason && (
+                            <div className="absolute top-6 left-0 z-50 w-56 rounded-lg shadow-lg p-2.5 text-xs bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] text-[var(--color-warning)]">
+                              <div className="absolute -top-1.5 left-2 h-3 w-3 rotate-45 bg-[var(--color-bg-tertiary)] border-t border-l border-[var(--color-border)]" />
+                              {txn.flagged_reason}
+                            </div>
+                          )}
+                        </div>
                       )}
                       {txn.is_internal_transfer && (
                         <span className="text-[0.6rem] font-medium px-1.5 py-0.5 rounded bg-[var(--color-accent)]/10 text-[var(--color-accent)]">
@@ -876,9 +913,6 @@ function TransactionsContent ( {
                         </>
                       )}
                     </div>
-                    {txn.flagged_reason && (
-                      <p className="text-xs text-[var(--color-warning)] mt-0.5">{txn.flagged_reason}</p>
-                    )}
                   </div>
 
                   {/* Amount + date */}
@@ -898,7 +932,7 @@ function TransactionsContent ( {
                   </div>
 
                   {/* Actions */}
-                  <div className="hidden sm:flex items-center gap-1 shrink-0" onClick={( e ) => e.stopPropagation()}>
+                  <div className="flex items-center gap-1 shrink-0" onClick={( e ) => e.stopPropagation()}>
                     <button
                       className="p-3 sm:p-1.5 rounded hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
                       onClick={() => handleEdit( txn )}
