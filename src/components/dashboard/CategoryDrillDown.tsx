@@ -94,8 +94,10 @@ export function CategoryDrillDown({
         aria-hidden="true"
       />
 
-      {/* Slide-over panel */}
-      <div className="fixed right-0 top-0 h-full w-full max-w-md z-40 flex flex-col bg-[var(--color-bg-secondary)] border-l border-[var(--color-border)] shadow-2xl">
+      {/* Panel — bottom sheet on mobile, right slide-over on lg+ */}
+      <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col rounded-t-2xl max-h-[72vh] bg-[var(--color-bg-secondary)] border-t border-[var(--color-border)] shadow-2xl lg:inset-x-auto lg:bottom-auto lg:right-0 lg:top-0 lg:h-full lg:w-96 lg:max-h-none lg:rounded-none lg:border-t-0 lg:border-l">
+        {/* Drag handle — mobile only */}
+        <div className="w-10 h-1 bg-[var(--color-border)] rounded-full mx-auto mt-3 mb-1 lg:hidden" />
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
@@ -124,7 +126,7 @@ export function CategoryDrillDown({
         </div>
 
         {/* Transaction list */}
-        <div className="flex-1 overflow-y-auto px-5 py-3" style={{ paddingBottom: "calc(4rem + env(safe-area-inset-bottom))" }}>
+        <div className="flex-1 overflow-y-auto px-5 py-3">
           {loading ? (
             <div className="space-y-3">
               {Array.from({ length: 4 }).map((_, i) => (
@@ -179,16 +181,14 @@ export function CategoryDrillDown({
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-[var(--color-border)]">
-          <div style={{ paddingBottom: "calc(4rem + env(safe-area-inset-bottom))" }}>
-            <Link
-              href={viewAllHref}
-              className="flex items-center justify-center gap-1.5 w-full rounded-lg px-4 py-2.5 text-sm font-medium bg-[var(--color-accent)]/10 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/20 transition-colors"
-            >
-              View all transactions
-              <ExternalLink className="h-3.5 w-3.5" />
-            </Link>
-          </div>
+        <div className="px-5 pt-3 pb-[calc(env(safe-area-inset-bottom)+4rem)] lg:pb-4 border-t border-[var(--color-border)]">
+          <Link
+            href={viewAllHref}
+            className="flex items-center justify-center gap-1.5 w-full rounded-lg px-4 py-2.5 text-sm font-medium bg-[var(--color-accent)]/10 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/20 transition-colors"
+          >
+            View all transactions
+            <ExternalLink className="h-3.5 w-3.5" />
+          </Link>
         </div>
       </div>
     </>

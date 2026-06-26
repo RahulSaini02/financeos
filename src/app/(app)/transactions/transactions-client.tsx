@@ -812,7 +812,7 @@ function TransactionsContent ( {
 
                   {/* Main */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
                       <span className="text-sm font-medium truncate">{txn.description}</span>
                       {txn.flagged && (
                         <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-[var(--color-warning)]" />
@@ -829,7 +829,7 @@ function TransactionsContent ( {
                       )}
                     </div>
                     {/* Category + date row (mobile: prominent; desktop: merged into details) */}
-                    <div className="flex items-center gap-2 mt-0.5 flex-wrap" onClick={( e ) => e.stopPropagation()}>
+                    <div className="flex items-center gap-2 mt-0.5" onClick={( e ) => e.stopPropagation()}>
                       {inlineEditId === txn.id ? (
                         <select
                           autoFocus
@@ -882,7 +882,7 @@ function TransactionsContent ( {
                   </div>
 
                   {/* Amount + date */}
-                  <div className="text-right shrink-0">
+                  <div className="text-right shrink-0 whitespace-nowrap">
                     <span
                       className={`text-sm font-medium ${ txn.cr_dr === "credit"
                         ? "text-[var(--color-income)]"
@@ -898,7 +898,7 @@ function TransactionsContent ( {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex items-center gap-1 shrink-0" onClick={( e ) => e.stopPropagation()}>
+                  <div className="hidden sm:flex items-center gap-1 shrink-0" onClick={( e ) => e.stopPropagation()}>
                     <button
                       className="p-3 sm:p-1.5 rounded hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
                       onClick={() => handleEdit( txn )}

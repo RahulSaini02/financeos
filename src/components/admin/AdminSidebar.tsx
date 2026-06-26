@@ -42,8 +42,8 @@ export default function AdminSidebar() {
         </nav>
       </aside>
 
-      {/* Mobile bottom tab bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
+      {/* Mobile bottom tab bar — hidden: AppShell provides global bottom nav on mobile */}
+      <nav className="hidden fixed bottom-0 left-0 right-0 z-50 flex border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
         {NAV_ITEMS.map(({ label, icon: Icon, href }) => {
           const isActive = pathname === href || pathname.startsWith(href + '/')
           return (

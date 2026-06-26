@@ -169,7 +169,7 @@ export function GlobalSearch() {
   let globalIdx = 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col sm:items-start sm:justify-center sm:p-4 sm:pt-[15vh]">
+    <div className="fixed inset-0 z-50 flex flex-col sm:items-center sm:justify-center sm:p-4 sm:pt-[15vh]">
       <div className="absolute inset-0 bg-black/60" onClick={closeModal} />
       <div
         className="relative z-10 w-full flex flex-col flex-1 sm:flex-none sm:max-w-lg sm:rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl overflow-hidden"
