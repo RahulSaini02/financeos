@@ -22,6 +22,7 @@ import {
   ChevronLeft,
   ChevronRight,
   History,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -46,6 +47,8 @@ interface TransactionFilters {
   endDate?: string;
   txnType?: "all" | "credit" | "debit" | "transfer";
   flagged?: boolean;
+  minAmount?: number;
+  maxAmount?: number;
 }
 
 // ── CSV export: fetches all matching transactions (no page limit) ────────────
@@ -106,6 +109,8 @@ function buildParams (
   if ( search ) p.set( "search", search );
   if ( filters.txnType && filters.txnType !== "all" ) p.set( "txnType", filters.txnType );
   if ( filters.flagged ) p.set( "flagged", "true" );
+  if ( filters.minAmount !== undefined ) p.set( "minAmount", String( filters.minAmount ) );
+  if ( filters.maxAmount !== undefined ) p.set( "maxAmount", String( filters.maxAmount ) );
   return p.toString();
 }
 
@@ -155,6 +160,9 @@ function TransactionsContent ( {
   const [editingTxn, setEditingTxn] = useState<Transaction | null>( null );
   const [groupBy, setGroupBy] = useState<"date" | "category" | "account" | "none">( "date" );
   const [exporting, setExporting] = useState( false );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>( new Set() );
+  const [inlineEditId, setInlineEditId] = useState<string | null>( null );
+  const [bulkRecategory, setBulkRecategory] = useState<string>( "" );
 
   // Debounce search input
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>( null );
@@ -212,7 +220,12 @@ function TransactionsContent ( {
 
   useEffect( () => {
     setPage( 0 );
+    setSelectedIds( new Set() );
   }, [filters, debouncedSearch, windowStart] );
+
+  useEffect( () => {
+    setSelectedIds( new Set() );
+  }, [page] );
 
   useEffect( () => {
     fetchPage( page );
@@ -222,12 +235,23 @@ function TransactionsContent ( {
   const isLastPage = page >= totalPages - 1;
   const isWindowLimited = windowStart !== null && !filters.startDate;
 
+  // ── Amount filter (client-side) ──────────────────────────────────────────────
+  const isAmountFiltered = filters.minAmount !== undefined || filters.maxAmount !== undefined;
+  const displayTransactions = isAmountFiltered
+    ? transactions.filter( ( t ) => {
+        const abs = Math.abs( t.final_amount );
+        if ( filters.minAmount !== undefined && abs < filters.minAmount ) return false;
+        if ( filters.maxAmount !== undefined && abs > filters.maxAmount ) return false;
+        return true;
+      } )
+    : transactions;
+
   // ── Grouped for display ──────────────────────────────────────────────────────
   const grouped = ( () => {
-    if ( groupBy === "none" ) return { "All Transactions": transactions };
+    if ( groupBy === "none" ) return { "All Transactions": displayTransactions };
     if ( groupBy === "date" ) {
       const map: Record<string, Transaction[]> = {};
-      transactions.forEach( ( t ) => {
+      displayTransactions.forEach( ( t ) => {
         const key = formatDate( t.date, "long" );
         if ( !map[key] ) map[key] = [];
         map[key].push( t );
@@ -236,7 +260,7 @@ function TransactionsContent ( {
     }
     if ( groupBy === "category" ) {
       const map: Record<string, Transaction[]> = {};
-      transactions.forEach( ( t ) => {
+      displayTransactions.forEach( ( t ) => {
         const cat = categories.find( ( c ) => c.id === t.category_id )?.name ?? "Uncategorized";
         if ( !map[cat] ) map[cat] = [];
         map[cat].push( t );
@@ -245,14 +269,14 @@ function TransactionsContent ( {
     }
     if ( groupBy === "account" ) {
       const map: Record<string, Transaction[]> = {};
-      transactions.forEach( ( t ) => {
+      displayTransactions.forEach( ( t ) => {
         const acc = accounts.find( ( a ) => a.id === t.account_id )?.name ?? "Unknown";
         if ( !map[acc] ) map[acc] = [];
         map[acc].push( t );
       } );
       return map;
     }
-    return { "All Transactions": transactions };
+    return { "All Transactions": displayTransactions };
   } )();
 
   function getCategory ( id: string ) { return categories.find( ( c ) => c.id === id ); }
@@ -312,6 +336,45 @@ function TransactionsContent ( {
     setFilters( next );
   }
 
+  async function handleBulkDelete () {
+    if ( selectedIds.size === 0 ) return;
+    if ( !window.confirm( `Delete ${ selectedIds.size } transaction${ selectedIds.size !== 1 ? "s" : "" }?` ) ) return;
+    const res = await fetch( "/api/transactions/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify( { action: "delete", ids: Array.from( selectedIds ) } ),
+    } );
+    if ( !res.ok ) return;
+    setSelectedIds( new Set() );
+    fetchPage( page );
+  }
+
+  async function handleBulkRecategorize ( categoryId: string ) {
+    if ( selectedIds.size === 0 || !categoryId ) return;
+    const res = await fetch( "/api/transactions/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify( { action: "recategorize", ids: Array.from( selectedIds ), category_id: categoryId || null } ),
+    } );
+    if ( !res.ok ) return;
+    setSelectedIds( new Set() );
+    setBulkRecategory( "" );
+    fetchPage( page );
+  }
+
+  async function handleInlineCategoryChange ( txnId: string, categoryId: string ) {
+    setTransactions( ( prev ) =>
+      prev.map( ( t ) => ( t.id === txnId ? { ...t, category_id: categoryId || null } : t ) )
+    );
+    setInlineEditId( null );
+    const res = await fetch( `/api/transactions/${ txnId }`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify( { category_id: categoryId || null } ),
+    } );
+    if ( res.ok ) fetchPage( page );
+  }
+
   const activeFilterCount = [
     filters.accountId,
     filters.categoryId,
@@ -319,15 +382,17 @@ function TransactionsContent ( {
     filters.endDate,
     filters.txnType && filters.txnType !== "all" ? filters.txnType : undefined,
     filters.flagged ? true : undefined,
+    filters.minAmount !== undefined ? true : undefined,
+    filters.maxAmount !== undefined ? true : undefined,
   ].filter( Boolean ).length;
 
   const drillDownCategory = filters.categoryId && filters.categoryId !== "__uncategorized__"
     ? categories.find( ( c ) => c.id === filters.categoryId ) ?? null
     : null;
 
-  // Summary of current page amounts (non-transfer)
-  const pageIncome = transactions.filter( t => t.cr_dr === "credit" && !t.is_internal_transfer ).reduce( ( s, t ) => s + Math.abs( t.final_amount ), 0 );
-  const pageExpenses = transactions.filter( t => t.cr_dr === "debit" && !t.is_internal_transfer ).reduce( ( s, t ) => s + Math.abs( t.final_amount ), 0 );
+  // Summary of current page amounts (non-transfer, after client-side amount filter)
+  const pageIncome = displayTransactions.filter( t => t.cr_dr === "credit" && !t.is_internal_transfer ).reduce( ( s, t ) => s + Math.abs( t.final_amount ), 0 );
+  const pageExpenses = displayTransactions.filter( t => t.cr_dr === "debit" && !t.is_internal_transfer ).reduce( ( s, t ) => s + Math.abs( t.final_amount ), 0 );
 
   if ( loading && transactions.length === 0 ) return <TablePageSkeleton rows={10} />;
 
@@ -367,7 +432,7 @@ function TransactionsContent ( {
         subtitle={
           loading
             ? "Loading…"
-            : `${ totalCount } total · +${ formatCurrency( pageIncome ) } · -${ formatCurrency( pageExpenses ) } this page`
+            : `${ isAmountFiltered ? displayTransactions.length : totalCount } total · +${ formatCurrency( pageIncome ) } · -${ formatCurrency( pageExpenses ) } this page${ isAmountFiltered ? " (filtered locally)" : "" }`
         }
         tooltip={
           <HelpModal
@@ -455,84 +520,224 @@ function TransactionsContent ( {
 
       {/* Filters panel */}
       {showFilters && (
-        <Card className="p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
-            <div>
-              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Type</label>
-              <select
-                className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                value={filters.txnType ?? "all"}
-                onChange={( e ) => handleFilterChange( { ...filters, txnType: e.target.value as TransactionFilters["txnType"] } )}
-              >
-                <option value="all">All Types</option>
-                <option value="credit">Credits Only</option>
-                <option value="debit">Debits Only</option>
-                <option value="transfer">Transfers Only</option>
-              </select>
+        <>
+          {/* Mobile: backdrop + bottom sheet */}
+          <div
+            className="lg:hidden fixed inset-0 bg-black/50 z-40"
+            onClick={() => setShowFilters( false )}
+          />
+          <div className="lg:hidden fixed inset-x-0 bottom-0 z-50 bg-[var(--color-bg-secondary)] border-t border-[var(--color-border)] rounded-t-2xl shadow-2xl">
+            <div className="flex justify-center pt-2 pb-1">
+              <div className="h-1 w-10 rounded-full bg-[var(--color-border)]" />
             </div>
-            <div>
-              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Account</label>
-              <select
-                className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                value={filters.accountId ?? ""}
-                onChange={( e ) => handleFilterChange( { ...filters, accountId: e.target.value || undefined } )}
-              >
-                <option value="">All Accounts</option>
-                {accounts.map( ( a ) => <option key={a.id} value={a.id}>{a.name}</option> )}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Category</label>
-              <select
-                className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                value={filters.categoryId ?? ""}
-                onChange={( e ) => handleFilterChange( { ...filters, categoryId: e.target.value || undefined } )}
-              >
-                <option value="">All Categories</option>
-                <option value="__uncategorized__">Uncategorized</option>
-                {categories.map( ( c ) => <option key={c.id} value={c.id}>{c.name}</option> )}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">From</label>
-              <input
-                type="date"
-                className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                value={filters.startDate ?? ""}
-                onChange={( e ) => handleFilterChange( { ...filters, startDate: e.target.value || undefined } )}
-              />
-            </div>
-            <div>
-              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">To</label>
-              <input
-                type="date"
-                className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                value={filters.endDate ?? ""}
-                onChange={( e ) => handleFilterChange( { ...filters, endDate: e.target.value || undefined } )}
-              />
-            </div>
-            <div className="flex flex-col justify-end">
-              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Flagged Only</label>
-              <div className="h-8 flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="flagged-filter"
-                  checked={!!filters.flagged}
-                  onChange={( e ) => handleFilterChange( { ...filters, flagged: e.target.checked ? true : undefined } )}
-                  className="h-4 w-4 rounded accent-[var(--color-accent)] cursor-pointer"
-                />
-                <label htmlFor="flagged-filter" className="text-sm text-[var(--color-text-secondary)] cursor-pointer select-none">
-                  Show flagged
-                </label>
+            <div className="px-4 pt-2 max-h-[80vh] overflow-y-auto" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
+              <h3 className="text-sm font-semibold mb-3">Filters</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Type</label>
+                  <select
+                    className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                    value={filters.txnType ?? "all"}
+                    onChange={( e ) => handleFilterChange( { ...filters, txnType: e.target.value as TransactionFilters["txnType"] } )}
+                  >
+                    <option value="all">All Types</option>
+                    <option value="credit">Credits Only</option>
+                    <option value="debit">Debits Only</option>
+                    <option value="transfer">Transfers Only</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Account</label>
+                  <select
+                    className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                    value={filters.accountId ?? ""}
+                    onChange={( e ) => handleFilterChange( { ...filters, accountId: e.target.value || undefined } )}
+                  >
+                    <option value="">All Accounts</option>
+                    {accounts.map( ( a ) => <option key={a.id} value={a.id}>{a.name}</option> )}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Category</label>
+                  <select
+                    className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                    value={filters.categoryId ?? ""}
+                    onChange={( e ) => handleFilterChange( { ...filters, categoryId: e.target.value || undefined } )}
+                  >
+                    <option value="">All Categories</option>
+                    <option value="__uncategorized__">Uncategorized</option>
+                    {categories.map( ( c ) => <option key={c.id} value={c.id}>{c.name}</option> )}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-[var(--color-text-muted)] mb-1 block">From</label>
+                  <input
+                    type="date"
+                    className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                    value={filters.startDate ?? ""}
+                    onChange={( e ) => handleFilterChange( { ...filters, startDate: e.target.value || undefined } )}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-[var(--color-text-muted)] mb-1 block">To</label>
+                  <input
+                    type="date"
+                    className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                    value={filters.endDate ?? ""}
+                    onChange={( e ) => handleFilterChange( { ...filters, endDate: e.target.value || undefined } )}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Min Amount ($)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                    placeholder="0.00"
+                    value={filters.minAmount ?? ""}
+                    onChange={( e ) => handleFilterChange( { ...filters, minAmount: e.target.value !== "" ? parseFloat( e.target.value ) : undefined } )}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Max Amount ($)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                    placeholder="Any"
+                    value={filters.maxAmount ?? ""}
+                    onChange={( e ) => handleFilterChange( { ...filters, maxAmount: e.target.value !== "" ? parseFloat( e.target.value ) : undefined } )}
+                  />
+                </div>
+                <div className="flex flex-col justify-end">
+                  <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Flagged Only</label>
+                  <div className="h-8 flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="flagged-filter-mobile"
+                      checked={!!filters.flagged}
+                      onChange={( e ) => handleFilterChange( { ...filters, flagged: e.target.checked ? true : undefined } )}
+                      className="h-4 w-4 rounded accent-[var(--color-accent)] cursor-pointer"
+                    />
+                    <label htmlFor="flagged-filter-mobile" className="text-sm text-[var(--color-text-secondary)] cursor-pointer select-none">
+                      Show flagged
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 flex gap-2">
+                <Button variant="ghost" size="sm" className="flex-1" onClick={() => handleFilterChange( { txnType: "all" } )}>Clear</Button>
+                <Button size="sm" className="flex-1" onClick={() => setShowFilters( false )}>Apply</Button>
               </div>
             </div>
           </div>
-          <div className="mt-3 flex justify-end">
-            <Button variant="ghost" size="sm" onClick={() => handleFilterChange( { txnType: "all" } )}>
-              Clear filters
-            </Button>
-          </div>
-        </Card>
+
+          {/* Desktop: inline card */}
+          <Card className="hidden lg:block p-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div>
+                <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Type</label>
+                <select
+                  className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                  value={filters.txnType ?? "all"}
+                  onChange={( e ) => handleFilterChange( { ...filters, txnType: e.target.value as TransactionFilters["txnType"] } )}
+                >
+                  <option value="all">All Types</option>
+                  <option value="credit">Credits Only</option>
+                  <option value="debit">Debits Only</option>
+                  <option value="transfer">Transfers Only</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Account</label>
+                <select
+                  className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                  value={filters.accountId ?? ""}
+                  onChange={( e ) => handleFilterChange( { ...filters, accountId: e.target.value || undefined } )}
+                >
+                  <option value="">All Accounts</option>
+                  {accounts.map( ( a ) => <option key={a.id} value={a.id}>{a.name}</option> )}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Category</label>
+                <select
+                  className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                  value={filters.categoryId ?? ""}
+                  onChange={( e ) => handleFilterChange( { ...filters, categoryId: e.target.value || undefined } )}
+                >
+                  <option value="">All Categories</option>
+                  <option value="__uncategorized__">Uncategorized</option>
+                  {categories.map( ( c ) => <option key={c.id} value={c.id}>{c.name}</option> )}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-[var(--color-text-muted)] mb-1 block">From</label>
+                <input
+                  type="date"
+                  className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                  value={filters.startDate ?? ""}
+                  onChange={( e ) => handleFilterChange( { ...filters, startDate: e.target.value || undefined } )}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-[var(--color-text-muted)] mb-1 block">To</label>
+                <input
+                  type="date"
+                  className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                  value={filters.endDate ?? ""}
+                  onChange={( e ) => handleFilterChange( { ...filters, endDate: e.target.value || undefined } )}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Min Amount ($)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                  placeholder="0.00"
+                  value={filters.minAmount ?? ""}
+                  onChange={( e ) => handleFilterChange( { ...filters, minAmount: e.target.value !== "" ? parseFloat( e.target.value ) : undefined } )}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Max Amount ($)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                  placeholder="Any"
+                  value={filters.maxAmount ?? ""}
+                  onChange={( e ) => handleFilterChange( { ...filters, maxAmount: e.target.value !== "" ? parseFloat( e.target.value ) : undefined } )}
+                />
+              </div>
+              <div className="flex flex-col justify-end">
+                <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Flagged Only</label>
+                <div className="h-8 flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="flagged-filter"
+                    checked={!!filters.flagged}
+                    onChange={( e ) => handleFilterChange( { ...filters, flagged: e.target.checked ? true : undefined } )}
+                    className="h-4 w-4 rounded accent-[var(--color-accent)] cursor-pointer"
+                  />
+                  <label htmlFor="flagged-filter" className="text-sm text-[var(--color-text-secondary)] cursor-pointer select-none">
+                    Show flagged
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 flex justify-end">
+              <Button variant="ghost" size="sm" onClick={() => handleFilterChange( { txnType: "all" } )}>
+                Clear filters
+              </Button>
+            </div>
+          </Card>
+        </>
       )}
 
       {/* Search */}
@@ -567,6 +772,26 @@ function TransactionsContent ( {
                   className="flex items-start gap-3 px-3 py-3 hover:bg-[var(--color-bg-tertiary)] transition-colors cursor-pointer sm:items-center sm:px-4"
                   onClick={() => handleEdit( txn )}
                 >
+                  {/* Bulk select checkbox */}
+                  <div
+                    className="flex items-center shrink-0 self-center"
+                    onClick={( e ) => e.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has( txn.id )}
+                      onChange={() => {
+                        setSelectedIds( ( prev ) => {
+                          const next = new Set( prev );
+                          if ( next.has( txn.id ) ) next.delete( txn.id );
+                          else next.add( txn.id );
+                          return next;
+                        } );
+                      }}
+                      className="h-4 w-4 rounded accent-[var(--color-accent)] cursor-pointer"
+                    />
+                  </div>
+
                   {/* Icon */}
                   <div
                     className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg mt-0.5 sm:mt-0 ${ txn.is_internal_transfer
@@ -604,10 +829,28 @@ function TransactionsContent ( {
                       )}
                     </div>
                     {/* Category + date row (mobile: prominent; desktop: merged into details) */}
-                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span className="text-xs text-[var(--color-text-muted)]">
-                        {getCategory( txn.category_id ?? "" )?.name ?? "Uncategorized"}
-                      </span>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap" onClick={( e ) => e.stopPropagation()}>
+                      {inlineEditId === txn.id ? (
+                        <select
+                          autoFocus
+                          className="text-xs h-6 rounded border border-[var(--color-accent)] bg-[var(--color-bg-tertiary)] px-1 max-w-[140px]"
+                          value={txn.category_id ?? ""}
+                          onChange={( e ) => handleInlineCategoryChange( txn.id, e.target.value )}
+                          onBlur={() => setInlineEditId( null )}
+                        >
+                          <option value="">Uncategorized</option>
+                          {categories.map( ( c ) => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ) )}
+                        </select>
+                      ) : (
+                        <button
+                          className="text-xs px-1.5 py-0.5 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)]/10 hover:text-[var(--color-accent)] transition-colors"
+                          onClick={() => setInlineEditId( txn.id )}
+                        >
+                          {getCategory( txn.category_id ?? "" )?.name ?? "Uncategorized"}
+                        </button>
+                      )}
                       <span className="text-xs text-[var(--color-text-muted)] sm:hidden">·</span>
                       <span className="text-xs text-[var(--color-text-muted)] sm:hidden">
                         {formatDate( txn.date )}
@@ -657,16 +900,16 @@ function TransactionsContent ( {
                   {/* Actions */}
                   <div className="flex items-center gap-1 shrink-0" onClick={( e ) => e.stopPropagation()}>
                     <button
-                      className="p-1.5 rounded hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+                      className="p-3 sm:p-1.5 rounded hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
                       onClick={() => handleEdit( txn )}
                     >
-                      <Edit2 className="h-3.5 w-3.5" />
+                      <Edit2 className="h-4 w-4" />
                     </button>
                     <button
-                      className="p-1.5 rounded hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-danger)]"
+                      className="p-3 sm:p-1.5 rounded hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-danger)]"
                       onClick={() => handleDelete( txn.id )}
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
                 </div>
@@ -724,6 +967,52 @@ function TransactionsContent ( {
           </button>
         )}
       </div>
+
+      {/* Floating bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-[calc(4rem+1.5rem)] lg:bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-5 py-3 rounded-2xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)] shadow-xl whitespace-nowrap">
+          <span className="text-sm font-medium text-[var(--color-text-primary)]">
+            {selectedIds.size} selected
+          </span>
+          <select
+            className="h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-xs text-[var(--color-text-secondary)]"
+            value={bulkRecategory}
+            onChange={( e ) => {
+              setBulkRecategory( e.target.value );
+              if ( e.target.value ) handleBulkRecategorize( e.target.value );
+            }}
+          >
+            <option value="">Recategorize…</option>
+            {categories.map( ( c ) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ) )}
+          </select>
+          <button
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-danger)]/10 text-[var(--color-danger)] hover:bg-[var(--color-danger)]/20 text-xs font-medium transition-colors"
+            onClick={handleBulkDelete}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete
+          </button>
+          <button
+            className="p-1.5 rounded-lg hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
+            onClick={() => setSelectedIds( new Set() )}
+            aria-label="Clear selection"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Mobile FAB — Add transaction */}
+      <button
+        className="lg:hidden fixed right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-accent)] shadow-lg text-white active:scale-95 transition-transform"
+        style={{ bottom: "calc(4rem + 1rem + env(safe-area-inset-bottom))" }}
+        onClick={handleAdd}
+        aria-label="Add transaction"
+      >
+        <Plus className="h-6 w-6" />
+      </button>
 
       {/* Add/Edit Modal */}
       {showModal && (

@@ -21,6 +21,7 @@ import {
   Tag,
   Menu,
   X,
+  Search,
   Sparkles,
   ChevronLeft,
   ChevronRight,
@@ -37,6 +38,7 @@ const AppTour = dynamic(
   { ssr: false }
 );
 import { KeyboardShortcuts } from "@/components/ui/keyboard-shortcuts";
+import { GlobalSearch } from "@/components/ui/global-search";
 import { useAuth } from "@/components/auth-provider";
 
 export const ALL_NAV_ITEMS = [
@@ -382,8 +384,17 @@ export function AppShell({ children }: AppShellProps) {
             <Menu className="h-5 w-5" />
           </button>
           <span className="text-base font-semibold tracking-tight">FinanceOS</span>
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-700 text-xs font-medium text-white">
-            {initials}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent("open-global-search"))}
+              className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+              aria-label="Search"
+            >
+              <Search className="h-5 w-5" />
+            </button>
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-700 text-xs font-medium text-white">
+              {initials}
+            </div>
           </div>
         </div>
         </header>
@@ -427,6 +438,7 @@ export function AppShell({ children }: AppShellProps) {
       <AppTour startTour={showTour} />
       <FloatingAiChat />
       <KeyboardShortcuts />
+      <GlobalSearch />
     </div>
   );
 }
