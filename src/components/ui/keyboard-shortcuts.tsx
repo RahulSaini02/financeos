@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Keyboard, X } from "lucide-react";
 
 const SHORTCUTS: { key: string; description: string; action?: () => void; href?: string }[] = [
+  { key: "⌘K", description: "Open global search" },
   { key: "D", description: "Go to Dashboard", href: "/dashboard" },
   { key: "T", description: "Go to Transactions", href: "/transactions" },
   { key: "A", description: "Go to Accounts", href: "/accounts" },

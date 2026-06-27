@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDate, parseLocalDate } from "@/lib/utils";
 import { createClient } from "@/lib/supabase";
 import type { Subscription, BillingStatus, Account } from "@/lib/types";
 import {
@@ -45,8 +45,7 @@ function getDaysUntil(dateStr: string | null): number | null {
   if (!dateStr) return null;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const target = new Date(dateStr);
-  target.setHours(0, 0, 0, 0);
+  const target = parseLocalDate(dateStr);
   return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
@@ -538,8 +537,7 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
 
   const dueThisWeek = subscriptions.filter((s) => {
     if (!s.next_billing_date) return false;
-    const d = new Date(s.next_billing_date);
-    d.setHours(0, 0, 0, 0);
+    const d = parseLocalDate(s.next_billing_date);
     return d >= today && d <= weekLater;
   }).length;
 
@@ -723,7 +721,7 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
                       <div className="shrink-0 text-right hidden sm:block">
                         <p className="text-xs text-[var(--color-text-muted)]">
                           {sub.next_billing_date
-                            ? new Date(sub.next_billing_date).toLocaleDateString("en-US", {
+                            ? parseLocalDate(sub.next_billing_date).toLocaleDateString("en-US", {
                                 month: "short",
                                 day: "numeric",
                               })
@@ -856,7 +854,7 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
                     <Calendar className="h-3 w-3" />
                     {sub.next_billing_date ? (
                       <span>
-                        {new Date(sub.next_billing_date).toLocaleDateString("en-US", {
+                        {parseLocalDate(sub.next_billing_date).toLocaleDateString("en-US", {
                           month: "short",
                           day: "numeric",
                         })}

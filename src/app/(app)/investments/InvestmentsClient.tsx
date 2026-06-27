@@ -9,6 +9,7 @@ import type { Investment, SavingsGoal } from "@/lib/types";
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
 import { EmptyState } from "@/components/ui/empty-state";
+import { EmptyInvestments } from "@/components/ui/empty-illustrations";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   TrendingUp,
@@ -21,7 +22,55 @@ import {
   Pencil,
   Trash2,
   X,
+  House,
+  Car,
+  Plane,
+  GraduationCap,
+  Heart,
+  Gift,
+  Camera,
+  Dumbbell,
+  PiggyBank,
+  Wallet,
+  ShoppingBag,
+  Coffee,
+  Music,
+  Baby,
+  Diamond,
+  Briefcase,
+  Laptop,
+  Bike,
+  Umbrella,
+  Trees,
 } from "lucide-react";
+
+const GOAL_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  house: House,
+  car: Car,
+  plane: Plane,
+  "graduation-cap": GraduationCap,
+  heart: Heart,
+  gift: Gift,
+  camera: Camera,
+  dumbbell: Dumbbell,
+  "piggy-bank": PiggyBank,
+  wallet: Wallet,
+  "shopping-bag": ShoppingBag,
+  coffee: Coffee,
+  music: Music,
+  baby: Baby,
+  diamond: Diamond,
+  briefcase: Briefcase,
+  laptop: Laptop,
+  bike: Bike,
+  umbrella: Umbrella,
+  trees: Trees,
+};
+
+function GoalIcon ({ name }: { name: string | null }) {
+  const Icon = ( name && GOAL_ICON_MAP[name] ) ? GOAL_ICON_MAP[name] : Target;
+  return <Icon className="h-5 w-5 text-[var(--color-accent)]" />;
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -402,6 +451,7 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
           icon={<TrendingUp className="h-8 w-8" />}
           title="No investments found"
           description="Add your first investment to track portfolio performance."
+          illustration={<EmptyInvestments />}
         />
       ) : (
         <div className="space-y-6">
@@ -565,6 +615,7 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
             icon={<Target className="h-8 w-8" />}
             title="No savings goals yet"
             description="Add a savings goal to track your progress."
+            illustration={<EmptyInvestments />}
           />
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -589,9 +640,7 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
                 <Card key={goal.id}>
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      {goal.icon && (
-                        <span className="text-2xl">{goal.icon}</span>
-                      )}
+                      <GoalIcon name={goal.icon} />
                       <div>
                         <p className="font-medium">{goal.name}</p>
                         <p className="text-xs text-[var(--color-text-muted)]">

@@ -21,10 +21,16 @@ import {
   Tag,
   Menu,
   X,
+  Search,
   Sparkles,
   ChevronLeft,
   ChevronRight,
   ShieldCheck,
+  Users,
+  BrainCircuit,
+  Settings2,
+  BellRing,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import dynamic from "next/dynamic";
@@ -37,6 +43,7 @@ const AppTour = dynamic(
   { ssr: false }
 );
 import { KeyboardShortcuts } from "@/components/ui/keyboard-shortcuts";
+import { GlobalSearch } from "@/components/ui/global-search";
 import { useAuth } from "@/components/auth-provider";
 
 export const ALL_NAV_ITEMS = [
@@ -90,11 +97,208 @@ const bottomNavItems = [
   { href: "/ai-review", label: "AI", icon: Sparkles },
 ];
 
+const adminBottomNavItems = [
+  { href: "/admin/overview", label: "Overview", icon: LayoutDashboard },
+  { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/ai-requests", label: "AI Usage", icon: BrainCircuit },
+  { href: "/admin/settings", label: "Settings", icon: Settings2 },
+];
+
 interface AppShellProps {
   children: React.ReactNode;
 }
 
+const IS_DEV = process.env.NODE_ENV === "development";
+
+function DevPushMobileButton() {
+  const [status, setStatus] = useState<"idle" | "loading" | "sent" | "error">("idle");
+
+  async function send() {
+    if (status === "loading") return;
+    setStatus("loading");
+    try {
+      const res = await fetch("/api/push/test", { method: "POST" });
+      setStatus(res.ok ? "sent" : "error");
+    } catch {
+      setStatus("error");
+    }
+    setTimeout(() => setStatus("idle"), 3000);
+  }
+
+  return (
+    <button
+      onClick={send}
+      title="Dev: send test push notification"
+      className={cn(
+        "p-1.5 rounded-lg transition-colors",
+        status === "sent"
+          ? "text-[var(--color-success)]"
+          : status === "error"
+          ? "text-[var(--color-danger)]"
+          : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)]"
+      )}
+    >
+      {status === "loading" ? (
+        <Loader2 className="h-5 w-5 animate-spin" />
+      ) : (
+        <BellRing className="h-5 w-5" />
+      )}
+    </button>
+  );
+}
+
+function DevPushButton({ collapsed }: { collapsed?: boolean }) {
+  const [status, setStatus] = useState<"idle" | "loading" | "sent" | "error">("idle");
+
+  async function send() {
+    if (status === "loading") return;
+    setStatus("loading");
+    try {
+      const res = await fetch("/api/push/test", { method: "POST" });
+      setStatus(res.ok ? "sent" : "error");
+    } catch {
+      setStatus("error");
+    }
+    setTimeout(() => setStatus("idle"), 3000);
+  }
+
+  return (
+    <button
+      onClick={send}
+      title="Dev: send test push notification"
+      className={cn(
+        "flex w-full items-center rounded-lg px-2 py-2 text-sm transition-colors",
+        collapsed ? "justify-center" : "gap-3 px-3",
+        status === "sent"
+          ? "text-[var(--color-success)]"
+          : status === "error"
+          ? "text-[var(--color-danger)]"
+          : "text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]",
+        "border border-dashed border-[var(--color-border)]"
+      )}
+    >
+      {status === "loading" ? (
+        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+      ) : (
+        <BellRing className="h-4 w-4 shrink-0" />
+      )}
+      {!collapsed && (
+        <span className="truncate text-xs">
+          {status === "sent" ? "Sent!" : status === "error" ? "Failed" : "Test Push"}
+        </span>
+      )}
+    </button>
+  );
+}
+
 const SIDEBAR_COLLAPSED_KEY = "pref_sidebar_collapsed";
+const PUSH_DISMISSED_KEY = "push_prompt_dismissed";
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  const output = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i++) output[i] = rawData.charCodeAt(i);
+  return output;
+}
+
+function PushPromptBanner() {
+  const [visible, setVisible] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    if (localStorage.getItem(PUSH_DISMISSED_KEY)) return;
+
+    navigator.serviceWorker.ready
+      .then((reg) => reg.pushManager.getSubscription())
+      .then((sub) => { if (!sub) setVisible(true); })
+      .catch(() => {});
+  }, []);
+
+  function dismiss() {
+    setVisible(false);
+    localStorage.setItem(PUSH_DISMISSED_KEY, "1");
+  }
+
+  async function handleEnable() {
+    setSubscribing(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") { dismiss(); return; }
+
+      const reg = await navigator.serviceWorker.ready;
+      const existing = await reg.pushManager.getSubscription();
+      if (existing) await existing.unsubscribe();
+
+      const vapidRes = await fetch("/api/push/vapid-key");
+      const vapidData = await vapidRes.json() as { publicKey?: string };
+      if (!vapidData.publicKey) { dismiss(); return; }
+
+      const keyBytes = urlBase64ToUint8Array(vapidData.publicKey);
+      if (keyBytes.length !== 65) { dismiss(); return; }
+
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: keyBytes.buffer as ArrayBuffer,
+      });
+
+      const subJson = sub.toJSON() as { endpoint: string; keys: { p256dh: string; auth: string } };
+      await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(subJson),
+      });
+    } catch (err) {
+      console.error("Push auto-subscribe error:", err);
+    } finally {
+      setSubscribing(false);
+      dismiss();
+    }
+  }
+
+  if (!visible) return null;
+
+  return (
+    <div className="fixed bottom-[4.5rem] lg:bottom-4 left-4 right-4 lg:left-auto lg:right-4 lg:w-80 z-50 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-xl p-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--color-accent)]/10 text-[var(--color-accent)]">
+          <BellRing className="h-4 w-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-[var(--color-text-primary)]">Enable notifications</p>
+          <p className="text-xs text-[var(--color-text-muted)] mt-0.5 leading-relaxed">
+            Get bill reminders and spending alerts
+          </p>
+        </div>
+        <button
+          onClick={dismiss}
+          className="shrink-0 rounded-md p-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="flex gap-2 mt-3">
+        <button
+          onClick={handleEnable}
+          disabled={subscribing}
+          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-xs font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-60"
+        >
+          {subscribing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {subscribing ? "Enabling…" : "Enable"}
+        </button>
+        <button
+          onClick={dismiss}
+          className="px-3 py-2 text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors rounded-lg"
+        >
+          Later
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
@@ -306,7 +510,8 @@ export function AppShell({ children }: AppShellProps) {
       </nav>
 
       {/* Bottom */}
-      <div className="border-t border-[var(--color-border)] p-2">
+      <div className="border-t border-[var(--color-border)] p-2 space-y-1">
+        {IS_DEV && <DevPushButton collapsed={sidebarCollapsed} />}
         <Link
           href="/settings"
           data-tour="nav-settings"
@@ -382,8 +587,18 @@ export function AppShell({ children }: AppShellProps) {
             <Menu className="h-5 w-5" />
           </button>
           <span className="text-base font-semibold tracking-tight">FinanceOS</span>
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-700 text-xs font-medium text-white">
-            {initials}
+          <div className="flex items-center gap-1">
+            {IS_DEV && <DevPushMobileButton />}
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent("open-global-search"))}
+              className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+              aria-label="Search"
+            >
+              <Search className="h-5 w-5" />
+            </button>
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-700 text-xs font-medium text-white">
+              {initials}
+            </div>
           </div>
         </div>
         </header>
@@ -403,7 +618,7 @@ export function AppShell({ children }: AppShellProps) {
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="flex items-center justify-around h-16 px-2">
-          {bottomNavItems.map((item) => {
+          {(pathname?.startsWith("/admin") ? adminBottomNavItems : bottomNavItems).map((item) => {
             const isActive = pathname === item.href || pathname?.startsWith(item.href + "/");
             return (
               <Link
@@ -427,6 +642,8 @@ export function AppShell({ children }: AppShellProps) {
       <AppTour startTour={showTour} />
       <FloatingAiChat />
       <KeyboardShortcuts />
+      <GlobalSearch />
+      <PushPromptBanner />
     </div>
   );
 }

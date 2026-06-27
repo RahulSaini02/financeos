@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Card, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDate } from "@/lib/utils";
 import type { Loan, LoanPayment, Transaction } from "@/lib/types";
 import {
   TrendingDown,
@@ -194,11 +194,7 @@ export function LoanDetailClient({ loan }: LoanDetailClientProps) {
                       {txn.description}
                     </p>
                     <p className="text-xs text-[var(--color-text-muted)]">
-                      {new Date(txn.date).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
+                      {formatDate(txn.date)}
                     </p>
                   </div>
                 </div>
@@ -269,11 +265,7 @@ export function LoanDetailClient({ loan }: LoanDetailClientProps) {
                 {loan.payments.map((p) => (
                   <tr key={p.id} className="hover:bg-[var(--color-bg-tertiary)] transition-colors">
                     <td className="px-4 py-3 text-[var(--color-text-secondary)] whitespace-nowrap">
-                      {new Date(p.payment_date).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
+                      {formatDate(p.payment_date)}
                     </td>
                     <td className="px-4 py-3 font-medium">{formatCurrency(p.emi_paid)}</td>
                     <td className="px-4 py-3 text-[var(--color-success)]">
@@ -312,11 +304,7 @@ export function LoanDetailClient({ loan }: LoanDetailClientProps) {
           {[
             {
               label: "Start Date",
-              value: new Date(loan.start_date).toLocaleDateString("en-US", {
-                month: "long",
-                day: "numeric",
-                year: "numeric",
-              }),
+              value: formatDate(loan.start_date, "long"),
             },
             { label: "Term", value: `${loan.term_months} months` },
             {

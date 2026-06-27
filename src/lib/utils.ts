@@ -24,6 +24,12 @@ export function getUserTimezone(): string {
   return localStorage.getItem('pref_timezone') ?? DEFAULT_TIMEZONE
 }
 
+// Parse a YYYY-MM-DD string as local midnight so timezone offset never shifts the day.
+export function parseLocalDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
 export function formatDate(date: string | Date, format: 'short' | 'long' | 'iso' = 'short', timeZone?: string): string {
   // Date-only strings (YYYY-MM-DD) represent calendar dates, not timestamps.
   // Parse as explicit year/month/day to avoid any timezone offset shifting the day.

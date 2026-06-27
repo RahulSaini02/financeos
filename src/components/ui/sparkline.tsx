@@ -1,0 +1,38 @@
+interface SparklineProps {
+  data: number[];
+  color?: string;
+  width?: number;
+  height?: number;
+}
+
+export function Sparkline({ data, color = "#6366f1", width = 80, height = 28 }: SparklineProps) {
+  if (data.length < 2) return null;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const points = data
+    .map((v, i) => {
+      const x = (i / (data.length - 1)) * width;
+      const y = height - ((v - min) / range) * (height - 4) - 2;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+
+  const last = data[data.length - 1];
+  const cx = width;
+  const cy = height - ((last - min) / range) * (height - 4) - 2;
+
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="opacity-80">
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      <circle cx={cx} cy={cy} r="2" fill={color} />
+    </svg>
+  );
+}

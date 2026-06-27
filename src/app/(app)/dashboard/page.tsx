@@ -23,6 +23,9 @@ import { HelpModal } from "@/components/ui/help-modal";
 import { DashboardInsightLoader } from "./DashboardInsightLoader";
 import { DashboardWelcomeBanner } from "@/components/dashboard/DashboardWelcomeBanner";
 import { EmptySection } from "@/components/dashboard/EmptySection";
+import { MonthSelector } from "./MonthSelector";
+import { BudgetProgressBars } from "@/components/dashboard/BudgetProgressBars";
+import { Sparkline } from "@/components/ui/sparkline";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -40,7 +43,7 @@ interface Transaction {
   final_amount: number;
   date: string;
   flagged: boolean;
-  categories?: { name: string } | null;
+  categories?: { name: string; id: string } | null;
   accounts?: { name: string } | null;
 }
 
@@ -53,6 +56,14 @@ interface DashboardAlert {
   body: string;
   actionUrl: string;
   actionLabel: string;
+}
+
+interface BudgetSummaryItem {
+  id: string;
+  categoryName: string;
+  limit: number;
+  spent: number;
+  pct: number;
 }
 
 function getDaysUntilDue( dateStr: string ): number {
@@ -71,7 +82,9 @@ function MetricCard ( {
   change,
   changeLabel,
   positive,
-  href
+  href,
+  sparklineData,
+  projectedValue,
 }: {
   label: string;
   value: string;
@@ -79,11 +92,32 @@ function MetricCard ( {
   changeLabel?: string;
   positive?: boolean;
   href?: string;
+  sparklineData?: number[];
+  projectedValue?: string;
 } ) {
+  const trendColor = sparklineData && sparklineData.length >= 2
+    ? sparklineData[sparklineData.length - 1] >= sparklineData[sparklineData.length - 2]
+      ? '#22c55e'
+      : '#ef4444'
+    : '#6366f1';
+
   const content = (
     <Card className={`hover:border-[var(--color-accent)] transition-colors cursor-pointer`}>
       <CardTitle>{label}</CardTitle>
-      <CardValue className={`mt-2`}>{value}</CardValue>
+      <div className="flex items-end justify-between mt-2">
+        <CardValue>{value}</CardValue>
+        {sparklineData && sparklineData.length >= 2 && (
+          <Sparkline data={sparklineData} color={trendColor} width={72} height={28} />
+        )}
+      </div>
+      {/* Always reserve this line's height so all cards stay equal */}
+      <p className={`text-[10px] mt-0.5 h-[14px] leading-[14px] ${
+        projectedValue
+          ? "text-[var(--color-text-secondary)] opacity-80"
+          : "opacity-0 pointer-events-none select-none"
+      }`}>
+        {projectedValue ?? " "}
+      </p>
       {change !== undefined && (
         <div className="mt-2 flex items-center gap-1">
           {positive ? (
@@ -110,26 +144,40 @@ function MetricCard ( {
 
 const CATEGORY_COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6', '#64748b'];
 
-async function getDashboardData ( userId: string ) {
+async function getDashboardData ( userId: string, monthParam?: string ) {
   const supabase = await createServerSupabaseClient();
 
-  const now = new Date();
+  const today = new Date();
   const pad = ( n: number ) => String( n ).padStart( 2, '0' );
-  const firstDay = `${ now.getFullYear() }-${ pad( now.getMonth() + 1 ) }-01`;
-  const lastDay = new Date( now.getFullYear(), now.getMonth() + 1, 0 ).toISOString().split( 'T' )[0];
-  const todayStr = now.toISOString().split( 'T' )[0];
-  const sevenDaysFromNow = new Date( now );
+
+  // Parse the requested month or fall back to current
+  const viewDate = monthParam
+    ? new Date( parseInt( monthParam.split( '-' )[0] ), parseInt( monthParam.split( '-' )[1] ) - 1, 1 )
+    : new Date( today.getFullYear(), today.getMonth(), 1 );
+  const isCurrentMonth =
+    viewDate.getFullYear() === today.getFullYear() && viewDate.getMonth() === today.getMonth();
+
+  const firstDay = `${ viewDate.getFullYear() }-${ pad( viewDate.getMonth() + 1 ) }-01`;
+  const lastDay = new Date( viewDate.getFullYear(), viewDate.getMonth() + 1, 0 ).toISOString().split( 'T' )[0];
+
+  // Bills always use today (not the selected view month)
+  const todayStr = today.toISOString().split( 'T' )[0];
+  const sevenDaysFromNow = new Date( today );
   sevenDaysFromNow.setDate( sevenDaysFromNow.getDate() + 7 );
   const sevenDaysStr = sevenDaysFromNow.toISOString().split( 'T' )[0];
-  const thirtyDaysFromNow = new Date( now );
+  const thirtyDaysFromNow = new Date( today );
   thirtyDaysFromNow.setDate( thirtyDaysFromNow.getDate() + 30 );
   const thirtyDaysStr = thirtyDaysFromNow.toISOString().split( 'T' )[0];
-  const thirtyDaysAgo = new Date( now );
+  const thirtyDaysAgo = new Date( today );
   thirtyDaysAgo.setDate( thirtyDaysAgo.getDate() - 30 );
   const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split( 'T' )[0];
 
-  const twelveMonthsAgoDate = new Date( now.getFullYear(), now.getMonth() - 11, 1 );
+  // 12-month window ends at the last day of the selected view month
+  const twelveMonthsAgoDate = new Date( viewDate.getFullYear(), viewDate.getMonth() - 11, 1 );
   const twelveMonthsAgoStr = `${ twelveMonthsAgoDate.getFullYear() }-${ pad( twelveMonthsAgoDate.getMonth() + 1 ) }-01`;
+
+  // Suppress unused variable warning — sevenDaysStr is kept for future use
+  void sevenDaysStr;
 
   const [
     accountsRes, transactionsRes, flaggedRes, networthRes,
@@ -144,8 +192,8 @@ async function getDashboardData ( userId: string ) {
     supabase.from( 'subscriptions' ).select( 'name, next_billing_date, billing_cost' ).eq( 'user_id', userId ).eq( 'status', 'active' ).not( 'next_billing_date', 'is', null ).gte( 'next_billing_date', todayStr ).lte( 'next_billing_date', thirtyDaysStr ).order( 'next_billing_date', { ascending: true } ),
     // overdue: today-30 → yesterday
     supabase.from( 'subscriptions' ).select( 'name, next_billing_date, billing_cost' ).eq( 'user_id', userId ).eq( 'status', 'active' ).not( 'next_billing_date', 'is', null ).gte( 'next_billing_date', thirtyDaysAgoStr ).lt( 'next_billing_date', todayStr ).order( 'next_billing_date', { ascending: false } ),
-    supabase.from( 'transactions' ).select( 'amount_usd, cr_dr, date' ).eq( 'user_id', userId ).eq( 'is_internal_transfer', false ).gte( 'date', twelveMonthsAgoStr ).lte( 'date', lastDay ),
-    supabase.from( 'transactions' ).select( 'id, description, final_amount, date, flagged, categories(name), accounts(name)' ).eq( 'user_id', userId ).order( 'date', { ascending: false } ).limit( 5 ),
+    supabase.from( 'transactions' ).select( 'amount_usd, cr_dr, date, category:categories(name)' ).eq( 'user_id', userId ).eq( 'is_internal_transfer', false ).gte( 'date', twelveMonthsAgoStr ).lte( 'date', lastDay ),
+    supabase.from( 'transactions' ).select( 'id, description, final_amount, date, flagged, categories(name, id), accounts(name)' ).eq( 'user_id', userId ).order( 'date', { ascending: false } ).limit( 5 ),
     supabase.from( 'budgets' ).select( '*, category:categories(id, name)' ).eq( 'user_id', userId ).eq( 'month', firstDay ),
     supabase.from( 'transactions' ).select( 'id, description, amount_usd, date' ).eq( 'user_id', userId ).eq( 'flagged', true ).order( 'date', { ascending: false } ).limit( 5 ),
   ] );
@@ -170,36 +218,57 @@ async function getDashboardData ( userId: string ) {
     ...bills.map( ( b ) => ( { name: b.name, due_date: b.next_billing_date!, amount: b.billing_cost, paid: false, overdue: false } ) ),
   ];
 
-  // Category breakdown
-  const catSpend: Record<string, number> = {};
+  // Category breakdown (keyed by category_id to preserve IDs for drill-down)
+  const catIdAndNameSpend: Record<string, { id: string; name: string; amount: number }> = {};
   for ( const t of transactions ) {
     if ( t.cr_dr === 'debit' && !t.is_internal_transfer ) {
-      const catName = ( t.category as unknown as { name: string } | null )?.name ?? 'Uncategorized';
-      catSpend[catName] = ( catSpend[catName] ?? 0 ) + Math.abs( t.amount_usd ?? 0 );
+      const cat = ( t.category as unknown as { name: string; id: string } | null );
+      const catId = cat?.id ?? '__uncategorized__';
+      const catName = cat?.name ?? 'Uncategorized';
+      if ( !catIdAndNameSpend[catId] ) {
+        catIdAndNameSpend[catId] = { id: catId, name: catName, amount: 0 };
+      }
+      catIdAndNameSpend[catId].amount += Math.abs( t.amount_usd ?? 0 );
     }
   }
-  const sortedCats = Object.entries( catSpend ).sort( ( a, b ) => b[1] - a[1] );
+  const sortedCats = Object.values( catIdAndNameSpend ).sort( ( a, b ) => b.amount - a.amount );
   const top6 = sortedCats.slice( 0, 6 );
-  const otherTotal = sortedCats.slice( 6 ).reduce( ( s, [, v] ) => s + v, 0 );
+  const otherTotal = sortedCats.slice( 6 ).reduce( ( s, item ) => s + item.amount, 0 );
   const categoryBreakdown = [
-    ...top6.map( ( [name, amount], i ) => ( { name, amount, color: CATEGORY_COLORS[i] } ) ),
-    ...( otherTotal > 0 ? [{ name: 'Other', amount: otherTotal, color: CATEGORY_COLORS[6] }] : [] ),
+    ...top6.map( ( cat, i ) => ( { id: cat.id, name: cat.name, amount: cat.amount, color: CATEGORY_COLORS[i] } ) ),
+    ...( otherTotal > 0 ? [{ id: '__other__', name: 'Other', amount: otherTotal, color: CATEGORY_COLORS[6] }] : [] ),
   ];
 
   // 12-month comparison
   const monthMap: Record<string, { income: number; expenses: number }> = {};
+  const catMonthMap: Record<string, Record<string, number>> = {};
   for ( const t of twelveMonthTxnsRes.data ?? [] ) {
     const key = ( t.date as string ).substring( 0, 7 );
     if ( !monthMap[key] ) monthMap[key] = { income: 0, expenses: 0 };
     if ( t.cr_dr === 'credit' ) monthMap[key].income += Math.abs( t.amount_usd ?? 0 );
-    else monthMap[key].expenses += Math.abs( t.amount_usd ?? 0 );
+    else {
+      monthMap[key].expenses += Math.abs( t.amount_usd ?? 0 );
+      const catName = ( t.category as unknown as { name: string } | null )?.name ?? 'Uncategorized';
+      if ( !catMonthMap[catName] ) catMonthMap[catName] = {};
+      catMonthMap[catName][key] = ( catMonthMap[catName][key] ?? 0 ) + Math.abs( t.amount_usd ?? 0 );
+    }
   }
   const monthlyData = Array.from( { length: 12 }, ( _, i ) => {
-    const d = new Date( now.getFullYear(), now.getMonth() - ( 11 - i ), 1 );
+    const d = new Date( viewDate.getFullYear(), viewDate.getMonth() - ( 11 - i ), 1 );
     const key = `${ d.getFullYear() }-${ pad( d.getMonth() + 1 ) }`;
     const label = d.toLocaleDateString( 'en-US', { month: 'short', year: '2-digit' } );
     return { month: key, label, income: Math.round( ( monthMap[key]?.income ?? 0 ) * 100 ) / 100, expenses: Math.round( ( monthMap[key]?.expenses ?? 0 ) * 100 ) / 100 };
   } );
+
+  const categoryMonthlyData: Record<string, Array<{ month: string; label: string; expenses: number }>> = {};
+  for ( const [catName, monthData] of Object.entries( catMonthMap ) ) {
+    categoryMonthlyData[catName] = Array.from( { length: 12 }, ( _, i ) => {
+      const d = new Date( viewDate.getFullYear(), viewDate.getMonth() - ( 11 - i ), 1 );
+      const key = `${ d.getFullYear() }-${ pad( d.getMonth() + 1 ) }`;
+      const label = d.toLocaleDateString( 'en-US', { month: 'short', year: '2-digit' } );
+      return { month: key, label, expenses: Math.round( ( monthData[key] ?? 0 ) * 100 ) / 100 };
+    } );
+  }
 
   // Upsert net worth snapshot and await so the chart reflects the current state
   await supabase.from( 'networth_snapshots' ).upsert( { user_id: userId, month: lastDay, assets_total: total_assets, liabilities_total: total_liabilities, net_worth }, { onConflict: 'user_id,month' } );
@@ -211,20 +280,31 @@ async function getDashboardData ( userId: string ) {
     { month: lastDay, net_worth },
   ].sort( ( a, b ) => a.month.localeCompare( b.month ) );
 
+  // Build spend-by-category from this month's debit transactions (used for budget alerts + summary)
+  const spendByCategory: Record<string, number> = {};
+  for ( const t of transactions ) {
+    if ( t.cr_dr === 'debit' && !t.is_internal_transfer && t.category_id ) {
+      spendByCategory[t.category_id] = ( spendByCategory[t.category_id] ?? 0 ) + Math.abs( t.amount_usd ?? 0 );
+    }
+  }
+
+  const budgets = budgetsRes.data ?? [];
+
+  const budgetSummary: BudgetSummaryItem[] = budgets
+    .filter( ( b ) => ( b.amount_usd ?? 0 ) > 0 )
+    .map( ( budget ) => {
+      const categoryData = budget.category as { id: string; name: string } | null;
+      const limit = budget.amount_usd ?? 0;
+      const spent = spendByCategory[budget.category_id] ?? 0;
+      const pct = Math.round( ( spent / limit ) * 100 );
+      return { id: budget.id, categoryName: categoryData?.name ?? 'Unknown', limit, spent, pct };
+    } )
+    .sort( ( a, b ) => b.pct - a.pct );
+
   // ── Build actionable alerts ─────────────────────────────────────────────────
   const alerts: DashboardAlert[] = [];
 
-  // Budget alerts: compute spend per category from this month's debit transactions
-  const budgets = budgetsRes.data ?? [];
   if ( budgets.length > 0 ) {
-    // Build a category_id → spend map from already-fetched transactions
-    const spendByCategory: Record<string, number> = {};
-    for ( const t of transactions ) {
-      if ( t.cr_dr === 'debit' && !t.is_internal_transfer && t.category_id ) {
-        spendByCategory[t.category_id] = ( spendByCategory[t.category_id] ?? 0 ) + Math.abs( t.amount_usd ?? 0 );
-      }
-    }
-
     for ( const budget of budgets ) {
       const categoryData = budget.category as { id: string; name: string } | null;
       const catName = categoryData?.name ?? 'Unknown';
@@ -273,10 +353,10 @@ async function getDashboardData ( userId: string ) {
   // Upcoming bill alerts (limited to 7-day window)
   for ( const bill of bills.filter( b => {
     const due = new Date( b.next_billing_date! );
-    return due.getTime() - now.getTime() <= 7 * 24 * 60 * 60 * 1000;
+    return due.getTime() - today.getTime() <= 7 * 24 * 60 * 60 * 1000;
   } ) ) {
     const due = new Date( bill.next_billing_date! );
-    const diffMs = due.getTime() - now.getTime();
+    const diffMs = due.getTime() - today.getTime();
     const daysUntil = Math.ceil( diffMs / ( 1000 * 60 * 60 * 24 ) );
     alerts.push( {
       id: `bill_${ bill.name }_${ bill.next_billing_date }`,
@@ -291,7 +371,7 @@ async function getDashboardData ( userId: string ) {
   // Overdue bill alerts
   for ( const bill of overdueBills ) {
     const due = new Date( bill.next_billing_date! );
-    const daysOverdue = Math.ceil( ( now.getTime() - due.getTime() ) / ( 1000 * 60 * 60 * 24 ) );
+    const daysOverdue = Math.ceil( ( today.getTime() - due.getTime() ) / ( 1000 * 60 * 60 * 24 ) );
     alerts.push( {
       id: `bill_overdue_${ bill.name }_${ bill.next_billing_date }`,
       type: 'upcoming_bill',
@@ -308,30 +388,83 @@ async function getDashboardData ( userId: string ) {
     final_amount: t.final_amount as number,
     date: t.date as string,
     flagged: t.flagged as boolean,
-    categories: t.categories as { name: string } | null,
+    categories: t.categories as { name: string; id: string } | null,
     accounts: t.accounts as { name: string } | null,
   } ) );
+
+  // Cash flow projection (only meaningful for current month)
+  const daysInMonth = new Date( viewDate.getFullYear(), viewDate.getMonth() + 1, 0 ).getDate();
+  const daysElapsed = isCurrentMonth ? today.getDate() : daysInMonth;
+
+  // Smarter projection: blend current actuals with 3-month rolling average daily rate
+  let projectedExpenses = monthly_expenses;
+  if ( isCurrentMonth && daysElapsed > 0 ) {
+    const daysRemaining = daysInMonth - daysElapsed;
+    // Last 3 complete months before the current month (monthlyData[-4..-1])
+    const completedMonths = monthlyData.slice( -4, -1 );
+    const validMonths = completedMonths.filter( m => m.expenses > 0 );
+    if ( validMonths.length > 0 ) {
+      const avgDailyFromHistory = validMonths.reduce( ( s, m ) => {
+        const d = new Date( m.month + '-01' );
+        const daysInThatMonth = new Date( d.getFullYear(), d.getMonth() + 1, 0 ).getDate();
+        return s + ( m.expenses / daysInThatMonth );
+      }, 0 ) / validMonths.length;
+      projectedExpenses = Math.round( monthly_expenses + ( avgDailyFromHistory * daysRemaining ) );
+    } else {
+      // Fallback: linear extrapolation
+      projectedExpenses = Math.round( ( monthly_expenses / daysElapsed ) * daysInMonth );
+    }
+  }
+
+  // Months that have at least one transaction — used by the MonthSelector
+  const _currentMonthKey = `${ today.getFullYear() }-${ pad( today.getMonth() + 1 ) }`;
+  const availableMonthsSet = new Set<string>( ( twelveMonthTxnsRes.data ?? [] ).map( t => ( t.date as string ).substring( 0, 7 ) ) );
+  availableMonthsSet.add( _currentMonthKey ); // always include current month
+  const availableMonths = Array.from( availableMonthsSet ).sort( ( a, b ) => b.localeCompare( a ) );
 
   return {
     net_worth, total_assets, total_liabilities,
     monthly_income, monthly_expenses, savings_rate,
     flagged_count, upcoming_bills,
     networth_trend: networthTrend,
-    categoryBreakdown, monthlyData,
+    categoryBreakdown, monthlyData, categoryMonthlyData,
     recentTransactions,
     alerts,
     hasAccounts: accounts.length > 0,
+    budgetSummary,
+    projectedExpenses,
+    daysElapsed,
+    daysInMonth,
+    isCurrentMonth,
+    availableMonths,
+    selectedMonth: firstDay,
   };
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
-export default async function DashboardPage () {
+export default async function DashboardPage ( { searchParams }: { searchParams: Promise<{ month?: string }> } ) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if ( !user ) redirect( '/login' );
 
-  const data = await getDashboardData( user.id );
+  const params = await searchParams;
+  const monthParam = params?.month;
+
+  // Derive selectedMonth for display ("YYYY-MM")
+  const _now = new Date();
+  const currentMonth = `${ _now.getFullYear() }-${ String( _now.getMonth() + 1 ).padStart( 2, '0' ) }`;
+  const selectedMonth = monthParam ?? currentMonth;
+
+  const data = await getDashboardData( user.id, monthParam );
+
+  // Sparkline data — last 6 months
+  const incomeSparkline = data.monthlyData.slice( -6 ).map( d => d.income );
+  const expensesSparkline = data.monthlyData.slice( -6 ).map( d => d.expenses );
+  const networthSparkline = data.networth_trend.slice( -6 ).map( d => d.net_worth );
+  const savingsRateSparkline = data.monthlyData.slice( -6 ).map( d =>
+    d.income > 0 ? ( ( d.income - d.expenses ) / d.income ) * 100 : 0
+  );
 
   return (
     <div className="p-4 md:p-6 space-y-5 md:space-y-6">
@@ -370,6 +503,7 @@ export default async function DashboardPage () {
           />
         }
       >
+        <MonthSelector selectedMonth={selectedMonth} availableMonths={data.availableMonths} />
         <Button variant="secondary" size="sm">
           <Bell className="h-3.5 w-3.5 mr-1.5" />
           {data.flagged_count} alerts
@@ -385,6 +519,17 @@ export default async function DashboardPage () {
       {/* Welcome banner — only for new users with no accounts */}
       {!data.hasAccounts && <DashboardWelcomeBanner />}
 
+      {/* Past month indicator */}
+      {!data.isCurrentMonth && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--color-warning)]/10 border border-[var(--color-warning)]/20 text-sm text-[var(--color-warning)]">
+          <span className="font-medium">Viewing historical data</span>
+          <span className="text-[var(--color-text-muted)]">·</span>
+          <Link href="/dashboard" className="underline underline-offset-2 hover:no-underline">
+            Back to current month
+          </Link>
+        </div>
+      )}
+
       {/* Key Metrics */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <MetricCard
@@ -392,22 +537,31 @@ export default async function DashboardPage () {
           value={formatCurrency( data.net_worth )}
           positive={data.net_worth >= 0}
           href="/accounts"
+          sparklineData={networthSparkline}
         />
         <MetricCard
           label="Monthly Income"
           value={formatCurrency( data.monthly_income )}
           href="/paychecks"
+          sparklineData={incomeSparkline}
         />
         <MetricCard
           label="Monthly Expenses"
           value={formatCurrency( data.monthly_expenses )}
           href="/budgets"
+          sparklineData={expensesSparkline}
+          projectedValue={
+            data.isCurrentMonth && data.projectedExpenses !== data.monthly_expenses
+              ? `Projected: ${formatCurrency( data.projectedExpenses )} · ${data.daysElapsed}/${data.daysInMonth} days`
+              : undefined
+          }
         />
         <MetricCard
           label="Savings Rate"
           value={`${ data.savings_rate.toFixed( 1 ) }%`}
           positive={data.savings_rate >= 0}
           href="/budgets"
+          sparklineData={savingsRateSparkline}
         />
       </div>
 
@@ -429,8 +583,19 @@ export default async function DashboardPage () {
         categoryBreakdown={data.categoryBreakdown ?? []}
         monthlyData={data.monthlyData ?? []}
         networthTrend={data.networth_trend}
+        categoryMonthlyData={data.categoryMonthlyData ?? {}}
         isNewUser={!data.hasAccounts}
+        selectedMonth={data.selectedMonth}
       />
+
+      {/* Budget progress bars */}
+      {data.budgetSummary.length > 0 && (
+        <BudgetProgressBars
+          budgets={data.budgetSummary}
+          selectedMonth={selectedMonth}
+          isCurrentMonth={data.isCurrentMonth}
+        />
+      )}
 
       {/* Bottom row — three equal columns */}
       <div className="grid gap-4 sm:gap-6 lg:grid-cols-3">

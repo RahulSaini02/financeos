@@ -25,6 +25,7 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
 import { EmptyState } from "@/components/ui/empty-state";
+import { EmptyEmployers } from "@/components/ui/empty-illustrations";
 
 // ── Form ──────────────────────────────────────────────────────────────────────
 
@@ -281,6 +282,7 @@ export default function EmployersClient({
           title="No employers yet"
           description="Add your employer to link paychecks and store details like EIN, manager, and HR contact."
           action={{ label: "Add Employer", onClick: openAdd }}
+          illustration={<EmptyEmployers />}
         />
       )}
 

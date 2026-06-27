@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, Suspense, useCallback, useRef } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/components/auth-provider";
 import type { Transaction, Account, Category, Loan } from "@/lib/types";
@@ -29,6 +29,8 @@ import { TablePageSkeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
 import { EmptyState } from "@/components/ui/empty-state";
+import { EmptyTransactions } from "@/components/ui/empty-illustrations";
+import { PullToRefresh } from "@/components/ui/pull-to-refresh";
 import { TransactionModal } from "@/components/transactions/transaction-modal";
 
 const PAGE_SIZE = 50;
@@ -116,6 +118,142 @@ interface TransactionsClientProps {
   initialWindowStart?: string | null;
 }
 
+// ── Swipe-to-delete row ────────────────────────────────────────────────────────
+const SWIPE_WIDTH = 72;  // px revealed when open
+const SWIPE_EASE = "0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94)";
+
+function SwipeableRow ({
+  id,
+  isOpen,
+  onOpen,
+  onClose,
+  onDelete,
+  children,
+}: {
+  id: string;
+  isOpen: boolean;
+  onOpen: ( id: string ) => void;
+  onClose: () => void;
+  onDelete: () => void;
+  children: React.ReactNode;
+}) {
+  const innerRef = useRef<HTMLDivElement>( null );
+  const panelRef = useRef<HTMLDivElement>( null );
+  const startXRef = useRef( 0 );
+  const activeRef = useRef( false );
+
+  // Drive both card position and panel opacity via direct DOM writes — no re-renders during drag
+  function setProgress ( p: number ) {
+    const clamped = Math.min( Math.max( p, 0 ), 1 );
+    if ( panelRef.current ) panelRef.current.style.opacity = String( Math.min( clamped * 1.5, 1 ) );
+  }
+
+  function pointerDown ( e: React.PointerEvent<HTMLDivElement> ) {
+    try { e.currentTarget.setPointerCapture( e.pointerId ); } catch { /* ignore */ }
+    startXRef.current = e.clientX;
+    activeRef.current = true;
+    if ( innerRef.current ) innerRef.current.style.transition = "none";
+    if ( panelRef.current ) panelRef.current.style.transition = "none";
+  }
+
+  function pointerMove ( e: React.PointerEvent<HTMLDivElement> ) {
+    if ( !activeRef.current || !e.isPrimary ) return;
+    const delta = e.clientX - startXRef.current;
+    const inner = innerRef.current;
+    if ( !inner ) return;
+
+    if ( isOpen ) {
+      const x = Math.max( -SWIPE_WIDTH, Math.min( 0, -SWIPE_WIDTH + delta ) );
+      inner.style.transform = `translateX(${ x }px)`;
+      setProgress( -x / SWIPE_WIDTH );
+    } else if ( delta < 0 ) {
+      const x = Math.max( -SWIPE_WIDTH, delta );
+      inner.style.transform = `translateX(${ x }px)`;
+      setProgress( -x / SWIPE_WIDTH );
+    }
+  }
+
+  function pointerUp ( e: React.PointerEvent<HTMLDivElement> ) {
+    if ( !activeRef.current ) return;
+    activeRef.current = false;
+    const delta = e.clientX - startXRef.current;
+    if ( innerRef.current ) innerRef.current.style.transition = `transform ${ SWIPE_EASE }`;
+    if ( panelRef.current ) panelRef.current.style.transition = `opacity ${ SWIPE_EASE }`;
+
+    if ( isOpen ) {
+      if ( delta > 36 ) {
+        if ( innerRef.current ) innerRef.current.style.transform = "translateX(0)";
+        setProgress( 0 );
+        onClose();
+      } else {
+        if ( innerRef.current ) innerRef.current.style.transform = `translateX(-${ SWIPE_WIDTH }px)`;
+        setProgress( 1 );
+      }
+    } else {
+      // Snap open at half the reveal width — feels snappier than requiring full drag
+      if ( delta < -( SWIPE_WIDTH / 2 ) ) {
+        if ( innerRef.current ) innerRef.current.style.transform = `translateX(-${ SWIPE_WIDTH }px)`;
+        setProgress( 1 );
+        onOpen( id );
+      } else {
+        if ( innerRef.current ) innerRef.current.style.transform = "translateX(0)";
+        setProgress( 0 );
+      }
+    }
+  }
+
+  function pointerCancel () {
+    activeRef.current = false;
+    if ( innerRef.current ) {
+      innerRef.current.style.transition = `transform ${ SWIPE_EASE }`;
+      innerRef.current.style.transform = "translateX(0)";
+    }
+    setProgress( 0 );
+    if ( isOpen ) onClose();
+  }
+
+  return (
+    <div
+      className="relative overflow-hidden sm:overflow-visible"
+      style={{ touchAction: "pan-y" }}
+      onPointerDown={pointerDown}
+      onPointerMove={pointerMove}
+      onPointerUp={pointerUp}
+      onPointerCancel={pointerCancel}
+    >
+      {/* Delete strip — hidden until card is swiped; sm:hidden so it never shows on desktop */}
+      <div
+        ref={panelRef}
+        className="sm:hidden absolute inset-y-0 right-0 flex w-[72px] flex-col items-center justify-center gap-1"
+        style={{
+          opacity: isOpen ? 1 : 0,
+          backgroundColor: "rgba(153, 27, 27, 0.92)",
+        }}
+      >
+        <button
+          className="flex h-full w-full flex-col items-center justify-center gap-1 text-white/90"
+          onClick={( e ) => { e.stopPropagation(); onDelete(); }}
+          aria-label="Delete transaction"
+        >
+          <Trash2 className="h-4 w-4" />
+          <span className="text-[9px] font-semibold tracking-widest uppercase">Delete</span>
+        </button>
+      </div>
+
+      {/* Sliding card content */}
+      <div
+        ref={innerRef}
+        style={{
+          transform: isOpen ? `translateX(-${ SWIPE_WIDTH }px)` : "translateX(0)",
+          transition: `transform ${ SWIPE_EASE }`,
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function TransactionsContent ( {
   initialAccounts,
   initialCategories,
@@ -124,6 +262,7 @@ function TransactionsContent ( {
 }: TransactionsClientProps ) {
   const { user } = useAuth();
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   const [transactions, setTransactions] = useState<Transaction[]>( [] );
   const [totalCount, setTotalCount] = useState( 0 );
@@ -155,6 +294,17 @@ function TransactionsContent ( {
   const [editingTxn, setEditingTxn] = useState<Transaction | null>( null );
   const [groupBy, setGroupBy] = useState<"date" | "category" | "account" | "none">( "date" );
   const [exporting, setExporting] = useState( false );
+  // Swipe-to-delete: tracks which txn card is open (swiped left to reveal delete btn)
+  const [swipeOpenId, setSwipeOpenId] = useState<string | null>( null );
+  // Desktop alert tooltip
+  const [alertTooltipId, setAlertTooltipId] = useState<string | null>( null );
+
+  useEffect( () => {
+    if ( !alertTooltipId ) return;
+    function handleDocClick() { setAlertTooltipId( null ); }
+    document.addEventListener( "click", handleDocClick );
+    return () => document.removeEventListener( "click", handleDocClick );
+  }, [alertTooltipId] );
 
   // Debounce search input
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>( null );
@@ -341,6 +491,7 @@ function TransactionsContent ( {
   }
 
   return (
+    <PullToRefresh onRefresh={async () => { router.refresh(); }}>
     <div className="p-4 md:p-6 space-y-4 md:space-y-5">
 
       {/* Drill-down breadcrumb */}
@@ -560,12 +711,25 @@ function TransactionsContent ( {
                 {txns.length} · {formatCurrency( txns.reduce( ( s, t ) => s + t.final_amount, 0 ) )}
               </span>
             </div>
-            <Card className="divide-y divide-[var(--color-border)]">
+            <Card className="divide-y divide-[var(--color-border)] overflow-hidden">
               {txns.map( ( txn ) => (
-                <div
+                <SwipeableRow
                   key={txn.id}
+                  id={txn.id}
+                  isOpen={swipeOpenId === txn.id}
+                  onOpen={( id ) => setSwipeOpenId( id )}
+                  onClose={() => setSwipeOpenId( null )}
+                  onDelete={() => handleDelete( txn.id )}
+                >
+                <div
                   className="flex items-start gap-3 px-3 py-3 hover:bg-[var(--color-bg-tertiary)] transition-colors cursor-pointer sm:items-center sm:px-4"
-                  onClick={() => handleEdit( txn )}
+                  onClick={() => {
+                    if ( swipeOpenId === txn.id ) {
+                      setSwipeOpenId( null );
+                    } else {
+                      handleEdit( txn );
+                    }
+                  }}
                 >
                   {/* Icon */}
                   <div
@@ -585,12 +749,59 @@ function TransactionsContent ( {
                     )}
                   </div>
 
-                  {/* Main */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium truncate">{txn.description}</span>
+                  {/* ── MOBILE CARD (sm:hidden) ── */}
+                  <div className="flex-1 min-w-0 sm:hidden">
+                    {/* Title row: name · flag · amount — no static delete (swipe reveals it) */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="flex-1 text-sm font-medium text-[var(--color-text-primary)] truncate min-w-0">
+                        {txn.description}
+                      </span>
                       {txn.flagged && (
                         <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-[var(--color-warning)]" />
+                      )}
+                      <span
+                        className={`text-sm font-medium whitespace-nowrap shrink-0 ${ txn.cr_dr === "credit" ? "text-[var(--color-income)]" : "text-[var(--color-text-primary)]" }`}
+                      >
+                        {txn.cr_dr === "credit" ? "+" : ""}{formatCurrency( txn.final_amount )}
+                      </span>
+                    </div>
+                    {/* Category */}
+                    <div className="flex items-center gap-1.5 mt-1 text-xs text-[var(--color-text-muted)]">
+                      <span>{getCategory( txn.category_id ?? "" )?.name ?? "Uncategorized"}</span>
+                      {txn.is_recurring && ( <><span>·</span><span>Recurring</span></> )}
+                    </div>
+                    {/* Date */}
+                    <div className="mt-0.5 text-xs text-[var(--color-text-muted)]">{formatDate( txn.date )}</div>
+                    {/* Account */}
+                    <div className="mt-0.5 text-xs text-[var(--color-text-muted)] opacity-75">
+                      {getAccount( txn.account_id )?.name}
+                      {txn.ai_categorized && <span className="ml-1.5 opacity-100 text-[var(--color-accent)]">· AI</span>}
+                    </div>
+                    {txn.flagged_reason && (
+                      <div className="mt-1 text-xs text-[var(--color-warning)]">{txn.flagged_reason}</div>
+                    )}
+                  </div>
+
+                  {/* ── DESKTOP ROW (hidden sm:block) ── */}
+                  <div className="hidden sm:block flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium truncate">{txn.description}</span>
+                      {txn.flagged && (
+                        <div className="relative shrink-0" onClick={( e ) => e.stopPropagation()}>
+                          <button
+                            onClick={() => setAlertTooltipId( alertTooltipId === txn.id ? null : txn.id )}
+                            className="flex items-center"
+                            aria-label="View flag reason"
+                          >
+                            <AlertTriangle className="h-3.5 w-3.5 text-[var(--color-warning)]" />
+                          </button>
+                          {alertTooltipId === txn.id && txn.flagged_reason && (
+                            <div className="absolute top-6 left-0 z-50 w-56 rounded-lg shadow-lg p-2.5 text-xs bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] text-[var(--color-warning)]">
+                              <div className="absolute -top-1.5 left-2 h-3 w-3 rotate-45 bg-[var(--color-bg-tertiary)] border-t border-l border-[var(--color-border)]" />
+                              {txn.flagged_reason}
+                            </div>
+                          )}
+                        </div>
                       )}
                       {txn.is_internal_transfer && (
                         <span className="text-[0.6rem] font-medium px-1.5 py-0.5 rounded bg-[var(--color-accent)]/10 text-[var(--color-accent)]">
@@ -603,18 +814,11 @@ function TransactionsContent ( {
                         </span>
                       )}
                     </div>
-                    {/* Category + date row (mobile: prominent; desktop: merged into details) */}
-                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                       <span className="text-xs text-[var(--color-text-muted)]">
                         {getCategory( txn.category_id ?? "" )?.name ?? "Uncategorized"}
                       </span>
-                      <span className="text-xs text-[var(--color-text-muted)] sm:hidden">·</span>
-                      <span className="text-xs text-[var(--color-text-muted)] sm:hidden">
-                        {formatDate( txn.date )}
-                      </span>
-                    </div>
-                    {/* Account + AI + loan — secondary detail row */}
-                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                      <span className="text-[0.7rem] text-[var(--color-text-muted)] opacity-75">·</span>
                       <span className="text-[0.7rem] text-[var(--color-text-muted)] opacity-75">
                         {getAccount( txn.account_id )?.name}
                       </span>
@@ -633,29 +837,20 @@ function TransactionsContent ( {
                         </>
                       )}
                     </div>
-                    {txn.flagged_reason && (
-                      <p className="text-xs text-[var(--color-warning)] mt-0.5">{txn.flagged_reason}</p>
-                    )}
                   </div>
 
-                  {/* Amount + date */}
-                  <div className="text-right shrink-0">
+                  {/* Amount + date — desktop only */}
+                  <div className="hidden sm:block text-right shrink-0 whitespace-nowrap">
                     <span
-                      className={`text-sm font-medium ${ txn.cr_dr === "credit"
-                        ? "text-[var(--color-income)]"
-                        : "text-[var(--color-text-primary)]"
-                        }`}
+                      className={`text-sm font-medium ${ txn.cr_dr === "credit" ? "text-[var(--color-income)]" : "text-[var(--color-text-primary)]" }`}
                     >
-                      {txn.cr_dr === "credit" ? "+" : ""}
-                      {formatCurrency( txn.final_amount )}
+                      {txn.cr_dr === "credit" ? "+" : ""}{formatCurrency( txn.final_amount )}
                     </span>
-                    <p className="text-xs text-[var(--color-text-muted)] mt-0.5 hidden sm:block">
-                      {formatDate( txn.date )}
-                    </p>
+                    <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{formatDate( txn.date )}</p>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-1 shrink-0" onClick={( e ) => e.stopPropagation()}>
+                  {/* Actions — desktop only */}
+                  <div className="hidden sm:flex items-center gap-1 shrink-0" onClick={( e ) => e.stopPropagation()}>
                     <button
                       className="p-1.5 rounded hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
                       onClick={() => handleEdit( txn )}
@@ -670,6 +865,7 @@ function TransactionsContent ( {
                     </button>
                   </div>
                 </div>
+                </SwipeableRow>
               ) )}
             </Card>
           </div>
@@ -680,6 +876,7 @@ function TransactionsContent ( {
             icon={<Plus className="h-8 w-8" />}
             title="No transactions found"
             action={{ label: "Add your first transaction", onClick: handleAdd }}
+            illustration={<EmptyTransactions />}
           />
         )}
       </div>
@@ -737,6 +934,7 @@ function TransactionsContent ( {
         />
       )}
     </div>
+    </PullToRefresh>
   );
 }
 

@@ -3,13 +3,14 @@
 import { useState, useEffect } from 'react'
 import { BrainCircuit, Loader2, Plus, Trash2, Eye, Pencil } from 'lucide-react'
 import { MarkdownContent } from '@/components/ui/markdown-content'
+import { DEFAULT_PROMPTS } from '@/lib/default-prompts'
 
 const MODEL_FEATURES = [
   { key: 'ai_model_daily_insight',   label: 'Daily Insight',       desc: 'Dashboard daily insight card' },
   { key: 'ai_model_monthly_summary', label: 'Monthly Summary',     desc: 'Monthly AI summary generation' },
   { key: 'ai_model_monthly_review',  label: 'AI Review',           desc: 'Monthly review analysis (cron)' },
   { key: 'ai_model_auto_categorize', label: 'Auto-Categorization', desc: 'Transaction categorization' },
-  { key: 'ai_model_chat_default',    label: 'AI Chat Default',     desc: 'Chat assistant system default' },
+  { key: 'ai_model_agent_default',   label: 'AI Agent Default',    desc: 'Agentic assistant (tool use) default' },
 ]
 
 const BUILT_IN_MODELS = [
@@ -42,14 +43,107 @@ function InlineAlert({ kind, message }: { kind: 'success' | 'error'; message: st
   )
 }
 
+interface PromptSectionProps {
+  title: string
+  description: string
+  value: string
+  original: string
+  saving: boolean
+  tab: 'edit' | 'preview'
+  onTabChange: (t: 'edit' | 'preview') => void
+  onChange: (v: string) => void
+  onSave: () => void
+  onDiscard: () => void
+  placeholder?: string
+}
+
+function PromptSection({
+  title, description, value, original, saving, tab,
+  onTabChange, onChange, onSave, onDiscard, placeholder,
+}: PromptSectionProps) {
+  return (
+    <div className="mt-8 pt-6 border-t border-[var(--color-border)]">
+      <h3 className="text-sm font-semibold text-[var(--color-text-primary)] mb-1">{title}</h3>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+        <p className="text-xs text-[var(--color-text-muted)]">{description}</p>
+        <div className="flex items-center rounded-lg border overflow-hidden shrink-0" style={{ borderColor: 'var(--color-border)' }}>
+          {(['edit', 'preview'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => onTabChange(t)}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors"
+              style={{
+                background: tab === t ? 'var(--color-accent)' : 'transparent',
+                color: tab === t ? '#fff' : 'var(--color-text-muted)',
+              }}
+            >
+              {t === 'edit' ? <Pencil className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+              <span className="capitalize">{t}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      {tab === 'edit' ? (
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          rows={10}
+          className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] text-sm text-[var(--color-text-primary)] p-3 font-mono resize-y focus:outline-none focus:border-[var(--color-accent)]/60"
+          placeholder={placeholder ?? 'Enter a system prompt…'}
+        />
+      ) : (
+        <div
+          className="w-full rounded-lg border p-3 text-sm overflow-auto"
+          style={{
+            borderColor: 'var(--color-border)',
+            background: 'var(--color-bg-tertiary)',
+            color: 'var(--color-text-secondary)',
+            minHeight: '240px',
+          }}
+        >
+          {value.trim() ? (
+            <MarkdownContent content={value} className="text-sm leading-relaxed" />
+          ) : (
+            <p className="text-xs italic" style={{ color: 'var(--color-text-muted)' }}>
+              Nothing to preview yet.
+            </p>
+          )}
+        </div>
+      )}
+      <div className="flex items-center justify-between mt-2">
+        <span className="text-xs text-[var(--color-text-muted)]">{value.length.toLocaleString()} chars</span>
+        <div className="flex gap-2">
+          <button
+            onClick={onDiscard}
+            disabled={value === original || saving}
+            className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] disabled:opacity-40 transition-colors"
+          >
+            Discard
+          </button>
+          <button
+            onClick={onSave}
+            disabled={value === original || saving || value.trim().length === 0}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] text-white text-xs font-medium px-3 py-1.5 hover:opacity-90 disabled:opacity-50 transition-opacity"
+          >
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+            Save Prompt
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function SettingsPanel() {
   const [modelSettings, setModelSettings] = useState<Record<string, string>>({})
   const [modelSaving, setModelSaving] = useState<string | null>(null)
   const [alert, setAlert] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
-  const [chatPrompt, setChatPrompt] = useState('')
-  const [chatPromptSaving, setChatPromptSaving] = useState(false)
-  const [chatPromptOriginal, setChatPromptOriginal] = useState('')
-  const [chatPromptTab, setChatPromptTab] = useState<'edit' | 'preview'>('edit')
+
+  // Agent prompt state
+  const [agentPrompt, setAgentPrompt] = useState('')
+  const [agentPromptSaving, setAgentPromptSaving] = useState(false)
+  const [agentPromptOriginal, setAgentPromptOriginal] = useState('')
+  const [agentPromptTab, setAgentPromptTab] = useState<'edit' | 'preview'>('edit')
 
   // Model registry state
   const [customModels, setCustomModels] = useState<ModelEntry[]>([])
@@ -70,10 +164,11 @@ export default function SettingsPanel() {
         const map: Record<string, string> = {}
         for (const s of data.settings) map[s.key] = s.value
         setModelSettings(map)
-        const chatPromptVal = map['ai_chat_system_prompt'] ?? ''
-        setChatPrompt(chatPromptVal)
-        setChatPromptOriginal(chatPromptVal)
-        // Parse custom model registry
+
+        const agentVal = map['ai_agent_system_prompt'] ?? DEFAULT_PROMPTS.ai_agent.content
+        setAgentPrompt(agentVal)
+        setAgentPromptOriginal(agentVal)
+
         try {
           const registry = map['ai_models_registry']
           if (registry) setCustomModels(JSON.parse(registry) as ModelEntry[])
@@ -81,6 +176,11 @@ export default function SettingsPanel() {
       })
       .catch(() => {})
   }, [])
+
+  function showAlert(kind: 'success' | 'error', message: string) {
+    setAlert({ kind, message })
+    setTimeout(() => setAlert(null), 4000)
+  }
 
   async function saveRegistry(next: ModelEntry[]) {
     setRegistrySaving(true)
@@ -92,13 +192,12 @@ export default function SettingsPanel() {
       })
       if (res.ok) {
         setCustomModels(next)
-        setAlert({ kind: 'success', message: 'Model registry saved.' })
+        showAlert('success', 'Model registry saved.')
       } else {
-        setAlert({ kind: 'error', message: 'Failed to save model registry.' })
+        showAlert('error', 'Failed to save model registry.')
       }
     } finally {
       setRegistrySaving(false)
-      setTimeout(() => setAlert(null), 4000)
     }
   }
 
@@ -107,8 +206,7 @@ export default function SettingsPanel() {
     const value = newModelValue.trim()
     if (!label || !value) return
     if (allModels.some((m) => m.value === value)) {
-      setAlert({ kind: 'error', message: 'A model with that ID already exists.' })
-      setTimeout(() => setAlert(null), 4000)
+      showAlert('error', 'A model with that ID already exists.')
       return
     }
     const next = [...customModels, { value, label }]
@@ -118,8 +216,7 @@ export default function SettingsPanel() {
   }
 
   function handleDeleteModel(value: string) {
-    const next = customModels.filter((m) => m.value !== value)
-    saveRegistry(next)
+    saveRegistry(customModels.filter((m) => m.value !== value))
   }
 
   async function saveModelSetting(key: string, value: string) {
@@ -132,37 +229,35 @@ export default function SettingsPanel() {
       })
       if (res.ok) {
         setModelSettings((prev) => ({ ...prev, [key]: value }))
-        setAlert({ kind: 'success', message: 'Model setting updated.' })
+        showAlert('success', 'Model setting updated.')
       } else {
-        setAlert({ kind: 'error', message: 'Failed to update model setting.' })
+        showAlert('error', 'Failed to update model setting.')
       }
     } finally {
       setModelSaving(null)
-      setTimeout(() => setAlert(null), 4000)
     }
   }
 
-  async function saveChatPrompt() {
-    setChatPromptSaving(true)
+  async function savePrompt(key: string, value: string, onDone: (saved: string) => void, setSaving: (b: boolean) => void) {
+    setSaving(true)
     try {
       const res = await fetch('/api/admin/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: 'ai_chat_system_prompt', value: chatPrompt }),
+        body: JSON.stringify({ key, value }),
       })
-      if (!res.ok) throw new Error('Failed to save')
-      setChatPromptOriginal(chatPrompt)
-      setAlert({ kind: 'success', message: 'Chat system prompt saved.' })
-      setTimeout(() => setAlert(null), 4000)
+      if (!res.ok) throw new Error()
+      onDone(value)
+      showAlert('success', 'Prompt saved.')
     } catch {
-      setAlert({ kind: 'error', message: 'Failed to save chat prompt.' })
+      showAlert('error', 'Failed to save prompt.')
     } finally {
-      setChatPromptSaving(false)
+      setSaving(false)
     }
   }
 
   return (
-    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-6">
+    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 md:p-6">
       <div className="flex items-center gap-3 mb-5">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--color-accent)]/10">
           <BrainCircuit className="h-4 w-4 text-[var(--color-accent)]" />
@@ -178,16 +273,16 @@ export default function SettingsPanel() {
 
       <div className="divide-y divide-[var(--color-border)]">
         {MODEL_FEATURES.map((feat) => (
-          <div key={feat.key} className="flex items-center justify-between py-3 border-b border-[var(--color-border)] last:border-0">
+          <div key={feat.key} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-3 border-b border-[var(--color-border)] last:border-0">
             <div>
               <div className="text-sm font-medium text-[var(--color-text-primary)]">{feat.label}</div>
               <div className="text-xs text-[var(--color-text-muted)]">{feat.desc}</div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 sm:shrink-0">
               <select
                 value={modelSettings[feat.key] ?? 'claude-haiku-4-5-20251001'}
                 onChange={(e) => setModelSettings((prev) => ({ ...prev, [feat.key]: e.target.value }))}
-                className="text-xs border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)] rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
+                className="flex-1 sm:flex-none text-xs border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)] rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
               >
                 {allModels.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -196,7 +291,7 @@ export default function SettingsPanel() {
               <button
                 onClick={() => saveModelSetting(feat.key, modelSettings[feat.key] ?? 'claude-haiku-4-5-20251001')}
                 disabled={modelSaving === feat.key}
-                className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-50 transition-opacity flex items-center gap-1"
+                className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-50 transition-opacity flex items-center gap-1 shrink-0"
               >
                 {modelSaving === feat.key ? (
                   <><Loader2 className="h-3 w-3 animate-spin" /> Saving…</>
@@ -217,7 +312,6 @@ export default function SettingsPanel() {
           Built-in models cannot be removed.
         </p>
 
-        {/* Existing models list */}
         <div className="divide-y divide-[var(--color-border)] rounded-lg border border-[var(--color-border)] mb-4 overflow-hidden">
           {allModels.map((m) => {
             const isBuiltIn = BUILT_IN_MODELS.some((b) => b.value === m.value)
@@ -250,7 +344,6 @@ export default function SettingsPanel() {
           })}
         </div>
 
-        {/* Add new model form */}
         <div className="flex flex-col sm:flex-row gap-2">
           <input
             type="text"
@@ -270,7 +363,7 @@ export default function SettingsPanel() {
           <button
             onClick={handleAddModel}
             disabled={!newModelLabel.trim() || !newModelValue.trim() || registrySaving}
-            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-50 transition-opacity shrink-0"
+            className="inline-flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-50 transition-opacity shrink-0"
           >
             {registrySaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
             Add Model
@@ -278,80 +371,20 @@ export default function SettingsPanel() {
         </div>
       </div>
 
-      {/* AI Chat System Prompt */}
-      <div className="mt-8 pt-6 border-t border-[var(--color-border)]">
-        <h3 className="text-sm font-semibold text-[var(--color-text-primary)] mb-1">
-          AI Chat System Prompt
-        </h3>
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs text-[var(--color-text-muted)]">
-            This prompt controls how the AI agent behaves for ALL users. Users cannot edit this.
-          </p>
-          <div className="flex items-center rounded-lg border overflow-hidden shrink-0 ml-3" style={{ borderColor: 'var(--color-border)' }}>
-            {(['edit', 'preview'] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setChatPromptTab(tab)}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors"
-                style={{
-                  background: chatPromptTab === tab ? 'var(--color-accent)' : 'transparent',
-                  color: chatPromptTab === tab ? '#fff' : 'var(--color-text-muted)',
-                }}
-              >
-                {tab === 'edit' ? <Pencil className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                <span className="capitalize">{tab}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-        {chatPromptTab === 'edit' ? (
-          <textarea
-            value={chatPrompt}
-            onChange={(e) => setChatPrompt(e.target.value)}
-            rows={10}
-            className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] text-sm text-[var(--color-text-primary)] p-3 font-mono resize-y focus:outline-none focus:border-[var(--color-accent)]/60"
-            placeholder="Enter the global AI chat system prompt..."
-          />
-        ) : (
-          <div
-            className="w-full rounded-lg border p-3 text-sm overflow-auto"
-            style={{
-              borderColor: 'var(--color-border)',
-              background: 'var(--color-bg-tertiary)',
-              color: 'var(--color-text-secondary)',
-              minHeight: '240px',
-            }}
-          >
-            {chatPrompt.trim() ? (
-              <MarkdownContent content={chatPrompt} className="text-sm leading-relaxed" />
-            ) : (
-              <p className="text-xs italic" style={{ color: 'var(--color-text-muted)' }}>
-                Nothing to preview yet.
-              </p>
-            )}
-          </div>
-        )}
-        <div className="flex items-center justify-between mt-2">
-          <span className="text-xs text-[var(--color-text-muted)]">{chatPrompt.length.toLocaleString()} chars</span>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setChatPrompt(chatPromptOriginal)}
-              disabled={chatPrompt === chatPromptOriginal || chatPromptSaving}
-              className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] disabled:opacity-40 transition-colors"
-            >
-              Discard
-            </button>
-            <button
-              onClick={saveChatPrompt}
-              disabled={chatPrompt === chatPromptOriginal || chatPromptSaving || chatPrompt.trim().length === 0}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] text-white text-xs font-medium px-3 py-1.5 hover:opacity-90 disabled:opacity-50 transition-opacity"
-            >
-              {chatPromptSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-              Save Prompt
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* AI Agent System Prompt */}
+      <PromptSection
+        title="AI Agent System Prompt"
+        description="Controls the agentic assistant (tool use, write actions) for all users. Per-user overrides take precedence."
+        value={agentPrompt}
+        original={agentPromptOriginal}
+        saving={agentPromptSaving}
+        tab={agentPromptTab}
+        onTabChange={setAgentPromptTab}
+        onChange={setAgentPrompt}
+        onSave={() => savePrompt('ai_agent_system_prompt', agentPrompt, (v) => setAgentPromptOriginal(v), setAgentPromptSaving)}
+        onDiscard={() => setAgentPrompt(agentPromptOriginal)}
+        placeholder="Enter the global AI agent system prompt…"
+      />
     </div>
   )
 }

@@ -11,11 +11,11 @@ const ALLOWED_KEYS = [
   'ai_model_monthly_summary',
   'ai_model_monthly_review',
   'ai_model_auto_categorize',
-  'ai_model_chat_default',
+  'ai_model_agent_default',
 ] as const
 
 // Keys that accept free-text values (not constrained to model names)
-const FREE_TEXT_KEYS = ['ai_chat_system_prompt', 'ai_models_registry'] as const
+const FREE_TEXT_KEYS = ['ai_agent_system_prompt', 'ai_models_registry'] as const
 
 // Model ID validation: allow any non-empty string so custom registry models work.
 // Invalid IDs will fail at Anthropic's API, not silently here.
@@ -164,6 +164,14 @@ export async function POST(request: NextRequest) {
 
     if (typeof value !== 'string' || value.trim().length === 0) {
       return NextResponse.json({ error: 'value must be a non-empty string' }, { status: 400 })
+    }
+
+    const MAX_FREE_TEXT_LENGTH = 20_000
+    if (value.length > MAX_FREE_TEXT_LENGTH) {
+      return NextResponse.json(
+        { error: `value must be ${MAX_FREE_TEXT_LENGTH.toLocaleString()} characters or fewer` },
+        { status: 400 },
+      )
     }
 
     const serviceClient = createServiceRoleClient()

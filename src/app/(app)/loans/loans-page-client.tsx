@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { Card, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, parseLocalDate } from "@/lib/utils";
 import { createClient } from "@/lib/supabase";
 import type { Loan, LoanPayment, Account } from "@/lib/types";
 import {
@@ -398,7 +398,7 @@ export default function LoansPageClient ( {
                               {loan.payments.slice( 0, 6 ).map( ( p ) => (
                                 <tr key={p.id} className="hover:bg-[var(--color-bg-tertiary)]">
                                   <td className="px-3 py-2 text-[var(--color-text-secondary)]">
-                                    {new Date( p.payment_date ).toLocaleDateString( "en-US", { month: "short", year: "numeric" } )}
+                                    {parseLocalDate( p.payment_date ).toLocaleDateString( "en-US", { month: "short", year: "numeric" } )}
                                   </td>
                                   <td className="px-3 py-2 text-right">{formatCurrency( p.emi_paid )}</td>
                                   <td className="px-3 py-2 text-right text-[var(--color-success)]">{formatCurrency( p.principal_paid )}</td>

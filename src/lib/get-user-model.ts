@@ -16,10 +16,24 @@ export const AI_MODELS = [
 
 export type AIModelValue = typeof AI_MODELS[number]['value']
 
+const ALLOWED_SETTING_KEYS = [
+  'ai_model_chat_default',
+  'ai_model_agent_default',
+  'ai_model_daily_insight',
+  'ai_model_monthly_summary',
+  'ai_model_monthly_review',
+  'ai_model_auto_categorize',
+] as const
+
 export async function getUserModel(
   supabase: SupabaseClient,
   userId: string,
+  appSettingKey: string = 'ai_model_chat_default',
 ): Promise<string> {
+  const safeKey = (ALLOWED_SETTING_KEYS as readonly string[]).includes(appSettingKey)
+    ? appSettingKey
+    : 'ai_model_chat_default'
+
   const { data } = await supabase
     .from('user_prompts')
     .select('content')
@@ -33,5 +47,5 @@ export async function getUserModel(
   }
 
   // No user override — fall back to the admin-configured default from app_settings
-  return getAppSetting(supabase, 'ai_model_chat_default', DEFAULT_AI_MODEL)
+  return getAppSetting(supabase, safeKey, DEFAULT_AI_MODEL)
 }

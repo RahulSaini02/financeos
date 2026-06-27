@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Eye, EyeOff, GripVertical, RotateCcw, CalendarDays, CheckCircle2, Brain, Sparkles, Trash2, X } from "lucide-react";
+import { Loader2, Eye, EyeOff, GripVertical, RotateCcw, CalendarDays, CheckCircle2, Brain, Sparkles, Trash2, X, User, SlidersHorizontal, Plug } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import { ALL_NAV_ITEMS, NAV_PREFS_KEY, getNavPrefs, type NavPref } from "@/components/ui/app-shell";
 import PromptsManager from "./PromptsManager";
+import { PushNotificationToggle } from "@/components/ui/push-notification-toggle";
 import type { UserFinancialPreferences, UserMemory } from "@/lib/types";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -124,6 +125,23 @@ function Divider() {
   return <hr style={{ borderColor: "var(--color-border)" }} className="my-5" />;
 }
 
+// ─── tab definitions ──────────────────────────────────────────────────────────
+
+type TabId = "account" | "preferences" | "ai" | "integrations";
+
+const TABS: { id: TabId; label: string; shortLabel: string; Icon: React.FC<{ className?: string }> }[] = [
+  { id: "account",      label: "Account",      shortLabel: "Account",  Icon: User },
+  { id: "preferences",  label: "Preferences",  shortLabel: "Prefs",    Icon: SlidersHorizontal },
+  { id: "ai",           label: "AI",           shortLabel: "AI",       Icon: Sparkles },
+  { id: "integrations", label: "Integrations", shortLabel: "Integr.",  Icon: Plug },
+];
+
+function getTabFromHash(): TabId {
+  if (typeof window === "undefined") return "account";
+  const hash = window.location.hash.replace("#", "") as TabId;
+  return TABS.some((t) => t.id === hash) ? hash : "account";
+}
+
 // ─── component ────────────────────────────────────────────────────────────────
 
 type GcalConnection = { id: string; email: string | null; last_synced: string | null };
@@ -146,6 +164,9 @@ export default function SettingsClient({
   const router = useRouter();
   const supabase = createClient();
   const { success: toastSuccess, error: toastError } = useToast();
+
+  // ── tab ──
+  const [activeTab, setActiveTab] = useState<TabId>("account");
 
   // ── profile ──
   const [displayName, setDisplayName] = useState(initialName);
@@ -204,6 +225,23 @@ export default function SettingsClient({
     ALL_NAV_ITEMS.map((n) => ({ href: n.href, visible: true }))
   );
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  // ── tab init from URL hash ────────────────────────────────────────────────
+
+  useEffect(() => {
+    setActiveTab(getTabFromHash());
+
+    function onHashChange() {
+      setActiveTab(getTabFromHash());
+    }
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  function handleTabChange(id: TabId) {
+    setActiveTab(id);
+    window.location.hash = id;
+  }
 
   // ── nav prefs helpers ──────────────────────────────────────────────────────
 
@@ -504,7 +542,7 @@ export default function SettingsClient({
 
   return (
     <div className="p-6">
-      <div className="max-w-2xl mx-auto space-y-6">
+      <div className="max-w-2xl mx-auto">
 
         {/* Page heading */}
         <PageHeader
@@ -537,387 +575,710 @@ export default function SettingsClient({
           }
         />
 
-        {/* ── Profile ───────────────────────────────────────────────────── */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Profile</CardTitle>
-          </CardHeader>
-
-          {/* Avatar */}
-          <div className="flex items-center gap-4 mb-5">
-            <div
-              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white"
-              style={{ background: "var(--color-accent)" }}
-            >
-              {initials}
-            </div>
-            <div>
-              <p className="text-sm font-medium" style={{ color: "var(--color-text-primary)" }}>
-                {displayName || "No display name set"}
-              </p>
-              <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
-                {emailDisplay}
-              </p>
-            </div>
-          </div>
-
-          <Divider />
-
-          {/* Display name */}
-          <div className="space-y-4">
-            <div>
-              <FieldLabel>Display name</FieldLabel>
-              <Input
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Your full name"
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Email address</FieldLabel>
-              <Input value={emailDisplay} readOnly disabled />
-              <p className="mt-1.5 text-xs" style={{ color: "var(--color-text-muted)" }}>
-                Email cannot be changed here. Contact support if you need to update it.
-              </p>
-            </div>
-          </div>
-
-          {profileAlert && <Alert alert={profileAlert} />}
-
-          <div className="mt-4 flex justify-end">
-            <Button
-              variant="primary"
-              size="md"
-              onClick={handleSaveProfile}
-              disabled={profileSaving}
-            >
-              {profileSaving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-              Save profile
-            </Button>
-          </div>
-        </Card>
-
-        {/* ── Security ──────────────────────────────────────────────────── */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Security</CardTitle>
-          </CardHeader>
-
-          {/* Change password */}
-          <div className="space-y-4">
-            <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>
-              Change password
-            </p>
-            <div>
-              <FieldLabel>New password</FieldLabel>
-              <Input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Minimum 6 characters"
-                autoComplete="new-password"
-              />
-            </div>
-            <div>
-              <FieldLabel>Confirm new password</FieldLabel>
-              <Input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Re-enter new password"
-                autoComplete="new-password"
-              />
-            </div>
-          </div>
-
-          {passwordAlert && <Alert alert={passwordAlert} />}
-
-          <div className="mt-4 flex justify-end">
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={handleChangePassword}
-              disabled={passwordSaving}
-            >
-              {passwordSaving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-              Update password
-            </Button>
-          </div>
-
-          <Divider />
-
-          {/* Sign out */}
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium" style={{ color: "var(--color-text-primary)" }}>
-                Sign out
-              </p>
-              <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
-                You will be redirected to the login page.
-              </p>
-            </div>
-            <Button
-              variant="danger"
-              size="md"
-              onClick={handleSignOut}
-              disabled={signingOut}
-            >
-              {signingOut && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-              Sign out
-            </Button>
-          </div>
-        </Card>
-
-        {/* ── Preferences ───────────────────────────────────────────────── */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Preferences</CardTitle>
-          </CardHeader>
-
-          <div className="space-y-5">
-            <SelectField
-              label="Pay frequency"
-              value={payFrequency}
-              onChange={handlePayFrequencyChange}
-              options={[
-                { value: "biweekly", label: "Biweekly (every two weeks)" },
-                { value: "semi-monthly", label: "Semi-monthly (twice a month)" },
-                { value: "monthly", label: "Monthly" },
-              ]}
-            />
-            <p className="text-xs -mt-2" style={{ color: "var(--color-text-muted)" }}>
-              Used by the paycheck and tax estimator modules.
-            </p>
-
-            <SelectField
-              label="Tax filing status"
-              value={filingStatus}
-              onChange={handleFilingStatusChange}
-              options={[
-                { value: "single", label: "Single" },
-                { value: "mfj", label: "Married Filing Jointly (MFJ)" },
-              ]}
-            />
-            <p className="text-xs -mt-2" style={{ color: "var(--color-text-muted)" }}>
-              Used for federal income tax bracket calculations.
-            </p>
-
-            <SelectField
-              label="Timezone"
-              value={timezone}
-              onChange={handleTimezoneChange}
-              options={[
-                { value: "America/Los_Angeles", label: "Pacific Time (PT) — Los Angeles" },
-                { value: "America/Denver", label: "Mountain Time (MT) — Denver" },
-                { value: "America/Phoenix", label: "Mountain Time no DST (MST) — Phoenix" },
-                { value: "America/Chicago", label: "Central Time (CT) — Chicago" },
-                { value: "America/New_York", label: "Eastern Time (ET) — New York" },
-                { value: "America/Anchorage", label: "Alaska Time (AKT) — Anchorage" },
-                { value: "Pacific/Honolulu", label: "Hawaii Time (HST) — Honolulu" },
-                { value: "Asia/Kolkata", label: "India Standard Time (IST) — Kolkata" },
-                { value: "UTC", label: "UTC" },
-              ]}
-            />
-            <p className="text-xs -mt-2" style={{ color: "var(--color-text-muted)" }}>
-              Used for displaying transaction and date fields across the app.
-            </p>
-          </div>
-        </Card>
-
-        {/* ── Sidebar ───────────────────────────────────────────────────── */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Sidebar</CardTitle>
-          </CardHeader>
-          <p className="text-sm mb-4" style={{ color: "var(--color-text-secondary)" }}>
-            Choose which views appear in the sidebar and reorder them to fit your workflow. Hidden views are never deleted.
-          </p>
-
-          <div className="space-y-1">
-            {navPrefs.map((pref, idx) => {
-              const item = ALL_NAV_ITEMS.find((n) => n.href === pref.href);
-              if (!item) return null;
-              const Icon = item.icon;
+        {/* ── Tab bar ───────────────────────────────────────────────────── */}
+        <div className="border-b mb-6" style={{ borderColor: "var(--color-border)" }}>
+          <div className="flex w-full">
+            {TABS.map(({ id, label, shortLabel, Icon }) => {
+              const isActive = activeTab === id;
               return (
-                <div
-                  key={pref.href}
-                  draggable
-                  onDragStart={() => { dragIndexRef.current = idx; }}
-                  onDragOver={(e) => { e.preventDefault(); }}
-                  onDragEnter={() => setDragOverIndex(idx)}
-                  onDragLeave={(e) => {
-                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                      setDragOverIndex(null);
-                    }
-                  }}
-                  onDrop={() => {
-                    setDragOverIndex(null);
-                    if (dragIndexRef.current !== null) {
-                      reorderNavItems(dragIndexRef.current, idx);
-                      dragIndexRef.current = null;
-                    }
-                  }}
-                  onDragEnd={() => { dragIndexRef.current = null; setDragOverIndex(null); }}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors cursor-default select-none"
+                <button
+                  key={id}
+                  onClick={() => handleTabChange(id)}
+                  className="flex flex-1 items-center justify-center gap-1.5 px-2 py-3 text-xs sm:text-sm font-medium transition-colors border-b-2 -mb-px focus:outline-none"
                   style={{
-                    background: dragOverIndex === idx
-                      ? "color-mix(in srgb, var(--color-accent) 15%, transparent)"
-                      : pref.visible ? "var(--color-bg-tertiary)" : "transparent",
-                    borderTop: dragOverIndex === idx ? "2px solid var(--color-accent)" : "2px solid transparent",
-                    opacity: pref.visible ? 1 : 0.5,
+                    borderBottomColor: isActive ? "var(--color-accent)" : "transparent",
+                    color: isActive ? "var(--color-accent)" : "var(--color-text-muted)",
+                    fontWeight: isActive ? 600 : 400,
                   }}
                 >
-                  <GripVertical
-                    className="h-4 w-4 shrink-0 cursor-grab active:cursor-grabbing"
-                    style={{ color: "var(--color-text-muted)" }}
-                  />
-                  <Icon className="h-4 w-4 shrink-0" style={{ color: "var(--color-text-muted)" }} />
-                  <span className="flex-1 text-sm" style={{ color: "var(--color-text-primary)" }}>
-                    {item.label}
-                  </span>
-                  <button
-                    onClick={() => toggleNavVisible(pref.href)}
-                    className="p-1 rounded transition-colors hover:bg-[var(--color-bg-secondary)]"
-                    aria-label={pref.visible ? "Hide" : "Show"}
-                  >
-                    {pref.visible ? (
-                      <Eye className="h-4 w-4" style={{ color: "var(--color-accent)" }} />
-                    ) : (
-                      <EyeOff className="h-4 w-4" style={{ color: "var(--color-text-muted)" }} />
-                    )}
-                  </button>
-                </div>
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="hidden sm:inline">{label}</span>
+                  <span className="sm:hidden">{shortLabel}</span>
+                </button>
               );
             })}
           </div>
+        </div>
 
-          <div className="mt-4 flex justify-end">
-            <button
-              onClick={resetNavToDefaults}
-              className="flex items-center gap-1.5 text-xs transition-colors hover:opacity-80"
-              style={{ color: "var(--color-text-muted)" }}
-            >
-              <RotateCcw className="h-3 w-3" />
-              Reset to defaults
-            </button>
-          </div>
-        </Card>
+        {/* ── Tab: Account ──────────────────────────────────────────────── */}
+        {activeTab === "account" && (
+          <div className="space-y-6">
 
-        {/* ── AI Prompts ────────────────────────────────────────────────── */}
-        <Card>
-          <CardHeader>
-            <CardTitle>AI Prompts</CardTitle>
-          </CardHeader>
-          <p className="text-sm mb-4" style={{ color: "var(--color-text-secondary)" }}>
-            Customize the AI prompts used throughout FinanceOS. Changes apply immediately to new AI generations.
-          </p>
-          <PromptsManager initialPrompts={initialPrompts} />
-        </Card>
+            {/* Profile */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Profile</CardTitle>
+              </CardHeader>
 
-        {/* ── Integrations ──────────────────────────────────────────────── */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Integrations</CardTitle>
-          </CardHeader>
-          <p className="text-sm mb-5" style={{ color: "var(--color-text-secondary)" }}>
-            Connect external services to extend FinanceOS with automatic syncing and reminders.
-          </p>
-
-          {/* Google Calendar */}
-          <div className="border border-white/10 bg-white/5 rounded-xl p-5">
-            <div className="flex items-start gap-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/15">
-                <CalendarDays className="h-5 w-5 text-blue-400" />
-              </div>
-              <div className="flex-1 min-w-0">
+              {/* Avatar */}
+              <div className="flex items-center gap-4 mb-5">
+                <div
+                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white"
+                  style={{ background: "var(--color-accent)" }}
+                >
+                  {initials}
+                </div>
                 <div>
-                  <h3 className="text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>
-                    Google Calendar
-                  </h3>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
-                    Sync bill reminders and financial events to your Google Calendar
+                  <p className="text-sm font-medium" style={{ color: "var(--color-text-primary)" }}>
+                    {displayName || "No display name set"}
+                  </p>
+                  <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                    {emailDisplay}
                   </p>
                 </div>
+              </div>
 
-                {gcalStatusLoading ? (
-                  <div className="mt-3">
-                    <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--color-text-muted)" }} />
-                  </div>
-                ) : (
-                  <div className="mt-3 space-y-3">
-                    {/* Connected calendar rows */}
-                    {gcalConnections.map((conn) => (
-                      <div
-                        key={conn.id}
-                        className="rounded-lg border border-white/10 bg-white/5 px-4 py-3 space-y-1.5"
+              <Divider />
+
+              {/* Display name */}
+              <div className="space-y-4">
+                <div>
+                  <FieldLabel>Display name</FieldLabel>
+                  <Input
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="Your full name"
+                  />
+                </div>
+
+                <div>
+                  <FieldLabel>Email address</FieldLabel>
+                  <Input value={emailDisplay} readOnly disabled />
+                  <p className="mt-1.5 text-xs" style={{ color: "var(--color-text-muted)" }}>
+                    Email cannot be changed here. Contact support if you need to update it.
+                  </p>
+                </div>
+              </div>
+
+              {profileAlert && <Alert alert={profileAlert} />}
+
+              <div className="mt-4 flex justify-end">
+                <Button
+                  variant="primary"
+                  size="md"
+                  onClick={handleSaveProfile}
+                  disabled={profileSaving}
+                >
+                  {profileSaving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                  Save profile
+                </Button>
+              </div>
+            </Card>
+
+            {/* Security */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Security</CardTitle>
+              </CardHeader>
+
+              {/* Change password */}
+              <div className="space-y-4">
+                <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>
+                  Change password
+                </p>
+                <div>
+                  <FieldLabel>New password</FieldLabel>
+                  <Input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Minimum 6 characters"
+                    autoComplete="new-password"
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Confirm new password</FieldLabel>
+                  <Input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter new password"
+                    autoComplete="new-password"
+                  />
+                </div>
+              </div>
+
+              {passwordAlert && <Alert alert={passwordAlert} />}
+
+              <div className="mt-4 flex justify-end">
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={handleChangePassword}
+                  disabled={passwordSaving}
+                >
+                  {passwordSaving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                  Update password
+                </Button>
+              </div>
+
+              <Divider />
+
+              {/* Sign out */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium" style={{ color: "var(--color-text-primary)" }}>
+                    Sign out
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
+                    You will be redirected to the login page.
+                  </p>
+                </div>
+                <Button
+                  variant="danger"
+                  size="md"
+                  onClick={handleSignOut}
+                  disabled={signingOut}
+                >
+                  {signingOut && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                  Sign out
+                </Button>
+              </div>
+            </Card>
+
+            {/* Danger Zone */}
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  <span style={{ color: "var(--color-danger)" }}>Danger Zone</span>
+                </CardTitle>
+              </CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium" style={{ color: "var(--color-text-primary)" }}>
+                    Delete account
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
+                    Permanently delete your account and all associated data. This cannot be undone.
+                  </p>
+                </div>
+                <Button
+                  variant="danger"
+                  size="md"
+                  onClick={() => setDeleteConfirmOpen(true)}
+                >
+                  Delete Account
+                </Button>
+              </div>
+            </Card>
+
+            {/* About — compact footer row */}
+            <div className="flex items-center gap-3 px-1 pb-2">
+              <div
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold text-white shrink-0"
+                style={{ background: "var(--color-accent)" }}
+              >
+                F
+              </div>
+              <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                FinanceOS &mdash; Version 1.0.0
+              </p>
+            </div>
+
+          </div>
+        )}
+
+        {/* ── Tab: Preferences ──────────────────────────────────────────── */}
+        {activeTab === "preferences" && (
+          <div className="space-y-6">
+
+            {/* Preferences */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Preferences</CardTitle>
+              </CardHeader>
+
+              <div className="space-y-5">
+                <SelectField
+                  label="Pay frequency"
+                  value={payFrequency}
+                  onChange={handlePayFrequencyChange}
+                  options={[
+                    { value: "biweekly", label: "Biweekly (every two weeks)" },
+                    { value: "semi-monthly", label: "Semi-monthly (twice a month)" },
+                    { value: "monthly", label: "Monthly" },
+                  ]}
+                />
+                <p className="text-xs -mt-2" style={{ color: "var(--color-text-muted)" }}>
+                  Used by the paycheck and tax estimator modules.
+                </p>
+
+                <SelectField
+                  label="Tax filing status"
+                  value={filingStatus}
+                  onChange={handleFilingStatusChange}
+                  options={[
+                    { value: "single", label: "Single" },
+                    { value: "mfj", label: "Married Filing Jointly (MFJ)" },
+                  ]}
+                />
+                <p className="text-xs -mt-2" style={{ color: "var(--color-text-muted)" }}>
+                  Used for federal income tax bracket calculations.
+                </p>
+
+                <SelectField
+                  label="Timezone"
+                  value={timezone}
+                  onChange={handleTimezoneChange}
+                  options={[
+                    { value: "America/Los_Angeles", label: "Pacific Time (PT) — Los Angeles" },
+                    { value: "America/Denver", label: "Mountain Time (MT) — Denver" },
+                    { value: "America/Phoenix", label: "Mountain Time no DST (MST) — Phoenix" },
+                    { value: "America/Chicago", label: "Central Time (CT) — Chicago" },
+                    { value: "America/New_York", label: "Eastern Time (ET) — New York" },
+                    { value: "America/Anchorage", label: "Alaska Time (AKT) — Anchorage" },
+                    { value: "Pacific/Honolulu", label: "Hawaii Time (HST) — Honolulu" },
+                    { value: "Asia/Kolkata", label: "India Standard Time (IST) — Kolkata" },
+                    { value: "UTC", label: "UTC" },
+                  ]}
+                />
+                <p className="text-xs -mt-2" style={{ color: "var(--color-text-muted)" }}>
+                  Used for displaying transaction and date fields across the app.
+                </p>
+              </div>
+            </Card>
+
+            {/* Sidebar */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Sidebar</CardTitle>
+              </CardHeader>
+              <p className="text-sm mb-4" style={{ color: "var(--color-text-secondary)" }}>
+                Choose which views appear in the sidebar and reorder them to fit your workflow. Hidden views are never deleted.
+              </p>
+
+              <div className="space-y-1">
+                {navPrefs.map((pref, idx) => {
+                  const item = ALL_NAV_ITEMS.find((n) => n.href === pref.href);
+                  if (!item) return null;
+                  const Icon = item.icon;
+                  return (
+                    <div
+                      key={pref.href}
+                      draggable
+                      onDragStart={() => { dragIndexRef.current = idx; }}
+                      onDragOver={(e) => { e.preventDefault(); }}
+                      onDragEnter={() => setDragOverIndex(idx)}
+                      onDragLeave={(e) => {
+                        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                          setDragOverIndex(null);
+                        }
+                      }}
+                      onDrop={() => {
+                        setDragOverIndex(null);
+                        if (dragIndexRef.current !== null) {
+                          reorderNavItems(dragIndexRef.current, idx);
+                          dragIndexRef.current = null;
+                        }
+                      }}
+                      onDragEnd={() => { dragIndexRef.current = null; setDragOverIndex(null); }}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors cursor-default select-none"
+                      style={{
+                        background: dragOverIndex === idx
+                          ? "color-mix(in srgb, var(--color-accent) 15%, transparent)"
+                          : pref.visible ? "var(--color-bg-tertiary)" : "transparent",
+                        borderTop: dragOverIndex === idx ? "2px solid var(--color-accent)" : "2px solid transparent",
+                        opacity: pref.visible ? 1 : 0.5,
+                      }}
+                    >
+                      <GripVertical
+                        className="h-4 w-4 shrink-0 cursor-grab active:cursor-grabbing"
+                        style={{ color: "var(--color-text-muted)" }}
+                      />
+                      <Icon className="h-4 w-4 shrink-0" style={{ color: "var(--color-text-muted)" }} />
+                      <span className="flex-1 text-sm" style={{ color: "var(--color-text-primary)" }}>
+                        {item.label}
+                      </span>
+                      <button
+                        onClick={() => toggleNavVisible(pref.href)}
+                        className="p-1 rounded transition-colors hover:bg-[var(--color-bg-secondary)]"
+                        aria-label={pref.visible ? "Hide" : "Show"}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 text-sm text-emerald-400">
-                            <CheckCircle2 className="h-4 w-4 shrink-0" />
-                            <span className="font-medium">Connected</span>
-                          </div>
-                          <button
-                            onClick={() => setGcalDisconnectEmail(conn.email)}
-                            className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                        {pref.visible ? (
+                          <Eye className="h-4 w-4" style={{ color: "var(--color-accent)" }} />
+                        ) : (
+                          <EyeOff className="h-4 w-4" style={{ color: "var(--color-text-muted)" }} />
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={resetNavToDefaults}
+                  className="flex items-center gap-1.5 text-xs transition-colors hover:opacity-80"
+                  style={{ color: "var(--color-text-muted)" }}
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Reset to defaults
+                </button>
+              </div>
+            </Card>
+
+            {/* Push Notifications */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Push Notifications</CardTitle>
+              </CardHeader>
+              <p className="text-sm mb-5" style={{ color: "var(--color-text-secondary)" }}>
+                Get notified about upcoming bills, daily financial insights, and budget alerts — even when the app is closed.
+              </p>
+              <PushNotificationToggle showLabel />
+            </Card>
+
+            {/* Tour & Help */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Tour &amp; Help</CardTitle>
+              </CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium" style={{ color: "var(--color-text-primary)" }}>
+                    Replay App Tour
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
+                    Walk through the guided tour again to rediscover features.
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => {
+                    localStorage.removeItem("has_seen_tour");
+                    window.dispatchEvent(new CustomEvent("start-tour"));
+                  }}
+                >
+                  Replay App Tour
+                </Button>
+              </div>
+            </Card>
+
+          </div>
+        )}
+
+        {/* ── Tab: AI ───────────────────────────────────────────────────── */}
+        {activeTab === "ai" && (
+          <div className="space-y-6">
+
+            {/* AI Preferences */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4" style={{ color: "var(--color-accent)" }} />
+                  <CardTitle>AI Preferences</CardTitle>
+                </div>
+              </CardHeader>
+              <p className="text-sm mb-5" style={{ color: "var(--color-text-secondary)" }}>
+                Personalize how the AI assistant communicates and what it prioritizes for you.
+              </p>
+
+              {prefsLoading ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin" style={{ color: "var(--color-text-muted)" }} />
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  <SelectField
+                    label="Communication Style"
+                    value={commStyle}
+                    onChange={(v) => setCommStyle(v as typeof commStyle)}
+                    options={[
+                      { value: "brief", label: "Brief — short, direct answers" },
+                      { value: "balanced", label: "Balanced — clear with context" },
+                      { value: "detailed", label: "Detailed — thorough explanations" },
+                    ]}
+                  />
+
+                  <SelectField
+                    label="Risk Tolerance"
+                    value={riskTol}
+                    onChange={(v) => setRiskTol(v as typeof riskTol)}
+                    options={[
+                      { value: "", label: "(not set)" },
+                      { value: "conservative", label: "Conservative — safety first" },
+                      { value: "moderate", label: "Moderate — balanced approach" },
+                      { value: "aggressive", label: "Aggressive — growth focused" },
+                    ]}
+                  />
+
+                  <div>
+                    <FieldLabel>Financial Goals (one per line)</FieldLabel>
+                    <textarea
+                      value={goalsText}
+                      onChange={(e) => setGoalsText(e.target.value)}
+                      rows={3}
+                      placeholder="e.g. Save $60k for house down payment by 2028"
+                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-1 focus:ring-offset-[var(--color-bg-primary)] resize-y"
+                      style={{
+                        background: "var(--color-bg-tertiary)",
+                        borderColor: "var(--color-border)",
+                        color: "var(--color-text-primary)",
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Spending Priorities (one per line)</FieldLabel>
+                    <textarea
+                      value={prioritiesText}
+                      onChange={(e) => setPrioritiesText(e.target.value)}
+                      rows={3}
+                      placeholder="e.g. Debt payoff first"
+                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-1 focus:ring-offset-[var(--color-bg-primary)] resize-y"
+                      style={{
+                        background: "var(--color-bg-tertiary)",
+                        borderColor: "var(--color-border)",
+                        color: "var(--color-text-primary)",
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel>Custom Instructions</FieldLabel>
+                    <textarea
+                      value={customInstructions}
+                      onChange={(e) => setCustomInstructions(e.target.value)}
+                      rows={3}
+                      maxLength={500}
+                      placeholder="e.g. Always show amounts in USD, remind me of savings goals"
+                      className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-1 focus:ring-offset-[var(--color-bg-primary)] resize-y"
+                      style={{
+                        background: "var(--color-bg-tertiary)",
+                        borderColor: "var(--color-border)",
+                        color: "var(--color-text-primary)",
+                      }}
+                    />
+                    <p className="mt-1 text-xs" style={{ color: "var(--color-text-muted)" }}>
+                      {customInstructions.length}/500
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {!prefsLoading && (
+                <div className="mt-5 flex items-center justify-end gap-3">
+                  {prefsSuccess && (
+                    <span className="text-sm" style={{ color: "var(--color-success)" }}>
+                      Preferences saved.
+                    </span>
+                  )}
+                  <Button
+                    variant="primary"
+                    size="md"
+                    onClick={handleSavePrefs}
+                    disabled={prefsSaving}
+                  >
+                    {prefsSaving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                    Save preferences
+                  </Button>
+                </div>
+              )}
+            </Card>
+
+            {/* AI Memory */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Brain className="h-4 w-4" style={{ color: "var(--color-accent)" }} />
+                  <CardTitle>AI Memory</CardTitle>
+                </div>
+              </CardHeader>
+              <p className="text-sm mb-5" style={{ color: "var(--color-text-muted)" }}>
+                Facts the AI has learned about you from conversations.
+              </p>
+
+              {memoriesLoading ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin" style={{ color: "var(--color-text-muted)" }} />
+                </div>
+              ) : memories.length === 0 ? (
+                <p className="text-sm py-4 text-center" style={{ color: "var(--color-text-muted)" }}>
+                  No memories yet. Start chatting with the AI to build your memory.
+                </p>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    {memories.map((mem) => {
+                      const categoryColors: Record<string, { bg: string; text: string }> = {
+                        goal:       { bg: "color-mix(in srgb, var(--color-accent) 12%, transparent)",  text: "var(--color-accent)" },
+                        debt:       { bg: "color-mix(in srgb, var(--color-danger) 12%, transparent)",  text: "var(--color-danger)" },
+                        savings:    { bg: "color-mix(in srgb, var(--color-success) 12%, transparent)", text: "var(--color-success)" },
+                        income:     { bg: "color-mix(in srgb, var(--color-success) 12%, transparent)", text: "var(--color-success)" },
+                        spending:   { bg: "color-mix(in srgb, var(--color-warning) 12%, transparent)", text: "var(--color-warning)" },
+                        investment: { bg: "color-mix(in srgb, var(--color-accent) 12%, transparent)",  text: "var(--color-accent)" },
+                        preference: { bg: "color-mix(in srgb, var(--color-text-muted) 15%, transparent)", text: "var(--color-text-muted)" },
+                        general:    { bg: "color-mix(in srgb, var(--color-text-muted) 15%, transparent)", text: "var(--color-text-muted)" },
+                      };
+                      const colors = categoryColors[mem.category] ?? categoryColors.general;
+                      return (
+                        <div
+                          key={mem.id}
+                          className="flex items-start gap-3 rounded-lg border px-3 py-3"
+                          style={{ background: "var(--color-bg-secondary)", borderColor: "var(--color-border)" }}
+                        >
+                          <span
+                            className="inline-flex shrink-0 items-center px-2 py-0.5 rounded text-[0.65rem] font-semibold uppercase tracking-wide mt-0.5"
+                            style={{ background: colors.bg, color: colors.text }}
                           >
-                            Disconnect
+                            {mem.category}
+                          </span>
+                          <p className="flex-1 text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
+                            {mem.fact}
+                          </p>
+                          <button
+                            onClick={() => handleDeleteMemory(mem.id)}
+                            className="shrink-0 p-1 rounded transition-colors hover:bg-[var(--color-bg-tertiary)]"
+                            aria-label="Delete memory"
+                            style={{ color: "var(--color-text-muted)" }}
+                          >
+                            <X className="h-3.5 w-3.5" />
                           </button>
                         </div>
-                        {conn.email && (
-                          <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
-                            {conn.email}
-                          </p>
-                        )}
-                        {conn.last_synced && (
-                          <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
-                            Last synced:{" "}
-                            {new Intl.DateTimeFormat("en-US", {
-                              timeZone: "America/Los_Angeles",
-                              month: "short",
-                              day: "numeric",
-                              hour: "numeric",
-                              minute: "2-digit",
-                            }).format(new Date(conn.last_synced))}
-                          </p>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
+                  </div>
 
-                    {/* Sync All button — shown when at least one connection exists */}
-                    {gcalConnections.length > 0 && (
-                      <div className="pt-1">
-                        <button
-                          onClick={handleSyncGcal}
-                          disabled={gcalSyncing}
-                          className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors disabled:opacity-60"
-                        >
-                          {gcalSyncing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                          Sync All
-                        </button>
-                      </div>
-                    )}
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      onClick={handleClearAllMemories}
+                      className="flex items-center gap-1.5 text-xs transition-colors hover:opacity-80"
+                      style={{ color: "var(--color-danger)" }}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Clear all memories
+                    </button>
+                  </div>
+                </>
+              )}
+            </Card>
 
-                    {/* Connect button — shown when fewer than 2 calendars connected */}
-                    {gcalConnections.length < 2 && (
-                      <div className={gcalConnections.length > 0 ? "" : "pt-1"}>
-                        <button
-                          onClick={handleConnectGcal}
-                          disabled={gcalConnecting}
-                          className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors disabled:opacity-60"
-                        >
-                          {gcalConnecting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                          {gcalConnections.length === 0 ? "Connect Google Calendar" : "Add another calendar"}
-                        </button>
+            {/* AI Prompts */}
+            <Card>
+              <CardHeader>
+                <CardTitle>AI Prompts</CardTitle>
+              </CardHeader>
+              <p className="text-sm mb-4" style={{ color: "var(--color-text-secondary)" }}>
+                Customize the AI prompts used throughout FinanceOS. Changes apply immediately to new AI generations.
+              </p>
+              <PromptsManager initialPrompts={initialPrompts} />
+            </Card>
+
+          </div>
+        )}
+
+        {/* ── Tab: Integrations ─────────────────────────────────────────── */}
+        {activeTab === "integrations" && (
+          <div className="space-y-6">
+
+            {/* Integrations */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Integrations</CardTitle>
+              </CardHeader>
+              <p className="text-sm mb-5" style={{ color: "var(--color-text-secondary)" }}>
+                Connect external services to extend FinanceOS with automatic syncing and reminders.
+              </p>
+
+              {/* Google Calendar */}
+              <div className="border border-white/10 bg-white/5 rounded-xl p-5">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/15">
+                    <CalendarDays className="h-5 w-5 text-blue-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div>
+                      <h3 className="text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>
+                        Google Calendar
+                      </h3>
+                      <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
+                        Sync bill reminders and financial events to your Google Calendar
+                      </p>
+                    </div>
+
+                    {gcalStatusLoading ? (
+                      <div className="mt-3">
+                        <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--color-text-muted)" }} />
+                      </div>
+                    ) : (
+                      <div className="mt-3 space-y-3">
+                        {/* Connected calendar rows */}
+                        {gcalConnections.map((conn) => (
+                          <div
+                            key={conn.id}
+                            className="rounded-lg border border-white/10 bg-white/5 px-4 py-3 space-y-1.5"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 text-sm text-emerald-400">
+                                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                                <span className="font-medium">Connected</span>
+                              </div>
+                              <button
+                                onClick={() => setGcalDisconnectEmail(conn.email)}
+                                className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                              >
+                                Disconnect
+                              </button>
+                            </div>
+                            {conn.email && (
+                              <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                                {conn.email}
+                              </p>
+                            )}
+                            {conn.last_synced && (
+                              <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                                Last synced:{" "}
+                                {new Intl.DateTimeFormat("en-US", {
+                                  timeZone: "America/Los_Angeles",
+                                  month: "short",
+                                  day: "numeric",
+                                  hour: "numeric",
+                                  minute: "2-digit",
+                                }).format(new Date(conn.last_synced))}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+
+                        {/* Sync All button — shown when at least one connection exists */}
+                        {gcalConnections.length > 0 && (
+                          <div className="pt-1">
+                            <button
+                              onClick={handleSyncGcal}
+                              disabled={gcalSyncing}
+                              className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors disabled:opacity-60"
+                            >
+                              {gcalSyncing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                              Sync All
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Connect button — shown when fewer than 2 calendars connected */}
+                        {gcalConnections.length < 2 && (
+                          <div className={gcalConnections.length > 0 ? "" : "pt-1"}>
+                            <button
+                              onClick={handleConnectGcal}
+                              disabled={gcalConnecting}
+                              className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white transition-colors disabled:opacity-60"
+                            >
+                              {gcalConnecting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                              {gcalConnections.length === 0 ? "Connect Google Calendar" : "Add another calendar"}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-                )}
+                </div>
               </div>
-            </div>
-          </div>
-        </Card>
+            </Card>
 
+          </div>
+        )}
+
+        {/* ── Modals (outside tab groups — always rendered) ─────────────── */}
         <ConfirmDialog
           open={gcalDisconnectEmail !== null}
           onClose={() => setGcalDisconnectEmail(null)}
@@ -928,252 +1289,6 @@ export default function SettingsClient({
           loading={gcalDisconnecting}
         />
 
-        {/* ── AI Preferences ────────────────────────────────────────────── */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4" style={{ color: "var(--color-accent)" }} />
-              <CardTitle>AI Preferences</CardTitle>
-            </div>
-          </CardHeader>
-          <p className="text-sm mb-5" style={{ color: "var(--color-text-secondary)" }}>
-            Personalize how the AI assistant communicates and what it prioritizes for you.
-          </p>
-
-          {prefsLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-5 w-5 animate-spin" style={{ color: "var(--color-text-muted)" }} />
-            </div>
-          ) : (
-            <div className="space-y-5">
-              <SelectField
-                label="Communication Style"
-                value={commStyle}
-                onChange={(v) => setCommStyle(v as typeof commStyle)}
-                options={[
-                  { value: "brief", label: "Brief — short, direct answers" },
-                  { value: "balanced", label: "Balanced — clear with context" },
-                  { value: "detailed", label: "Detailed — thorough explanations" },
-                ]}
-              />
-
-              <SelectField
-                label="Risk Tolerance"
-                value={riskTol}
-                onChange={(v) => setRiskTol(v as typeof riskTol)}
-                options={[
-                  { value: "", label: "(not set)" },
-                  { value: "conservative", label: "Conservative — safety first" },
-                  { value: "moderate", label: "Moderate — balanced approach" },
-                  { value: "aggressive", label: "Aggressive — growth focused" },
-                ]}
-              />
-
-              <div>
-                <FieldLabel>Financial Goals (one per line)</FieldLabel>
-                <textarea
-                  value={goalsText}
-                  onChange={(e) => setGoalsText(e.target.value)}
-                  rows={3}
-                  placeholder="e.g. Save $60k for house down payment by 2028"
-                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-1 focus:ring-offset-[var(--color-bg-primary)] resize-y"
-                  style={{
-                    background: "var(--color-bg-tertiary)",
-                    borderColor: "var(--color-border)",
-                    color: "var(--color-text-primary)",
-                  }}
-                />
-              </div>
-
-              <div>
-                <FieldLabel>Spending Priorities (one per line)</FieldLabel>
-                <textarea
-                  value={prioritiesText}
-                  onChange={(e) => setPrioritiesText(e.target.value)}
-                  rows={3}
-                  placeholder="e.g. Debt payoff first"
-                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-1 focus:ring-offset-[var(--color-bg-primary)] resize-y"
-                  style={{
-                    background: "var(--color-bg-tertiary)",
-                    borderColor: "var(--color-border)",
-                    color: "var(--color-text-primary)",
-                  }}
-                />
-              </div>
-
-              <div>
-                <FieldLabel>Custom Instructions</FieldLabel>
-                <textarea
-                  value={customInstructions}
-                  onChange={(e) => setCustomInstructions(e.target.value)}
-                  rows={3}
-                  maxLength={500}
-                  placeholder="e.g. Always show amounts in USD, remind me of savings goals"
-                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-1 focus:ring-offset-[var(--color-bg-primary)] resize-y"
-                  style={{
-                    background: "var(--color-bg-tertiary)",
-                    borderColor: "var(--color-border)",
-                    color: "var(--color-text-primary)",
-                  }}
-                />
-                <p className="mt-1 text-xs" style={{ color: "var(--color-text-muted)" }}>
-                  {customInstructions.length}/500
-                </p>
-              </div>
-            </div>
-          )}
-
-          {!prefsLoading && (
-            <div className="mt-5 flex items-center justify-end gap-3">
-              {prefsSuccess && (
-                <span className="text-sm" style={{ color: "var(--color-success)" }}>
-                  Preferences saved.
-                </span>
-              )}
-              <Button
-                variant="primary"
-                size="md"
-                onClick={handleSavePrefs}
-                disabled={prefsSaving}
-              >
-                {prefsSaving && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-                Save preferences
-              </Button>
-            </div>
-          )}
-        </Card>
-
-        {/* ── AI Memory ─────────────────────────────────────────────────── */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Brain className="h-4 w-4" style={{ color: "var(--color-accent)" }} />
-              <CardTitle>AI Memory</CardTitle>
-            </div>
-          </CardHeader>
-          <p className="text-sm mb-5" style={{ color: "var(--color-text-muted)" }}>
-            Facts the AI has learned about you from conversations.
-          </p>
-
-          {memoriesLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-5 w-5 animate-spin" style={{ color: "var(--color-text-muted)" }} />
-            </div>
-          ) : memories.length === 0 ? (
-            <p className="text-sm py-4 text-center" style={{ color: "var(--color-text-muted)" }}>
-              No memories yet. Start chatting with the AI to build your memory.
-            </p>
-          ) : (
-            <>
-              <div className="space-y-2">
-                {memories.map((mem) => {
-                  const categoryColors: Record<string, { bg: string; text: string }> = {
-                    goal:       { bg: "color-mix(in srgb, var(--color-accent) 12%, transparent)",  text: "var(--color-accent)" },
-                    debt:       { bg: "color-mix(in srgb, var(--color-danger) 12%, transparent)",  text: "var(--color-danger)" },
-                    savings:    { bg: "color-mix(in srgb, var(--color-success) 12%, transparent)", text: "var(--color-success)" },
-                    income:     { bg: "color-mix(in srgb, var(--color-success) 12%, transparent)", text: "var(--color-success)" },
-                    spending:   { bg: "color-mix(in srgb, var(--color-warning) 12%, transparent)", text: "var(--color-warning)" },
-                    investment: { bg: "color-mix(in srgb, var(--color-accent) 12%, transparent)",  text: "var(--color-accent)" },
-                    preference: { bg: "color-mix(in srgb, var(--color-text-muted) 15%, transparent)", text: "var(--color-text-muted)" },
-                    general:    { bg: "color-mix(in srgb, var(--color-text-muted) 15%, transparent)", text: "var(--color-text-muted)" },
-                  };
-                  const colors = categoryColors[mem.category] ?? categoryColors.general;
-                  return (
-                    <div
-                      key={mem.id}
-                      className="flex items-start gap-3 rounded-lg border px-3 py-3"
-                      style={{ background: "var(--color-bg-secondary)", borderColor: "var(--color-border)" }}
-                    >
-                      <span
-                        className="inline-flex shrink-0 items-center px-2 py-0.5 rounded text-[0.65rem] font-semibold uppercase tracking-wide mt-0.5"
-                        style={{ background: colors.bg, color: colors.text }}
-                      >
-                        {mem.category}
-                      </span>
-                      <p className="flex-1 text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
-                        {mem.fact}
-                      </p>
-                      <button
-                        onClick={() => handleDeleteMemory(mem.id)}
-                        className="shrink-0 p-1 rounded transition-colors hover:bg-[var(--color-bg-tertiary)]"
-                        aria-label="Delete memory"
-                        style={{ color: "var(--color-text-muted)" }}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="mt-4 flex justify-end">
-                <button
-                  onClick={handleClearAllMemories}
-                  className="flex items-center gap-1.5 text-xs transition-colors hover:opacity-80"
-                  style={{ color: "var(--color-danger)" }}
-                >
-                  <Trash2 className="h-3 w-3" />
-                  Clear all memories
-                </button>
-              </div>
-            </>
-          )}
-        </Card>
-
-        {/* ── Tour & Help ───────────────────────────────────────────────── */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Tour &amp; Help</CardTitle>
-          </CardHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium" style={{ color: "var(--color-text-primary)" }}>
-                Replay App Tour
-              </p>
-              <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
-                Walk through the guided tour again to rediscover features.
-              </p>
-            </div>
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={() => {
-                localStorage.removeItem("has_seen_tour");
-                window.dispatchEvent(new CustomEvent("start-tour"));
-              }}
-            >
-              Replay App Tour
-            </Button>
-          </div>
-        </Card>
-
-        {/* ── Danger Zone ───────────────────────────────────────────────── */}
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              <span style={{ color: "var(--color-danger)" }}>Danger Zone</span>
-            </CardTitle>
-          </CardHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium" style={{ color: "var(--color-text-primary)" }}>
-                Delete account
-              </p>
-              <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
-                Permanently delete your account and all associated data. This cannot be undone.
-              </p>
-            </div>
-            <Button
-              variant="danger"
-              size="md"
-              onClick={() => setDeleteConfirmOpen(true)}
-            >
-              Delete Account
-            </Button>
-          </div>
-        </Card>
-
-        {/* Delete account confirmation modal */}
         <ConfirmDialog
           open={deleteConfirmOpen}
           onClose={() => setDeleteConfirmOpen(false)}
@@ -1184,37 +1299,6 @@ export default function SettingsClient({
           dangerous
           loading={deleting}
         />
-
-        {/* ── About ─────────────────────────────────────────────────────── */}
-        <Card>
-          <CardHeader>
-            <CardTitle>About</CardTitle>
-          </CardHeader>
-
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-xl text-sm font-bold text-white"
-                style={{ background: "var(--color-accent)" }}
-              >
-                F
-              </div>
-              <div>
-                <p className="text-sm font-semibold" style={{ color: "var(--color-text-primary)" }}>
-                  FinanceOS
-                </p>
-                <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
-                  Version 1.0.0
-                </p>
-              </div>
-            </div>
-            <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
-              FinanceOS is your all-in-one personal finance command center. Track accounts,
-              categorize transactions, monitor investments, manage loans and subscriptions,
-              estimate taxes, and get AI-powered insights — all in one place.
-            </p>
-          </div>
-        </Card>
 
       </div>
     </div>
