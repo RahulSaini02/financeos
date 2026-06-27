@@ -192,6 +192,113 @@ function DevPushButton({ collapsed }: { collapsed?: boolean }) {
 }
 
 const SIDEBAR_COLLAPSED_KEY = "pref_sidebar_collapsed";
+const PUSH_DISMISSED_KEY = "push_prompt_dismissed";
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  const output = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i++) output[i] = rawData.charCodeAt(i);
+  return output;
+}
+
+function PushPromptBanner() {
+  const [visible, setVisible] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    if (localStorage.getItem(PUSH_DISMISSED_KEY)) return;
+
+    navigator.serviceWorker.ready
+      .then((reg) => reg.pushManager.getSubscription())
+      .then((sub) => { if (!sub) setVisible(true); })
+      .catch(() => {});
+  }, []);
+
+  function dismiss() {
+    setVisible(false);
+    localStorage.setItem(PUSH_DISMISSED_KEY, "1");
+  }
+
+  async function handleEnable() {
+    setSubscribing(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") { dismiss(); return; }
+
+      const reg = await navigator.serviceWorker.ready;
+      const existing = await reg.pushManager.getSubscription();
+      if (existing) await existing.unsubscribe();
+
+      const vapidRes = await fetch("/api/push/vapid-key");
+      const vapidData = await vapidRes.json() as { publicKey?: string };
+      if (!vapidData.publicKey) { dismiss(); return; }
+
+      const keyBytes = urlBase64ToUint8Array(vapidData.publicKey);
+      if (keyBytes.length !== 65) { dismiss(); return; }
+
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: keyBytes.buffer as ArrayBuffer,
+      });
+
+      const subJson = sub.toJSON() as { endpoint: string; keys: { p256dh: string; auth: string } };
+      await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(subJson),
+      });
+    } catch (err) {
+      console.error("Push auto-subscribe error:", err);
+    } finally {
+      setSubscribing(false);
+      dismiss();
+    }
+  }
+
+  if (!visible) return null;
+
+  return (
+    <div className="fixed bottom-[4.5rem] lg:bottom-4 left-4 right-4 lg:left-auto lg:right-4 lg:w-80 z-50 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-xl p-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--color-accent)]/10 text-[var(--color-accent)]">
+          <BellRing className="h-4 w-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-[var(--color-text-primary)]">Enable notifications</p>
+          <p className="text-xs text-[var(--color-text-muted)] mt-0.5 leading-relaxed">
+            Get bill reminders and spending alerts
+          </p>
+        </div>
+        <button
+          onClick={dismiss}
+          className="shrink-0 rounded-md p-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="flex gap-2 mt-3">
+        <button
+          onClick={handleEnable}
+          disabled={subscribing}
+          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-xs font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-60"
+        >
+          {subscribing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {subscribing ? "Enabling…" : "Enable"}
+        </button>
+        <button
+          onClick={dismiss}
+          className="px-3 py-2 text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors rounded-lg"
+        >
+          Later
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
@@ -536,6 +643,7 @@ export function AppShell({ children }: AppShellProps) {
       <FloatingAiChat />
       <KeyboardShortcuts />
       <GlobalSearch />
+      <PushPromptBanner />
     </div>
   );
 }
