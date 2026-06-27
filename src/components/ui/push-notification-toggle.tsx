@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Bell, BellOff, Loader2 } from 'lucide-react'
+import { Bell, BellOff, Loader2, Send } from 'lucide-react'
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
@@ -25,6 +25,8 @@ export function PushNotificationToggle({ className, showLabel }: PushNotificatio
   const [loading, setLoading] = useState(false)
   const [checking, setChecking] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [testSent, setTestSent] = useState(false)
+  const [testLoading, setTestLoading] = useState(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -116,37 +118,76 @@ export function PushNotificationToggle({ className, showLabel }: PushNotificatio
     }
   }, [subscribed, loading])
 
+  const handleTest = useCallback(async () => {
+    if (testLoading) return
+    setTestLoading(true)
+    setError(null)
+    setTestSent(false)
+    try {
+      const res = await fetch('/api/push/test', { method: 'POST' })
+      const json = await res.json() as { error?: string }
+      if (!res.ok) {
+        setError(json.error ?? 'Test failed')
+      } else {
+        setTestSent(true)
+        setTimeout(() => setTestSent(false), 4000)
+      }
+    } catch {
+      setError('Test failed — check console')
+    } finally {
+      setTestLoading(false)
+    }
+  }, [testLoading])
+
   if (!supported || checking) return null
 
   return (
-    <div>
-      <button
-        onClick={handleToggle}
-        disabled={loading}
-        title={
-          subscribed
-            ? 'Notifications on — click to disable'
-            : 'Enable push notifications'
-        }
-        className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
-          subscribed
-            ? 'text-[var(--color-accent)] bg-[var(--color-accent)]/10 hover:bg-[var(--color-accent)]/20'
-            : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]'
-        } ${className ?? ''}`}
-      >
-        {loading ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : subscribed ? (
-          <Bell className="h-4 w-4" />
-        ) : (
-          <BellOff className="h-4 w-4" />
+    <div className={`flex flex-col gap-2 ${className ?? ''}`}>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleToggle}
+          disabled={loading}
+          title={
+            subscribed
+              ? 'Notifications on — click to disable'
+              : 'Enable push notifications'
+          }
+          className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
+            subscribed
+              ? 'text-[var(--color-accent)] bg-[var(--color-accent)]/10 hover:bg-[var(--color-accent)]/20'
+              : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]'
+          }`}
+        >
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : subscribed ? (
+            <Bell className="h-4 w-4" />
+          ) : (
+            <BellOff className="h-4 w-4" />
+          )}
+          {showLabel && (
+            <span>{subscribed ? 'Notifications on' : 'Notifications off'}</span>
+          )}
+        </button>
+
+        {subscribed && (
+          <button
+            onClick={handleTest}
+            disabled={testLoading}
+            title="Send a test notification"
+            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm transition-colors text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-secondary)]"
+          >
+            {testLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+            {testSent ? 'Sent!' : 'Test'}
+          </button>
         )}
-        {showLabel && (
-          <span>{subscribed ? 'Notifications on' : 'Notifications off'}</span>
-        )}
-      </button>
+      </div>
       {error && (
-        <p className="mt-2 text-xs" style={{ color: 'var(--color-warning)' }}>
+        <p className="text-xs" style={{ color: 'var(--color-warning)' }}>
           {error}
         </p>
       )}

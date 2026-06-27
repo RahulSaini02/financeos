@@ -26,6 +26,11 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldCheck,
+  Users,
+  BrainCircuit,
+  Settings2,
+  BellRing,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import dynamic from "next/dynamic";
@@ -92,8 +97,98 @@ const bottomNavItems = [
   { href: "/ai-review", label: "AI", icon: Sparkles },
 ];
 
+const adminBottomNavItems = [
+  { href: "/admin/overview", label: "Overview", icon: LayoutDashboard },
+  { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/ai-requests", label: "AI Usage", icon: BrainCircuit },
+  { href: "/admin/settings", label: "Settings", icon: Settings2 },
+];
+
 interface AppShellProps {
   children: React.ReactNode;
+}
+
+const IS_DEV = process.env.NODE_ENV === "development";
+
+function DevPushMobileButton() {
+  const [status, setStatus] = useState<"idle" | "loading" | "sent" | "error">("idle");
+
+  async function send() {
+    if (status === "loading") return;
+    setStatus("loading");
+    try {
+      const res = await fetch("/api/push/test", { method: "POST" });
+      setStatus(res.ok ? "sent" : "error");
+    } catch {
+      setStatus("error");
+    }
+    setTimeout(() => setStatus("idle"), 3000);
+  }
+
+  return (
+    <button
+      onClick={send}
+      title="Dev: send test push notification"
+      className={cn(
+        "p-1.5 rounded-lg transition-colors",
+        status === "sent"
+          ? "text-[var(--color-success)]"
+          : status === "error"
+          ? "text-[var(--color-danger)]"
+          : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)]"
+      )}
+    >
+      {status === "loading" ? (
+        <Loader2 className="h-5 w-5 animate-spin" />
+      ) : (
+        <BellRing className="h-5 w-5" />
+      )}
+    </button>
+  );
+}
+
+function DevPushButton({ collapsed }: { collapsed?: boolean }) {
+  const [status, setStatus] = useState<"idle" | "loading" | "sent" | "error">("idle");
+
+  async function send() {
+    if (status === "loading") return;
+    setStatus("loading");
+    try {
+      const res = await fetch("/api/push/test", { method: "POST" });
+      setStatus(res.ok ? "sent" : "error");
+    } catch {
+      setStatus("error");
+    }
+    setTimeout(() => setStatus("idle"), 3000);
+  }
+
+  return (
+    <button
+      onClick={send}
+      title="Dev: send test push notification"
+      className={cn(
+        "flex w-full items-center rounded-lg px-2 py-2 text-sm transition-colors",
+        collapsed ? "justify-center" : "gap-3 px-3",
+        status === "sent"
+          ? "text-[var(--color-success)]"
+          : status === "error"
+          ? "text-[var(--color-danger)]"
+          : "text-[var(--color-text-muted)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]",
+        "border border-dashed border-[var(--color-border)]"
+      )}
+    >
+      {status === "loading" ? (
+        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+      ) : (
+        <BellRing className="h-4 w-4 shrink-0" />
+      )}
+      {!collapsed && (
+        <span className="truncate text-xs">
+          {status === "sent" ? "Sent!" : status === "error" ? "Failed" : "Test Push"}
+        </span>
+      )}
+    </button>
+  );
 }
 
 const SIDEBAR_COLLAPSED_KEY = "pref_sidebar_collapsed";
@@ -308,7 +403,8 @@ export function AppShell({ children }: AppShellProps) {
       </nav>
 
       {/* Bottom */}
-      <div className="border-t border-[var(--color-border)] p-2">
+      <div className="border-t border-[var(--color-border)] p-2 space-y-1">
+        {IS_DEV && <DevPushButton collapsed={sidebarCollapsed} />}
         <Link
           href="/settings"
           data-tour="nav-settings"
@@ -385,6 +481,7 @@ export function AppShell({ children }: AppShellProps) {
           </button>
           <span className="text-base font-semibold tracking-tight">FinanceOS</span>
           <div className="flex items-center gap-1">
+            {IS_DEV && <DevPushMobileButton />}
             <button
               onClick={() => window.dispatchEvent(new CustomEvent("open-global-search"))}
               className="p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
@@ -414,7 +511,7 @@ export function AppShell({ children }: AppShellProps) {
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="flex items-center justify-around h-16 px-2">
-          {bottomNavItems.map((item) => {
+          {(pathname?.startsWith("/admin") ? adminBottomNavItems : bottomNavItems).map((item) => {
             const isActive = pathname === item.href || pathname?.startsWith(item.href + "/");
             return (
               <Link
