@@ -154,11 +154,9 @@ export function TransactionModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
     >
-      <Card className="rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[92vh] overflow-y-auto">
-        <div className="w-8 h-1 bg-[var(--color-border)] rounded-full mx-auto mb-4 sm:hidden" />
+      <Card className="rounded-2xl w-full max-w-md max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-semibold">
             {txn ? "Edit Transaction" : "Add Transaction"}

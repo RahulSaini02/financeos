@@ -22,7 +22,55 @@ import {
   Pencil,
   Trash2,
   X,
+  House,
+  Car,
+  Plane,
+  GraduationCap,
+  Heart,
+  Gift,
+  Camera,
+  Dumbbell,
+  PiggyBank,
+  Wallet,
+  ShoppingBag,
+  Coffee,
+  Music,
+  Baby,
+  Diamond,
+  Briefcase,
+  Laptop,
+  Bike,
+  Umbrella,
+  Trees,
 } from "lucide-react";
+
+const GOAL_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  house: House,
+  car: Car,
+  plane: Plane,
+  "graduation-cap": GraduationCap,
+  heart: Heart,
+  gift: Gift,
+  camera: Camera,
+  dumbbell: Dumbbell,
+  "piggy-bank": PiggyBank,
+  wallet: Wallet,
+  "shopping-bag": ShoppingBag,
+  coffee: Coffee,
+  music: Music,
+  baby: Baby,
+  diamond: Diamond,
+  briefcase: Briefcase,
+  laptop: Laptop,
+  bike: Bike,
+  umbrella: Umbrella,
+  trees: Trees,
+};
+
+function GoalIcon ({ name }: { name: string | null }) {
+  const Icon = ( name && GOAL_ICON_MAP[name] ) ? GOAL_ICON_MAP[name] : Target;
+  return <Icon className="h-5 w-5 text-[var(--color-accent)]" />;
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -592,9 +640,7 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
                 <Card key={goal.id}>
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      {goal.icon && (
-                        <span className="text-2xl">{goal.icon}</span>
-                      )}
+                      <GoalIcon name={goal.icon} />
                       <div>
                         <p className="font-medium">{goal.name}</p>
                         <p className="text-xs text-[var(--color-text-muted)]">

@@ -119,6 +119,9 @@ interface TransactionsClientProps {
 }
 
 // ── Swipe-to-delete row ────────────────────────────────────────────────────────
+const SWIPE_WIDTH = 72;  // px revealed when open
+const SWIPE_EASE = "0.22s cubic-bezier(0.25, 0.46, 0.45, 0.94)";
+
 function SwipeableRow ({
   id,
   isOpen,
@@ -135,15 +138,22 @@ function SwipeableRow ({
   children: React.ReactNode;
 }) {
   const innerRef = useRef<HTMLDivElement>( null );
+  const panelRef = useRef<HTMLDivElement>( null );
   const startXRef = useRef( 0 );
   const activeRef = useRef( false );
 
+  // Drive both card position and panel opacity via direct DOM writes — no re-renders during drag
+  function setProgress ( p: number ) {
+    const clamped = Math.min( Math.max( p, 0 ), 1 );
+    if ( panelRef.current ) panelRef.current.style.opacity = String( Math.min( clamped * 1.5, 1 ) );
+  }
+
   function pointerDown ( e: React.PointerEvent<HTMLDivElement> ) {
-    // Capture so we keep receiving events if pointer leaves element
     try { e.currentTarget.setPointerCapture( e.pointerId ); } catch { /* ignore */ }
     startXRef.current = e.clientX;
     activeRef.current = true;
     if ( innerRef.current ) innerRef.current.style.transition = "none";
+    if ( panelRef.current ) panelRef.current.style.transition = "none";
   }
 
   function pointerMove ( e: React.PointerEvent<HTMLDivElement> ) {
@@ -151,14 +161,15 @@ function SwipeableRow ({
     const delta = e.clientX - startXRef.current;
     const inner = innerRef.current;
     if ( !inner ) return;
+
     if ( isOpen ) {
-      // Swiping right closes
-      const x = Math.max( -72, Math.min( 0, -72 + delta ) );
+      const x = Math.max( -SWIPE_WIDTH, Math.min( 0, -SWIPE_WIDTH + delta ) );
       inner.style.transform = `translateX(${ x }px)`;
+      setProgress( -x / SWIPE_WIDTH );
     } else if ( delta < 0 ) {
-      // Swiping left opens
-      const x = Math.max( -72, delta );
+      const x = Math.max( -SWIPE_WIDTH, delta );
       inner.style.transform = `translateX(${ x }px)`;
+      setProgress( -x / SWIPE_WIDTH );
     }
   }
 
@@ -166,61 +177,75 @@ function SwipeableRow ({
     if ( !activeRef.current ) return;
     activeRef.current = false;
     const delta = e.clientX - startXRef.current;
-    const inner = innerRef.current;
-    if ( inner ) inner.style.transition = "transform 0.2s";
+    if ( innerRef.current ) innerRef.current.style.transition = `transform ${ SWIPE_EASE }`;
+    if ( panelRef.current ) panelRef.current.style.transition = `opacity ${ SWIPE_EASE }`;
 
     if ( isOpen ) {
       if ( delta > 36 ) {
-        if ( inner ) inner.style.transform = "translateX(0)";
+        if ( innerRef.current ) innerRef.current.style.transform = "translateX(0)";
+        setProgress( 0 );
         onClose();
       } else {
-        if ( inner ) inner.style.transform = "translateX(-72px)";
+        if ( innerRef.current ) innerRef.current.style.transform = `translateX(-${ SWIPE_WIDTH }px)`;
+        setProgress( 1 );
       }
     } else {
-      if ( delta < -72 ) {
-        if ( inner ) inner.style.transform = "translateX(-72px)";
+      // Snap open at half the reveal width — feels snappier than requiring full drag
+      if ( delta < -( SWIPE_WIDTH / 2 ) ) {
+        if ( innerRef.current ) innerRef.current.style.transform = `translateX(-${ SWIPE_WIDTH }px)`;
+        setProgress( 1 );
         onOpen( id );
       } else {
-        if ( inner ) inner.style.transform = "translateX(0)";
+        if ( innerRef.current ) innerRef.current.style.transform = "translateX(0)";
+        setProgress( 0 );
       }
     }
   }
 
   function pointerCancel () {
     activeRef.current = false;
-    const inner = innerRef.current;
-    if ( inner ) {
-      inner.style.transition = "transform 0.2s";
-      inner.style.transform = "translateX(0)";
+    if ( innerRef.current ) {
+      innerRef.current.style.transition = `transform ${ SWIPE_EASE }`;
+      innerRef.current.style.transform = "translateX(0)";
     }
+    setProgress( 0 );
     if ( isOpen ) onClose();
   }
 
   return (
     <div
-      className="relative overflow-hidden"
+      className="relative overflow-hidden sm:overflow-visible"
       style={{ touchAction: "pan-y" }}
       onPointerDown={pointerDown}
       onPointerMove={pointerMove}
       onPointerUp={pointerUp}
       onPointerCancel={pointerCancel}
     >
-      {/* Red delete button revealed on swipe-left */}
-      <div className="absolute inset-y-0 right-0 flex w-[72px] items-center justify-center bg-red-600">
+      {/* Delete strip — hidden until card is swiped; sm:hidden so it never shows on desktop */}
+      <div
+        ref={panelRef}
+        className="sm:hidden absolute inset-y-0 right-0 flex w-[72px] flex-col items-center justify-center gap-1"
+        style={{
+          opacity: isOpen ? 1 : 0,
+          backgroundColor: "rgba(153, 27, 27, 0.92)",
+        }}
+      >
         <button
-          className="flex h-full w-full items-center justify-center"
+          className="flex h-full w-full flex-col items-center justify-center gap-1 text-white/90"
           onClick={( e ) => { e.stopPropagation(); onDelete(); }}
           aria-label="Delete transaction"
         >
-          <Trash2 className="h-5 w-5 text-white" />
+          <Trash2 className="h-4 w-4" />
+          <span className="text-[9px] font-semibold tracking-widest uppercase">Delete</span>
         </button>
       </div>
+
       {/* Sliding card content */}
       <div
         ref={innerRef}
         style={{
-          transform: isOpen ? "translateX(-72px)" : "translateX(0)",
-          transition: "transform 0.2s",
+          transform: isOpen ? `translateX(-${ SWIPE_WIDTH }px)` : "translateX(0)",
+          transition: `transform ${ SWIPE_EASE }`,
         }}
       >
         {children}

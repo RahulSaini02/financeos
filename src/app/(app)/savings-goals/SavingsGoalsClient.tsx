@@ -745,13 +745,13 @@ export function SavingsGoalsClient ( { initialGoals, accounts }: SavingsGoalsCli
         </Card>
       </div>
 
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-1 border-b border-[var(--color-border)] pb-0">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="flex items-center gap-1 overflow-x-auto border-b border-[var(--color-border)] pb-0 scrollbar-none">
           {TABS.map( ( tab ) => (
             <button
               key={tab.key}
               onClick={() => setActiveFilter( tab.key )}
-              className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${ activeFilter === tab.key
+              className={`shrink-0 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${ activeFilter === tab.key
                   ? "border-[var(--color-accent)] text-[var(--color-accent)]"
                   : "border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
                 }`}
@@ -760,11 +760,11 @@ export function SavingsGoalsClient ( { initialGoals, accounts }: SavingsGoalsCli
             </button>
           ) )}
         </div>
-        <div className="relative">
+        <div className="shrink-0">
           <select
             value={sortBy}
             onChange={( e ) => setSortBy( e.target.value as typeof sortBy )}
-            className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+            className="w-full sm:w-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
           >
             <option value="progress">Sort by Progress</option>
             <option value="target">Sort by Target Amount</option>

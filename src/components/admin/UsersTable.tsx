@@ -65,20 +65,198 @@ function InlineAlert({ kind, message }: { kind: 'success' | 'error'; message: st
 
 function TableSkeleton() {
   return (
-    <div className="space-y-2">
-      {[...Array(4)].map((_, i) => (
-        <div key={i} className="flex gap-4 items-center px-4 py-3">
-          <Skeleton className="h-4 w-48" />
-          <Skeleton className="h-4 w-16" />
-          <Skeleton className="h-4 w-8" />
-          <Skeleton className="h-4 w-16" />
-          <Skeleton className="h-4 w-32" />
+    <>
+      {/* Mobile skeleton cards */}
+      <div className="md:hidden space-y-3">
+        {[...Array(3)].map((_, i) => (
+          <div
+            key={i}
+            className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-4 space-y-3"
+          >
+            <Skeleton className="h-4 w-4/5" />
+            <div className="flex gap-3">
+              <Skeleton className="h-5 w-16" />
+              <Skeleton className="h-5 w-20" />
+            </div>
+            <div className="flex gap-2 pt-1 border-t border-[var(--color-border)]/50">
+              <Skeleton className="h-7 w-24 rounded-lg" />
+              <Skeleton className="h-7 w-20 rounded-lg" />
+            </div>
+          </div>
+        ))}
+      </div>
+      {/* Desktop skeleton rows */}
+      <div className="hidden md:block space-y-2">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="flex gap-4 items-center px-4 py-3">
+            <Skeleton className="h-4 w-48" />
+            <Skeleton className="h-4 w-16" />
+            <Skeleton className="h-4 w-8" />
+            <Skeleton className="h-4 w-16" />
+            <Skeleton className="h-4 w-32" />
+          </div>
+        ))}
+      </div>
+    </>
+  )
+}
+
+// ── Mobile card (one per user, shown below md) ────────────────────────────────
+function UserMobileCard({
+  user,
+  processingId,
+  onAction,
+  onRequestEnableAi,
+  onRequestRoleChange,
+}: {
+  user: AdminUser
+  processingId: string | null
+  onAction: (userId: string, action: AdminAction) => void
+  onRequestEnableAi: (userId: string, email: string) => void
+  onRequestRoleChange: (userId: string, email: string, action: 'set_admin' | 'set_user') => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const isProcessing = processingId === user.id
+  const hasPendingRequest = user.ai_access_requested_at !== null && !user.ai_enabled
+
+  return (
+    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-4 space-y-3">
+      {/* Email + role badge */}
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-sm font-medium text-[var(--color-text-primary)] break-all leading-snug flex-1">
+          {user.email || '—'}
+        </p>
+        <div className="shrink-0">
+          {user.role === 'admin' && user.email === 'sainirahul0802@gmail.com' ? (
+            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold bg-purple-500/15 text-purple-400">
+              <ShieldCheck className="h-3 w-3" />owner
+            </span>
+          ) : (
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                user.role === 'admin'
+                  ? 'bg-blue-500/15 text-blue-400'
+                  : 'bg-white/5 text-[var(--color-text-muted)]'
+              }`}
+            >
+              {user.role === 'admin' && <ShieldCheck className="h-3 w-3" />}
+              {user.role}
+            </span>
+          )}
         </div>
-      ))}
+      </div>
+
+      {/* Verified + AI status */}
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-1 text-[11px] text-[var(--color-text-muted)]">
+          {user.email_verified ? (
+            <CheckCircle className="h-3.5 w-3.5 text-[var(--color-success)]" />
+          ) : (
+            <XCircle className="h-3.5 w-3.5 text-[var(--color-danger)]" />
+          )}
+          <span>{user.email_verified ? 'Verified' : 'Unverified'}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          {user.ai_enabled ? (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--color-success)]">
+              <CheckCircle className="h-3.5 w-3.5" /> AI On
+            </span>
+          ) : hasPendingRequest ? (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-400">
+              <Clock className="h-3.5 w-3.5" /> AI Pending
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--color-text-muted)]">
+              <XCircle className="h-3.5 w-3.5" /> AI Off
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Expandable AI request reason */}
+      {hasPendingRequest && user.ai_access_requested_reason && (
+        <>
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="flex items-center gap-1 text-xs text-[var(--color-accent)] hover:opacity-80 transition-opacity"
+          >
+            {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            {expanded ? 'Hide request reason' : 'View request reason'}
+          </button>
+          {expanded && (
+            <div className="rounded-lg border border-[var(--color-border)] p-3 bg-[var(--color-bg-secondary)]">
+              <p className="text-[11px] font-semibold uppercase tracking-wider mb-1 text-[var(--color-text-muted)]">
+                AI Access Request Reason
+              </p>
+              <p className="text-sm text-[var(--color-text-secondary)]">
+                {user.ai_access_requested_reason}
+              </p>
+              <p className="text-xs mt-1 text-[var(--color-text-muted)]">
+                Requested: {formatDate(user.ai_access_requested_at)}
+              </p>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Action buttons */}
+      <div className="flex flex-wrap gap-1.5 pt-2 border-t border-[var(--color-border)]/50">
+        {!user.ai_enabled && (
+          <button
+            onClick={() => onRequestEnableAi(user.id, user.email)}
+            disabled={isProcessing}
+            className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-success)]/30 bg-[var(--color-success)]/10 px-2.5 py-1.5 text-[11px] font-medium text-[var(--color-success)] hover:bg-[var(--color-success)]/20 disabled:opacity-50 transition-colors"
+          >
+            {isProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
+            {hasPendingRequest ? 'Approve AI' : 'Enable AI'}
+          </button>
+        )}
+        {user.ai_enabled && (
+          <button
+            onClick={() => onAction(user.id, 'revoke_ai')}
+            disabled={isProcessing}
+            className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[11px] font-medium text-red-400 hover:bg-red-500/20 disabled:opacity-50 transition-colors"
+          >
+            {isProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : <XCircle className="h-3 w-3" />}
+            Revoke AI
+          </button>
+        )}
+        {user.role === 'user' && user.email !== 'sainirahul0802@gmail.com' && (
+          <button
+            onClick={() => onRequestRoleChange(user.id, user.email, 'set_admin')}
+            disabled={isProcessing}
+            className="inline-flex items-center gap-1 rounded-lg border border-blue-500/30 bg-blue-500/10 px-2.5 py-1.5 text-[11px] font-medium text-blue-400 hover:bg-blue-500/20 disabled:opacity-50 transition-colors"
+          >
+            {isProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : <ShieldCheck className="h-3 w-3" />}
+            Make Admin
+          </button>
+        )}
+        {user.role === 'admin' && user.email !== 'sainirahul0802@gmail.com' && (
+          <button
+            onClick={() => onRequestRoleChange(user.id, user.email, 'set_user')}
+            disabled={isProcessing}
+            className="inline-flex items-center gap-1 rounded-lg border border-orange-500/30 bg-orange-500/10 px-2.5 py-1.5 text-[11px] font-medium text-orange-400 hover:bg-orange-500/20 disabled:opacity-50 transition-colors"
+          >
+            {isProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : <ShieldCheck className="h-3 w-3" />}
+            Revoke Admin
+          </button>
+        )}
+        {!user.email_verified && (
+          <button
+            onClick={() => onAction(user.id, 'verify_email')}
+            disabled={isProcessing}
+            className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] font-medium text-[var(--color-text-secondary)] hover:bg-white/10 disabled:opacity-50 transition-colors"
+          >
+            {isProcessing ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserCheck className="h-3 w-3" />}
+            Verify Email
+          </button>
+        )}
+      </div>
     </div>
   )
 }
 
+// ── Desktop table row (shown at md+) ─────────────────────────────────────────
 function UserRow({
   user,
   processingId,
@@ -241,6 +419,7 @@ function UserRow({
   )
 }
 
+// ── Main exported component ───────────────────────────────────────────────────
 export default function UsersTable({ users: initialUsers }: { users: AdminUser[] }) {
   const [users, setUsers] = useState<AdminUser[]>(initialUsers)
   const [usersLoading, setUsersLoading] = useState(false)
@@ -316,8 +495,16 @@ export default function UsersTable({ users: initialUsers }: { users: AdminUser[]
     }
   }
 
+  const sharedUserProps = {
+    processingId,
+    onAction: handleAction,
+    onRequestEnableAi: (userId: string, email: string) => setConfirmTarget({ userId, email }),
+    onRequestRoleChange: (userId: string, email: string, action: 'set_admin' | 'set_user') =>
+      setRoleConfirmTarget({ userId, email, action }),
+  }
+
   return (
-    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-6">
+    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 md:p-6">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-5">
         <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">User Management</h2>
         <Button variant="secondary" size="sm" onClick={fetchUsers} disabled={usersLoading}>
@@ -338,36 +525,40 @@ export default function UsersTable({ users: initialUsers }: { users: AdminUser[]
           No users found.
         </div>
       ) : (
-        <div className="overflow-x-auto -mx-6">
-          <table className="w-full min-w-[640px] text-left text-sm">
-            <thead>
-              <tr
-                className="border-b text-[11px] font-semibold uppercase tracking-wider bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)]"
-                style={{ borderColor: 'var(--color-border)' }}
-              >
-                <th className="px-4 py-2.5">Email</th>
-                <th className="px-4 py-2.5">Role</th>
-                <th className="px-4 py-2.5">Verified</th>
-                <th className="px-4 py-2.5">AI Access</th>
-                <th className="px-4 py-2.5">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((user) => (
-                <UserRow
-                  key={user.id}
-                  user={user}
-                  processingId={processingId}
-                  onAction={handleAction}
-                  onRequestEnableAi={(userId, email) => setConfirmTarget({ userId, email })}
-                  onRequestRoleChange={(userId, email, action) => setRoleConfirmTarget({ userId, email, action })}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          {/* ── Mobile: card-per-user (below md) ── */}
+          <div className="md:hidden space-y-3">
+            {users.map((user) => (
+              <UserMobileCard key={user.id} user={user} {...sharedUserProps} />
+            ))}
+          </div>
+
+          {/* ── Desktop: full table (md and above) ── */}
+          <div className="hidden md:block overflow-x-auto -mx-6">
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead>
+                <tr
+                  className="border-b text-[11px] font-semibold uppercase tracking-wider bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)]"
+                  style={{ borderColor: 'var(--color-border)' }}
+                >
+                  <th className="px-4 py-2.5">Email</th>
+                  <th className="px-4 py-2.5">Role</th>
+                  <th className="px-4 py-2.5">Verified</th>
+                  <th className="px-4 py-2.5">AI Access</th>
+                  <th className="px-4 py-2.5">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((user) => (
+                  <UserRow key={user.id} user={user} {...sharedUserProps} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
+      {/* ── Confirm: enable AI ── */}
       <Modal
         open={confirmTarget !== null}
         onClose={() => setConfirmTarget(null)}
@@ -416,6 +607,7 @@ export default function UsersTable({ users: initialUsers }: { users: AdminUser[]
         </div>
       </Modal>
 
+      {/* ── Confirm: role change ── */}
       <Modal
         open={roleConfirmTarget !== null}
         onClose={() => setRoleConfirmTarget(null)}

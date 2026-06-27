@@ -152,6 +152,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   font-size: 0.8rem !important;
   font-weight: 500 !important;
   cursor: pointer !important;
+  text-shadow: none !important;
 }
 .financeos-tour-popover .driver-popover-footer .driver-popover-btn-disabled {
   display: none !important;

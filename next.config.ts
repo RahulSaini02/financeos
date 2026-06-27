@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   reactCompiler: {
     compilationMode: "annotation",
   },
+  allowedDevOrigins: ['192.168.1.161'],
   async headers() {
     return [
       {
