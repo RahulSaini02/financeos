@@ -835,88 +835,153 @@ function TransactionsContent ( {
 
                   {/* Main */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium truncate">{txn.description}</span>
-                      {txn.flagged && (
-                        <div className="relative shrink-0" onClick={( e ) => e.stopPropagation()}>
-                          <button
-                            onClick={() => setAlertTooltipId( alertTooltipId === txn.id ? null : txn.id )}
-                            className="flex items-center"
-                            aria-label="View flag reason"
-                          >
-                            <AlertTriangle className="h-3.5 w-3.5 text-[var(--color-warning)]" />
-                          </button>
-                          {alertTooltipId === txn.id && txn.flagged_reason && (
-                            <div className="absolute top-6 left-0 z-50 w-56 rounded-lg shadow-lg p-2.5 text-xs bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] text-[var(--color-warning)]">
-                              <div className="absolute -top-1.5 left-2 h-3 w-3 rotate-45 bg-[var(--color-bg-tertiary)] border-t border-l border-[var(--color-border)]" />
-                              {txn.flagged_reason}
-                            </div>
-                          )}
+
+                    {/* ── MOBILE CARD (sm:hidden) ── */}
+                    <div className="sm:hidden">
+                      {/* Title row: name · flag · amount · delete */}
+                      <div className="flex items-center gap-1.5">
+                        <span className="flex-1 text-sm font-medium text-[var(--color-text-primary)] truncate min-w-0">
+                          {txn.description}
+                        </span>
+                        {txn.flagged && (
+                          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-[var(--color-warning)]" />
+                        )}
+                        <span
+                          className={`text-sm font-medium whitespace-nowrap shrink-0 ${
+                            txn.cr_dr === "credit"
+                              ? "text-[var(--color-income)]"
+                              : "text-[var(--color-text-primary)]"
+                          }`}
+                        >
+                          {txn.cr_dr === "credit" ? "+" : ""}
+                          {formatCurrency( txn.final_amount )}
+                        </span>
+                        <button
+                          className="shrink-0 p-1.5 rounded text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-colors"
+                          onClick={( e ) => { e.stopPropagation(); handleDelete( txn.id ); }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      {/* Category */}
+                      <div className="flex items-center gap-1.5 mt-1 text-xs text-[var(--color-text-muted)]">
+                        <span>{getCategory( txn.category_id ?? "" )?.name ?? "Uncategorized"}</span>
+                        {txn.is_internal_transfer && (
+                          <>
+                            <span>·</span>
+                            <span className="text-[var(--color-accent)]">Transfer</span>
+                          </>
+                        )}
+                        {txn.is_recurring && (
+                          <>
+                            <span>·</span>
+                            <span>Recurring</span>
+                          </>
+                        )}
+                      </div>
+                      {/* Date */}
+                      <div className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                        {formatDate( txn.date )}
+                      </div>
+                      {/* Account */}
+                      <div className="mt-0.5 text-xs text-[var(--color-text-muted)] opacity-75">
+                        {getAccount( txn.account_id )?.name}
+                        {txn.ai_categorized && (
+                          <span className="ml-1.5 opacity-100 text-[var(--color-accent)]">· AI</span>
+                        )}
+                      </div>
+                      {/* Flagged reason */}
+                      {txn.flagged_reason && (
+                        <div className="mt-1 text-xs text-[var(--color-warning)]">
+                          {txn.flagged_reason}
                         </div>
                       )}
-                      {txn.is_internal_transfer && (
-                        <span className="text-[0.6rem] font-medium px-1.5 py-0.5 rounded bg-[var(--color-accent)]/10 text-[var(--color-accent)]">
-                          TRANSFER
-                        </span>
-                      )}
-                      {txn.is_recurring && (
-                        <span className="text-[0.6rem] font-medium px-1.5 py-0.5 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)]">
-                          RECURRING
-                        </span>
-                      )}
                     </div>
-                    {/* Category + date row (mobile: prominent; desktop: merged into details) */}
-                    <div className="flex items-center gap-2 mt-0.5" onClick={( e ) => e.stopPropagation()}>
-                      {inlineEditId === txn.id ? (
-                        <select
-                          autoFocus
-                          className="text-xs h-6 rounded border border-[var(--color-accent)] bg-[var(--color-bg-tertiary)] px-1 max-w-[140px]"
-                          value={txn.category_id ?? ""}
-                          onChange={( e ) => handleInlineCategoryChange( txn.id, e.target.value )}
-                          onBlur={() => setInlineEditId( null )}
-                        >
-                          <option value="">Uncategorized</option>
-                          {categories.map( ( c ) => (
-                            <option key={c.id} value={c.id}>{c.name}</option>
-                          ) )}
-                        </select>
-                      ) : (
-                        <button
-                          className="text-xs px-1.5 py-0.5 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)]/10 hover:text-[var(--color-accent)] transition-colors"
-                          onClick={() => setInlineEditId( txn.id )}
-                        >
-                          {getCategory( txn.category_id ?? "" )?.name ?? "Uncategorized"}
-                        </button>
-                      )}
-                      <span className="text-xs text-[var(--color-text-muted)] sm:hidden">·</span>
-                      <span className="text-xs text-[var(--color-text-muted)] sm:hidden">
-                        {formatDate( txn.date )}
-                      </span>
-                    </div>
-                    {/* Account + AI + loan — secondary detail row */}
-                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                      <span className="text-[0.7rem] text-[var(--color-text-muted)] opacity-75">
-                        {getAccount( txn.account_id )?.name}
-                      </span>
-                      {txn.ai_categorized && (
-                        <>
-                          <span className="text-[0.7rem] text-[var(--color-text-muted)] opacity-75">·</span>
-                          <span className="text-[0.7rem] text-[var(--color-accent)] opacity-80">AI</span>
-                        </>
-                      )}
-                      {( txn as Transaction & { loan?: { name: string } } ).loan && (
-                        <>
-                          <span className="text-[0.7rem] text-[var(--color-text-muted)] opacity-75">·</span>
-                          <span className="text-[0.6rem] font-medium px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400">
-                            LOAN: {( txn as Transaction & { loan?: { name: string } } ).loan!.name}
+
+                    {/* ── DESKTOP ROW (hidden sm:block) ── */}
+                    <div className="hidden sm:block">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium truncate">{txn.description}</span>
+                        {txn.flagged && (
+                          <div className="relative shrink-0" onClick={( e ) => e.stopPropagation()}>
+                            <button
+                              onClick={() => setAlertTooltipId( alertTooltipId === txn.id ? null : txn.id )}
+                              className="flex items-center"
+                              aria-label="View flag reason"
+                            >
+                              <AlertTriangle className="h-3.5 w-3.5 text-[var(--color-warning)]" />
+                            </button>
+                            {alertTooltipId === txn.id && txn.flagged_reason && (
+                              <div className="absolute top-6 left-0 z-50 w-56 rounded-lg shadow-lg p-2.5 text-xs bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] text-[var(--color-warning)]">
+                                <div className="absolute -top-1.5 left-2 h-3 w-3 rotate-45 bg-[var(--color-bg-tertiary)] border-t border-l border-[var(--color-border)]" />
+                                {txn.flagged_reason}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {txn.is_internal_transfer && (
+                          <span className="text-[0.6rem] font-medium px-1.5 py-0.5 rounded bg-[var(--color-accent)]/10 text-[var(--color-accent)]">
+                            TRANSFER
                           </span>
-                        </>
-                      )}
+                        )}
+                        {txn.is_recurring && (
+                          <span className="text-[0.6rem] font-medium px-1.5 py-0.5 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)]">
+                            RECURRING
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5" onClick={( e ) => e.stopPropagation()}>
+                        {inlineEditId === txn.id ? (
+                          <select
+                            autoFocus
+                            className="text-xs h-6 rounded border border-[var(--color-accent)] bg-[var(--color-bg-tertiary)] px-1 max-w-[140px]"
+                            value={txn.category_id ?? ""}
+                            onChange={( e ) => handleInlineCategoryChange( txn.id, e.target.value )}
+                            onBlur={() => setInlineEditId( null )}
+                          >
+                            <option value="">Uncategorized</option>
+                            {categories.map( ( c ) => (
+                              <option key={c.id} value={c.id}>{c.name}</option>
+                            ) )}
+                          </select>
+                        ) : (
+                          <button
+                            className="text-xs px-1.5 py-0.5 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)]/10 hover:text-[var(--color-accent)] transition-colors"
+                            onClick={() => setInlineEditId( txn.id )}
+                          >
+                            {getCategory( txn.category_id ?? "" )?.name ?? "Uncategorized"}
+                          </button>
+                        )}
+                        <span className="text-xs text-[var(--color-text-muted)]">·</span>
+                        <span className="text-xs text-[var(--color-text-muted)]">
+                          {formatDate( txn.date )}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <span className="text-[0.7rem] text-[var(--color-text-muted)] opacity-75">
+                          {getAccount( txn.account_id )?.name}
+                        </span>
+                        {txn.ai_categorized && (
+                          <>
+                            <span className="text-[0.7rem] text-[var(--color-text-muted)] opacity-75">·</span>
+                            <span className="text-[0.7rem] text-[var(--color-accent)] opacity-80">AI</span>
+                          </>
+                        )}
+                        {( txn as Transaction & { loan?: { name: string } } ).loan && (
+                          <>
+                            <span className="text-[0.7rem] text-[var(--color-text-muted)] opacity-75">·</span>
+                            <span className="text-[0.6rem] font-medium px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400">
+                              LOAN: {( txn as Transaction & { loan?: { name: string } } ).loan!.name}
+                            </span>
+                          </>
+                        )}
+                      </div>
                     </div>
+
                   </div>
 
-                  {/* Amount + date */}
-                  <div className="text-right shrink-0 whitespace-nowrap">
+                  {/* Amount + date — desktop only */}
+                  <div className="hidden sm:block text-right shrink-0 whitespace-nowrap">
                     <span
                       className={`text-sm font-medium ${ txn.cr_dr === "credit"
                         ? "text-[var(--color-income)]"
@@ -926,21 +991,21 @@ function TransactionsContent ( {
                       {txn.cr_dr === "credit" ? "+" : ""}
                       {formatCurrency( txn.final_amount )}
                     </span>
-                    <p className="text-xs text-[var(--color-text-muted)] mt-0.5 hidden sm:block">
+                    <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
                       {formatDate( txn.date )}
                     </p>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-1 shrink-0" onClick={( e ) => e.stopPropagation()}>
+                  {/* Actions — desktop only */}
+                  <div className="hidden sm:flex items-center gap-1 shrink-0" onClick={( e ) => e.stopPropagation()}>
                     <button
-                      className="p-3 sm:p-1.5 rounded hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+                      className="p-1.5 rounded hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
                       onClick={() => handleEdit( txn )}
                     >
                       <Edit2 className="h-4 w-4" />
                     </button>
                     <button
-                      className="p-3 sm:p-1.5 rounded hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-danger)]"
+                      className="p-1.5 rounded hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-danger)]"
                       onClick={() => handleDelete( txn.id )}
                     >
                       <Trash2 className="h-4 w-4" />
