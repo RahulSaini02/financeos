@@ -866,12 +866,6 @@ function TransactionsContent ( {
                       {/* Category */}
                       <div className="flex items-center gap-1.5 mt-1 text-xs text-[var(--color-text-muted)]">
                         <span>{getCategory( txn.category_id ?? "" )?.name ?? "Uncategorized"}</span>
-                        {txn.is_internal_transfer && (
-                          <>
-                            <span>·</span>
-                            <span className="text-[var(--color-accent)]">Transfer</span>
-                          </>
-                        )}
                         {txn.is_recurring && (
                           <>
                             <span>·</span>
