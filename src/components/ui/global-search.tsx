@@ -171,6 +171,11 @@ export function GlobalSearch() {
   return (
     <div className="fixed inset-0 z-50 flex flex-col sm:items-center sm:justify-center sm:p-4 sm:pt-[15vh]">
       <div className="absolute inset-0 bg-black/60" onClick={closeModal} />
+      {/* Spacer clears mobile status bar + top bar; extra 1rem buffer for env() fallback */}
+      <div
+        className="relative sm:hidden shrink-0"
+        style={{ height: "calc(env(safe-area-inset-top, 0px) + 4.5rem)" }}
+      />
       <div
         className="relative z-10 w-full flex flex-col flex-1 sm:flex-none sm:max-w-lg sm:rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl overflow-hidden"
         onKeyDown={handleModalKeydown}
@@ -322,9 +327,14 @@ export function GlobalSearch() {
               );
             })}
           </div>
+          {/* Bottom spacer on mobile keeps last results above the fixed bottom nav + safe area */}
+          <div
+            className="sm:hidden shrink-0"
+            style={{ height: "calc(env(safe-area-inset-bottom, 0px) + 5rem)" }}
+          />
         </div>
 
-        <div className="border-t border-[var(--color-border)] px-4 py-2 flex items-center gap-3">
+        <div className="hidden sm:flex border-t border-[var(--color-border)] px-4 py-2 items-center gap-3">
           <span className="text-[10px] text-[var(--color-text-muted)]">
             <kbd className="inline-flex h-4 items-center rounded border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-1 font-mono text-[10px]">↑↓</kbd>
             {" "}navigate

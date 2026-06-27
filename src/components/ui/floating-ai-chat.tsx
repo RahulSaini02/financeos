@@ -68,9 +68,10 @@ export function FloatingAiChat () {
               exit={{ y: "100%" }}
               transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
               className="fixed z-50 bg-[var(--color-bg-primary)] border border-[var(--color-border)] shadow-2xl overflow-hidden flex flex-col
-                inset-x-0 bottom-0 top-[5vh] rounded-t-2xl
+                inset-x-0 bottom-0 rounded-t-2xl
                 sm:inset-auto sm:bottom-6 sm:right-6 sm:top-6 sm:left-auto sm:w-[520px] sm:rounded-2xl
                 lg:w-[50vw] lg:max-w-[900px]"
+              style={{ top: "max(calc(env(safe-area-inset-top, 0px) + 0.5rem), 1.5rem)" }}
               onClick={( e ) => e.stopPropagation()}
             >
               {/* Close button — floats top-right inside panel */}
