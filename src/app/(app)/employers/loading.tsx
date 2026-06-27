@@ -1,5 +1,5 @@
-import { TablePageSkeleton } from "@/components/ui/skeleton";
+import { GridPageSkeleton } from "@/components/ui/skeleton";
 
 export default function EmployersLoading() {
-  return <TablePageSkeleton rows={8} />;
+  return <GridPageSkeleton cards={4} />;
 }
