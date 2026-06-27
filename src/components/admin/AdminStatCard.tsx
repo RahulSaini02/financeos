@@ -5,9 +5,10 @@ interface AdminStatCardProps {
   label: string
   value: number | string
   accent?: boolean
+  subtitle?: string
 }
 
-export default function AdminStatCard({ icon: Icon, label, value, accent }: AdminStatCardProps) {
+export default function AdminStatCard({ icon: Icon, label, value, accent, subtitle }: AdminStatCardProps) {
   return (
     <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 md:p-6">
       <div className="flex items-center gap-2 mb-3 md:mb-4">
@@ -19,6 +20,9 @@ export default function AdminStatCard({ icon: Icon, label, value, accent }: Admi
       <p className={`text-2xl md:text-3xl font-bold ${accent ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-primary)]'}`}>
         {value}
       </p>
+      {subtitle && (
+        <p className="text-xs text-[var(--color-text-muted)] mt-1">{subtitle}</p>
+      )}
     </div>
   )
 }
