@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { Card, CardHeader, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDate, parseLocalDate } from "@/lib/utils";
 import { createClient } from "@/lib/supabase";
 import type { Paycheck, Employer, Account } from "@/lib/types";
 import {
@@ -492,11 +492,7 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
                     }
                   >
                     <td className="px-4 py-3 text-[var(--color-text-primary)] whitespace-nowrap">
-                      {new Date(p.date).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
+                      {formatDate(p.date)}
                     </td>
                     <td className="px-4 py-3 text-[var(--color-text-secondary)] whitespace-nowrap">{p.employer}</td>
                     <td className="px-4 py-3 text-[var(--color-text-primary)]">{formatCurrency(p.gross_pay)}</td>
@@ -631,7 +627,7 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
                         {emp.location && <span>📍 {emp.location}</span>}
                         {emp.manager && <span>👤 {emp.manager}</span>}
                         {emp.ein && <span>EIN: {emp.ein}</span>}
-                        {emp.my_start_date && <span>Since {new Date(emp.my_start_date).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</span>}
+                        {emp.my_start_date && <span>Since {parseLocalDate(emp.my_start_date).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</span>}
                       </div>
                     );
                   })()}
