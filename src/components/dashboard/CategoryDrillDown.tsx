@@ -98,7 +98,7 @@ export function CategoryDrillDown({
 
       {/* Peek bar — mobile only, when panel is collapsed */}
       {!expanded && (
-        <div className="lg:hidden fixed inset-x-0 bottom-[4rem] z-40 flex items-center gap-3 px-4 h-12 bg-[var(--color-bg-secondary)] border-t border-[var(--color-border)] shadow-lg">
+        <div className="lg:hidden fixed inset-x-0 bottom-[4rem] z-50 flex items-center gap-3 px-4 h-12 bg-[var(--color-bg-secondary)] border-t border-[var(--color-border)] shadow-lg">
           <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: color }} />
           <span className="flex-1 text-sm font-medium text-[var(--color-text-primary)] truncate">
             {categoryName}

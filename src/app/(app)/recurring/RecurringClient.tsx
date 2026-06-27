@@ -23,6 +23,7 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
 import { EmptyState } from "@/components/ui/empty-state";
+import { EmptyRecurring } from "@/components/ui/empty-illustrations";
 import { StatusBadge } from "@/components/ui/status-badge";
 
 type FrequencyOption = "daily" | "weekly" | "biweekly" | "monthly" | "quarterly" | "annually" | "yearly";
@@ -650,6 +651,7 @@ export function RecurringClient({
               ? "Add your first recurring rule to automate transactions."
               : `No ${activeFilter} recurring rules.`
           }
+          illustration={<EmptyRecurring />}
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

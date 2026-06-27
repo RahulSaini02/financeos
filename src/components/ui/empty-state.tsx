@@ -5,11 +5,17 @@ interface EmptyStateProps {
   title: string;
   description?: string;
   action?: { label: string; href?: string; onClick?: () => void };
+  illustration?: React.ReactNode;
 }
 
-export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
+export function EmptyState({ icon, title, description, action, illustration }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
+      {illustration && (
+        <div className="mb-4 opacity-80" style={{ maxWidth: 160, maxHeight: 120 }}>
+          {illustration}
+        </div>
+      )}
       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-bg-tertiary)] mb-4 text-[var(--color-text-muted)]">
         {icon}
       </div>

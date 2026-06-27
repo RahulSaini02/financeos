@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, Suspense, useCallback, useRef } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/components/auth-provider";
 import type { Transaction, Account, Category, Loan } from "@/lib/types";
@@ -22,8 +22,6 @@ import {
   ChevronLeft,
   ChevronRight,
   History,
-  X,
-  CheckSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -31,6 +29,8 @@ import { TablePageSkeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
 import { EmptyState } from "@/components/ui/empty-state";
+import { EmptyTransactions } from "@/components/ui/empty-illustrations";
+import { PullToRefresh } from "@/components/ui/pull-to-refresh";
 import { TransactionModal } from "@/components/transactions/transaction-modal";
 
 const PAGE_SIZE = 50;
@@ -48,8 +48,6 @@ interface TransactionFilters {
   endDate?: string;
   txnType?: "all" | "credit" | "debit" | "transfer";
   flagged?: boolean;
-  minAmount?: number;
-  maxAmount?: number;
 }
 
 // ── CSV export: fetches all matching transactions (no page limit) ────────────
@@ -110,8 +108,6 @@ function buildParams (
   if ( search ) p.set( "search", search );
   if ( filters.txnType && filters.txnType !== "all" ) p.set( "txnType", filters.txnType );
   if ( filters.flagged ) p.set( "flagged", "true" );
-  if ( filters.minAmount !== undefined ) p.set( "minAmount", String( filters.minAmount ) );
-  if ( filters.maxAmount !== undefined ) p.set( "maxAmount", String( filters.maxAmount ) );
   return p.toString();
 }
 
@@ -122,6 +118,117 @@ interface TransactionsClientProps {
   initialWindowStart?: string | null;
 }
 
+// ── Swipe-to-delete row ────────────────────────────────────────────────────────
+function SwipeableRow ({
+  id,
+  isOpen,
+  onOpen,
+  onClose,
+  onDelete,
+  children,
+}: {
+  id: string;
+  isOpen: boolean;
+  onOpen: ( id: string ) => void;
+  onClose: () => void;
+  onDelete: () => void;
+  children: React.ReactNode;
+}) {
+  const innerRef = useRef<HTMLDivElement>( null );
+  const startXRef = useRef( 0 );
+  const activeRef = useRef( false );
+
+  function pointerDown ( e: React.PointerEvent<HTMLDivElement> ) {
+    // Capture so we keep receiving events if pointer leaves element
+    try { e.currentTarget.setPointerCapture( e.pointerId ); } catch { /* ignore */ }
+    startXRef.current = e.clientX;
+    activeRef.current = true;
+    if ( innerRef.current ) innerRef.current.style.transition = "none";
+  }
+
+  function pointerMove ( e: React.PointerEvent<HTMLDivElement> ) {
+    if ( !activeRef.current || !e.isPrimary ) return;
+    const delta = e.clientX - startXRef.current;
+    const inner = innerRef.current;
+    if ( !inner ) return;
+    if ( isOpen ) {
+      // Swiping right closes
+      const x = Math.max( -72, Math.min( 0, -72 + delta ) );
+      inner.style.transform = `translateX(${ x }px)`;
+    } else if ( delta < 0 ) {
+      // Swiping left opens
+      const x = Math.max( -72, delta );
+      inner.style.transform = `translateX(${ x }px)`;
+    }
+  }
+
+  function pointerUp ( e: React.PointerEvent<HTMLDivElement> ) {
+    if ( !activeRef.current ) return;
+    activeRef.current = false;
+    const delta = e.clientX - startXRef.current;
+    const inner = innerRef.current;
+    if ( inner ) inner.style.transition = "transform 0.2s";
+
+    if ( isOpen ) {
+      if ( delta > 36 ) {
+        if ( inner ) inner.style.transform = "translateX(0)";
+        onClose();
+      } else {
+        if ( inner ) inner.style.transform = "translateX(-72px)";
+      }
+    } else {
+      if ( delta < -72 ) {
+        if ( inner ) inner.style.transform = "translateX(-72px)";
+        onOpen( id );
+      } else {
+        if ( inner ) inner.style.transform = "translateX(0)";
+      }
+    }
+  }
+
+  function pointerCancel () {
+    activeRef.current = false;
+    const inner = innerRef.current;
+    if ( inner ) {
+      inner.style.transition = "transform 0.2s";
+      inner.style.transform = "translateX(0)";
+    }
+    if ( isOpen ) onClose();
+  }
+
+  return (
+    <div
+      className="relative overflow-hidden"
+      style={{ touchAction: "pan-y" }}
+      onPointerDown={pointerDown}
+      onPointerMove={pointerMove}
+      onPointerUp={pointerUp}
+      onPointerCancel={pointerCancel}
+    >
+      {/* Red delete button revealed on swipe-left */}
+      <div className="absolute inset-y-0 right-0 flex w-[72px] items-center justify-center bg-red-600">
+        <button
+          className="flex h-full w-full items-center justify-center"
+          onClick={( e ) => { e.stopPropagation(); onDelete(); }}
+          aria-label="Delete transaction"
+        >
+          <Trash2 className="h-5 w-5 text-white" />
+        </button>
+      </div>
+      {/* Sliding card content */}
+      <div
+        ref={innerRef}
+        style={{
+          transform: isOpen ? "translateX(-72px)" : "translateX(0)",
+          transition: "transform 0.2s",
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function TransactionsContent ( {
   initialAccounts,
   initialCategories,
@@ -130,6 +237,7 @@ function TransactionsContent ( {
 }: TransactionsClientProps ) {
   const { user } = useAuth();
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   const [transactions, setTransactions] = useState<Transaction[]>( [] );
   const [totalCount, setTotalCount] = useState( 0 );
@@ -161,19 +269,8 @@ function TransactionsContent ( {
   const [editingTxn, setEditingTxn] = useState<Transaction | null>( null );
   const [groupBy, setGroupBy] = useState<"date" | "category" | "account" | "none">( "date" );
   const [exporting, setExporting] = useState( false );
-  const [selectedIds, setSelectedIds] = useState<Set<string>>( new Set() );
-  const [inlineEditId, setInlineEditId] = useState<string | null>( null );
-  const [bulkRecategory, setBulkRecategory] = useState<string>( "" );
-  const [selectMode, setSelectMode] = useState( false );
-  const [alertTooltipId, setAlertTooltipId] = useState<string | null>( null );
-
-  // Close alert tooltip on any document click
-  useEffect( () => {
-    if ( !alertTooltipId ) return;
-    function handleDocClick() { setAlertTooltipId( null ); }
-    document.addEventListener( "click", handleDocClick );
-    return () => document.removeEventListener( "click", handleDocClick );
-  }, [alertTooltipId] );
+  // Swipe-to-delete: tracks which txn card is open (swiped left to reveal delete btn)
+  const [swipeOpenId, setSwipeOpenId] = useState<string | null>( null );
 
   // Debounce search input
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>( null );
@@ -231,12 +328,7 @@ function TransactionsContent ( {
 
   useEffect( () => {
     setPage( 0 );
-    setSelectedIds( new Set() );
   }, [filters, debouncedSearch, windowStart] );
-
-  useEffect( () => {
-    setSelectedIds( new Set() );
-  }, [page] );
 
   useEffect( () => {
     fetchPage( page );
@@ -246,23 +338,12 @@ function TransactionsContent ( {
   const isLastPage = page >= totalPages - 1;
   const isWindowLimited = windowStart !== null && !filters.startDate;
 
-  // ── Amount filter (client-side) ──────────────────────────────────────────────
-  const isAmountFiltered = filters.minAmount !== undefined || filters.maxAmount !== undefined;
-  const displayTransactions = isAmountFiltered
-    ? transactions.filter( ( t ) => {
-        const abs = Math.abs( t.final_amount );
-        if ( filters.minAmount !== undefined && abs < filters.minAmount ) return false;
-        if ( filters.maxAmount !== undefined && abs > filters.maxAmount ) return false;
-        return true;
-      } )
-    : transactions;
-
   // ── Grouped for display ──────────────────────────────────────────────────────
   const grouped = ( () => {
-    if ( groupBy === "none" ) return { "All Transactions": displayTransactions };
+    if ( groupBy === "none" ) return { "All Transactions": transactions };
     if ( groupBy === "date" ) {
       const map: Record<string, Transaction[]> = {};
-      displayTransactions.forEach( ( t ) => {
+      transactions.forEach( ( t ) => {
         const key = formatDate( t.date, "long" );
         if ( !map[key] ) map[key] = [];
         map[key].push( t );
@@ -271,7 +352,7 @@ function TransactionsContent ( {
     }
     if ( groupBy === "category" ) {
       const map: Record<string, Transaction[]> = {};
-      displayTransactions.forEach( ( t ) => {
+      transactions.forEach( ( t ) => {
         const cat = categories.find( ( c ) => c.id === t.category_id )?.name ?? "Uncategorized";
         if ( !map[cat] ) map[cat] = [];
         map[cat].push( t );
@@ -280,14 +361,14 @@ function TransactionsContent ( {
     }
     if ( groupBy === "account" ) {
       const map: Record<string, Transaction[]> = {};
-      displayTransactions.forEach( ( t ) => {
+      transactions.forEach( ( t ) => {
         const acc = accounts.find( ( a ) => a.id === t.account_id )?.name ?? "Unknown";
         if ( !map[acc] ) map[acc] = [];
         map[acc].push( t );
       } );
       return map;
     }
-    return { "All Transactions": displayTransactions };
+    return { "All Transactions": transactions };
   } )();
 
   function getCategory ( id: string ) { return categories.find( ( c ) => c.id === id ); }
@@ -347,45 +428,6 @@ function TransactionsContent ( {
     setFilters( next );
   }
 
-  async function handleBulkDelete () {
-    if ( selectedIds.size === 0 ) return;
-    if ( !window.confirm( `Delete ${ selectedIds.size } transaction${ selectedIds.size !== 1 ? "s" : "" }?` ) ) return;
-    const res = await fetch( "/api/transactions/bulk", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify( { action: "delete", ids: Array.from( selectedIds ) } ),
-    } );
-    if ( !res.ok ) return;
-    setSelectedIds( new Set() );
-    fetchPage( page );
-  }
-
-  async function handleBulkRecategorize ( categoryId: string ) {
-    if ( selectedIds.size === 0 || !categoryId ) return;
-    const res = await fetch( "/api/transactions/bulk", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify( { action: "recategorize", ids: Array.from( selectedIds ), category_id: categoryId || null } ),
-    } );
-    if ( !res.ok ) return;
-    setSelectedIds( new Set() );
-    setBulkRecategory( "" );
-    fetchPage( page );
-  }
-
-  async function handleInlineCategoryChange ( txnId: string, categoryId: string ) {
-    setTransactions( ( prev ) =>
-      prev.map( ( t ) => ( t.id === txnId ? { ...t, category_id: categoryId || null } : t ) )
-    );
-    setInlineEditId( null );
-    const res = await fetch( `/api/transactions/${ txnId }`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify( { category_id: categoryId || null } ),
-    } );
-    if ( res.ok ) fetchPage( page );
-  }
-
   const activeFilterCount = [
     filters.accountId,
     filters.categoryId,
@@ -393,17 +435,15 @@ function TransactionsContent ( {
     filters.endDate,
     filters.txnType && filters.txnType !== "all" ? filters.txnType : undefined,
     filters.flagged ? true : undefined,
-    filters.minAmount !== undefined ? true : undefined,
-    filters.maxAmount !== undefined ? true : undefined,
   ].filter( Boolean ).length;
 
   const drillDownCategory = filters.categoryId && filters.categoryId !== "__uncategorized__"
     ? categories.find( ( c ) => c.id === filters.categoryId ) ?? null
     : null;
 
-  // Summary of current page amounts (non-transfer, after client-side amount filter)
-  const pageIncome = displayTransactions.filter( t => t.cr_dr === "credit" && !t.is_internal_transfer ).reduce( ( s, t ) => s + Math.abs( t.final_amount ), 0 );
-  const pageExpenses = displayTransactions.filter( t => t.cr_dr === "debit" && !t.is_internal_transfer ).reduce( ( s, t ) => s + Math.abs( t.final_amount ), 0 );
+  // Summary of current page amounts (non-transfer)
+  const pageIncome = transactions.filter( t => t.cr_dr === "credit" && !t.is_internal_transfer ).reduce( ( s, t ) => s + Math.abs( t.final_amount ), 0 );
+  const pageExpenses = transactions.filter( t => t.cr_dr === "debit" && !t.is_internal_transfer ).reduce( ( s, t ) => s + Math.abs( t.final_amount ), 0 );
 
   if ( loading && transactions.length === 0 ) return <TablePageSkeleton rows={10} />;
 
@@ -417,6 +457,7 @@ function TransactionsContent ( {
   }
 
   return (
+    <PullToRefresh onRefresh={async () => { router.refresh(); }}>
     <div className="p-4 md:p-6 space-y-4 md:space-y-5">
 
       {/* Drill-down breadcrumb */}
@@ -443,7 +484,7 @@ function TransactionsContent ( {
         subtitle={
           loading
             ? "Loading…"
-            : `${ isAmountFiltered ? displayTransactions.length : totalCount } total · +${ formatCurrency( pageIncome ) } · -${ formatCurrency( pageExpenses ) } this page${ isAmountFiltered ? " (filtered locally)" : "" }`
+            : `${ totalCount } total · +${ formatCurrency( pageIncome ) } · -${ formatCurrency( pageExpenses ) } this page`
         }
         tooltip={
           <HelpModal
@@ -491,16 +532,6 @@ function TransactionsContent ( {
           <span className="hidden sm:inline">Filters</span>
           {activeFilterCount > 0 && ` (${ activeFilterCount })`}
         </Button>
-        <button
-          onClick={() => { setSelectMode( v => !v ); if ( selectMode ) setSelectedIds( new Set() ); }}
-          className={`flex items-center gap-1 h-8 rounded-lg border px-2.5 text-xs font-medium transition-colors ${ selectMode
-            ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
-            : "border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]"
-          }`}
-        >
-          <CheckSquare className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline ml-0.5">{selectMode ? "Cancel" : "Select"}</span>
-        </button>
         <select
           className="h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-2 text-xs text-[var(--color-text-secondary)] flex items-center self-center"
           value={groupBy}
@@ -541,224 +572,84 @@ function TransactionsContent ( {
 
       {/* Filters panel */}
       {showFilters && (
-        <>
-          {/* Mobile: backdrop + bottom sheet */}
-          <div
-            className="lg:hidden fixed inset-0 bg-black/50 z-40"
-            onClick={() => setShowFilters( false )}
-          />
-          <div className="lg:hidden fixed inset-x-0 bottom-0 z-50 bg-[var(--color-bg-secondary)] border-t border-[var(--color-border)] rounded-t-2xl shadow-2xl">
-            <div className="flex justify-center pt-2 pb-1">
-              <div className="h-1 w-10 rounded-full bg-[var(--color-border)]" />
+        <Card className="p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+            <div>
+              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Type</label>
+              <select
+                className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                value={filters.txnType ?? "all"}
+                onChange={( e ) => handleFilterChange( { ...filters, txnType: e.target.value as TransactionFilters["txnType"] } )}
+              >
+                <option value="all">All Types</option>
+                <option value="credit">Credits Only</option>
+                <option value="debit">Debits Only</option>
+                <option value="transfer">Transfers Only</option>
+              </select>
             </div>
-            <div className="px-4 pt-2 max-h-[80vh] overflow-y-auto" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
-              <h3 className="text-sm font-semibold mb-3">Filters</h3>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Type</label>
-                  <select
-                    className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                    value={filters.txnType ?? "all"}
-                    onChange={( e ) => handleFilterChange( { ...filters, txnType: e.target.value as TransactionFilters["txnType"] } )}
-                  >
-                    <option value="all">All Types</option>
-                    <option value="credit">Credits Only</option>
-                    <option value="debit">Debits Only</option>
-                    <option value="transfer">Transfers Only</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Account</label>
-                  <select
-                    className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                    value={filters.accountId ?? ""}
-                    onChange={( e ) => handleFilterChange( { ...filters, accountId: e.target.value || undefined } )}
-                  >
-                    <option value="">All Accounts</option>
-                    {accounts.map( ( a ) => <option key={a.id} value={a.id}>{a.name}</option> )}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Category</label>
-                  <select
-                    className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                    value={filters.categoryId ?? ""}
-                    onChange={( e ) => handleFilterChange( { ...filters, categoryId: e.target.value || undefined } )}
-                  >
-                    <option value="">All Categories</option>
-                    <option value="__uncategorized__">Uncategorized</option>
-                    {categories.map( ( c ) => <option key={c.id} value={c.id}>{c.name}</option> )}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-[var(--color-text-muted)] mb-1 block">From</label>
-                  <input
-                    type="date"
-                    className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                    value={filters.startDate ?? ""}
-                    onChange={( e ) => handleFilterChange( { ...filters, startDate: e.target.value || undefined } )}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-[var(--color-text-muted)] mb-1 block">To</label>
-                  <input
-                    type="date"
-                    className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                    value={filters.endDate ?? ""}
-                    onChange={( e ) => handleFilterChange( { ...filters, endDate: e.target.value || undefined } )}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Min Amount ($)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                    placeholder="0.00"
-                    value={filters.minAmount ?? ""}
-                    onChange={( e ) => handleFilterChange( { ...filters, minAmount: e.target.value !== "" ? parseFloat( e.target.value ) : undefined } )}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Max Amount ($)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                    placeholder="Any"
-                    value={filters.maxAmount ?? ""}
-                    onChange={( e ) => handleFilterChange( { ...filters, maxAmount: e.target.value !== "" ? parseFloat( e.target.value ) : undefined } )}
-                  />
-                </div>
-                <div className="flex flex-col justify-end">
-                  <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Flagged Only</label>
-                  <div className="h-8 flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="flagged-filter-mobile"
-                      checked={!!filters.flagged}
-                      onChange={( e ) => handleFilterChange( { ...filters, flagged: e.target.checked ? true : undefined } )}
-                      className="h-4 w-4 rounded accent-[var(--color-accent)] cursor-pointer"
-                    />
-                    <label htmlFor="flagged-filter-mobile" className="text-sm text-[var(--color-text-secondary)] cursor-pointer select-none">
-                      Show flagged
-                    </label>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-4 flex gap-2">
-                <Button variant="ghost" size="sm" className="flex-1" onClick={() => handleFilterChange( { txnType: "all" } )}>Clear</Button>
-                <Button size="sm" className="flex-1" onClick={() => setShowFilters( false )}>Apply</Button>
+            <div>
+              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Account</label>
+              <select
+                className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                value={filters.accountId ?? ""}
+                onChange={( e ) => handleFilterChange( { ...filters, accountId: e.target.value || undefined } )}
+              >
+                <option value="">All Accounts</option>
+                {accounts.map( ( a ) => <option key={a.id} value={a.id}>{a.name}</option> )}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Category</label>
+              <select
+                className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                value={filters.categoryId ?? ""}
+                onChange={( e ) => handleFilterChange( { ...filters, categoryId: e.target.value || undefined } )}
+              >
+                <option value="">All Categories</option>
+                <option value="__uncategorized__">Uncategorized</option>
+                {categories.map( ( c ) => <option key={c.id} value={c.id}>{c.name}</option> )}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">From</label>
+              <input
+                type="date"
+                className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                value={filters.startDate ?? ""}
+                onChange={( e ) => handleFilterChange( { ...filters, startDate: e.target.value || undefined } )}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">To</label>
+              <input
+                type="date"
+                className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
+                value={filters.endDate ?? ""}
+                onChange={( e ) => handleFilterChange( { ...filters, endDate: e.target.value || undefined } )}
+              />
+            </div>
+            <div className="flex flex-col justify-end">
+              <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Flagged Only</label>
+              <div className="h-8 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="flagged-filter"
+                  checked={!!filters.flagged}
+                  onChange={( e ) => handleFilterChange( { ...filters, flagged: e.target.checked ? true : undefined } )}
+                  className="h-4 w-4 rounded accent-[var(--color-accent)] cursor-pointer"
+                />
+                <label htmlFor="flagged-filter" className="text-sm text-[var(--color-text-secondary)] cursor-pointer select-none">
+                  Show flagged
+                </label>
               </div>
             </div>
           </div>
-
-          {/* Desktop: inline card */}
-          <Card className="hidden lg:block p-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div>
-                <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Type</label>
-                <select
-                  className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                  value={filters.txnType ?? "all"}
-                  onChange={( e ) => handleFilterChange( { ...filters, txnType: e.target.value as TransactionFilters["txnType"] } )}
-                >
-                  <option value="all">All Types</option>
-                  <option value="credit">Credits Only</option>
-                  <option value="debit">Debits Only</option>
-                  <option value="transfer">Transfers Only</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Account</label>
-                <select
-                  className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                  value={filters.accountId ?? ""}
-                  onChange={( e ) => handleFilterChange( { ...filters, accountId: e.target.value || undefined } )}
-                >
-                  <option value="">All Accounts</option>
-                  {accounts.map( ( a ) => <option key={a.id} value={a.id}>{a.name}</option> )}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Category</label>
-                <select
-                  className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                  value={filters.categoryId ?? ""}
-                  onChange={( e ) => handleFilterChange( { ...filters, categoryId: e.target.value || undefined } )}
-                >
-                  <option value="">All Categories</option>
-                  <option value="__uncategorized__">Uncategorized</option>
-                  {categories.map( ( c ) => <option key={c.id} value={c.id}>{c.name}</option> )}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-[var(--color-text-muted)] mb-1 block">From</label>
-                <input
-                  type="date"
-                  className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                  value={filters.startDate ?? ""}
-                  onChange={( e ) => handleFilterChange( { ...filters, startDate: e.target.value || undefined } )}
-                />
-              </div>
-              <div>
-                <label className="text-xs text-[var(--color-text-muted)] mb-1 block">To</label>
-                <input
-                  type="date"
-                  className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                  value={filters.endDate ?? ""}
-                  onChange={( e ) => handleFilterChange( { ...filters, endDate: e.target.value || undefined } )}
-                />
-              </div>
-              <div>
-                <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Min Amount ($)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                  placeholder="0.00"
-                  value={filters.minAmount ?? ""}
-                  onChange={( e ) => handleFilterChange( { ...filters, minAmount: e.target.value !== "" ? parseFloat( e.target.value ) : undefined } )}
-                />
-              </div>
-              <div>
-                <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Max Amount ($)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className="w-full h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-sm"
-                  placeholder="Any"
-                  value={filters.maxAmount ?? ""}
-                  onChange={( e ) => handleFilterChange( { ...filters, maxAmount: e.target.value !== "" ? parseFloat( e.target.value ) : undefined } )}
-                />
-              </div>
-              <div className="flex flex-col justify-end">
-                <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Flagged Only</label>
-                <div className="h-8 flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="flagged-filter"
-                    checked={!!filters.flagged}
-                    onChange={( e ) => handleFilterChange( { ...filters, flagged: e.target.checked ? true : undefined } )}
-                    className="h-4 w-4 rounded accent-[var(--color-accent)] cursor-pointer"
-                  />
-                  <label htmlFor="flagged-filter" className="text-sm text-[var(--color-text-secondary)] cursor-pointer select-none">
-                    Show flagged
-                  </label>
-                </div>
-              </div>
-            </div>
-            <div className="mt-3 flex justify-end">
-              <Button variant="ghost" size="sm" onClick={() => handleFilterChange( { txnType: "all" } )}>
-                Clear filters
-              </Button>
-            </div>
-          </Card>
-        </>
+          <div className="mt-3 flex justify-end">
+            <Button variant="ghost" size="sm" onClick={() => handleFilterChange( { txnType: "all" } )}>
+              Clear filters
+            </Button>
+          </div>
+        </Card>
       )}
 
       {/* Search */}
@@ -786,35 +677,26 @@ function TransactionsContent ( {
                 {txns.length} · {formatCurrency( txns.reduce( ( s, t ) => s + t.final_amount, 0 ) )}
               </span>
             </div>
-            <Card className="divide-y divide-[var(--color-border)]">
+            <Card className="divide-y divide-[var(--color-border)] overflow-hidden">
               {txns.map( ( txn ) => (
-                <div
+                <SwipeableRow
                   key={txn.id}
-                  className="flex items-start gap-3 px-3 py-3 hover:bg-[var(--color-bg-tertiary)] transition-colors cursor-pointer sm:items-center sm:px-4"
-                  onClick={() => handleEdit( txn )}
+                  id={txn.id}
+                  isOpen={swipeOpenId === txn.id}
+                  onOpen={( id ) => setSwipeOpenId( id )}
+                  onClose={() => setSwipeOpenId( null )}
+                  onDelete={() => handleDelete( txn.id )}
                 >
-                  {/* Bulk select checkbox — only visible in select mode */}
-                  {selectMode && (
-                    <div
-                      className="flex items-center shrink-0 self-center"
-                      onClick={( e ) => e.stopPropagation()}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has( txn.id )}
-                        onChange={() => {
-                          setSelectedIds( ( prev ) => {
-                            const next = new Set( prev );
-                            if ( next.has( txn.id ) ) next.delete( txn.id );
-                            else next.add( txn.id );
-                            return next;
-                          } );
-                        }}
-                        className="h-4 w-4 rounded accent-[var(--color-accent)] cursor-pointer"
-                      />
-                    </div>
-                  )}
-
+                <div
+                  className="flex items-start gap-3 px-3 py-3 hover:bg-[var(--color-bg-tertiary)] transition-colors cursor-pointer sm:items-center sm:px-4"
+                  onClick={() => {
+                    if ( swipeOpenId === txn.id ) {
+                      setSwipeOpenId( null );
+                    } else {
+                      handleEdit( txn );
+                    }
+                  }}
+                >
                   {/* Icon */}
                   <div
                     className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg mt-0.5 sm:mt-0 ${ txn.is_internal_transfer
@@ -835,147 +717,59 @@ function TransactionsContent ( {
 
                   {/* Main */}
                   <div className="flex-1 min-w-0">
-
-                    {/* ── MOBILE CARD (sm:hidden) ── */}
-                    <div className="sm:hidden">
-                      {/* Title row: name · flag · amount · delete */}
-                      <div className="flex items-center gap-1.5">
-                        <span className="flex-1 text-sm font-medium text-[var(--color-text-primary)] truncate min-w-0">
-                          {txn.description}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium truncate">{txn.description}</span>
+                      {txn.flagged && (
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-[var(--color-warning)]" />
+                      )}
+                      {txn.is_internal_transfer && (
+                        <span className="text-[0.6rem] font-medium px-1.5 py-0.5 rounded bg-[var(--color-accent)]/10 text-[var(--color-accent)]">
+                          TRANSFER
                         </span>
-                        {txn.flagged && (
-                          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-[var(--color-warning)]" />
-                        )}
-                        <span
-                          className={`text-sm font-medium whitespace-nowrap shrink-0 ${
-                            txn.cr_dr === "credit"
-                              ? "text-[var(--color-income)]"
-                              : "text-[var(--color-text-primary)]"
-                          }`}
-                        >
-                          {txn.cr_dr === "credit" ? "+" : ""}
-                          {formatCurrency( txn.final_amount )}
+                      )}
+                      {txn.is_recurring && (
+                        <span className="text-[0.6rem] font-medium px-1.5 py-0.5 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)]">
+                          RECURRING
                         </span>
-                        <button
-                          className="shrink-0 p-1.5 rounded text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-colors"
-                          onClick={( e ) => { e.stopPropagation(); handleDelete( txn.id ); }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                      {/* Category */}
-                      <div className="flex items-center gap-1.5 mt-1 text-xs text-[var(--color-text-muted)]">
-                        <span>{getCategory( txn.category_id ?? "" )?.name ?? "Uncategorized"}</span>
-                        {txn.is_recurring && (
-                          <>
-                            <span>·</span>
-                            <span>Recurring</span>
-                          </>
-                        )}
-                      </div>
-                      {/* Date */}
-                      <div className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-                        {formatDate( txn.date )}
-                      </div>
-                      {/* Account */}
-                      <div className="mt-0.5 text-xs text-[var(--color-text-muted)] opacity-75">
-                        {getAccount( txn.account_id )?.name}
-                        {txn.ai_categorized && (
-                          <span className="ml-1.5 opacity-100 text-[var(--color-accent)]">· AI</span>
-                        )}
-                      </div>
-                      {/* Flagged reason */}
-                      {txn.flagged_reason && (
-                        <div className="mt-1 text-xs text-[var(--color-warning)]">
-                          {txn.flagged_reason}
-                        </div>
                       )}
                     </div>
-
-                    {/* ── DESKTOP ROW (hidden sm:block) ── */}
-                    <div className="hidden sm:block">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium truncate">{txn.description}</span>
-                        {txn.flagged && (
-                          <div className="relative shrink-0" onClick={( e ) => e.stopPropagation()}>
-                            <button
-                              onClick={() => setAlertTooltipId( alertTooltipId === txn.id ? null : txn.id )}
-                              className="flex items-center"
-                              aria-label="View flag reason"
-                            >
-                              <AlertTriangle className="h-3.5 w-3.5 text-[var(--color-warning)]" />
-                            </button>
-                            {alertTooltipId === txn.id && txn.flagged_reason && (
-                              <div className="absolute top-6 left-0 z-50 w-56 rounded-lg shadow-lg p-2.5 text-xs bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] text-[var(--color-warning)]">
-                                <div className="absolute -top-1.5 left-2 h-3 w-3 rotate-45 bg-[var(--color-bg-tertiary)] border-t border-l border-[var(--color-border)]" />
-                                {txn.flagged_reason}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        {txn.is_internal_transfer && (
-                          <span className="text-[0.6rem] font-medium px-1.5 py-0.5 rounded bg-[var(--color-accent)]/10 text-[var(--color-accent)]">
-                            TRANSFER
-                          </span>
-                        )}
-                        {txn.is_recurring && (
-                          <span className="text-[0.6rem] font-medium px-1.5 py-0.5 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)]">
-                            RECURRING
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5" onClick={( e ) => e.stopPropagation()}>
-                        {inlineEditId === txn.id ? (
-                          <select
-                            autoFocus
-                            className="text-xs h-6 rounded border border-[var(--color-accent)] bg-[var(--color-bg-tertiary)] px-1 max-w-[140px]"
-                            value={txn.category_id ?? ""}
-                            onChange={( e ) => handleInlineCategoryChange( txn.id, e.target.value )}
-                            onBlur={() => setInlineEditId( null )}
-                          >
-                            <option value="">Uncategorized</option>
-                            {categories.map( ( c ) => (
-                              <option key={c.id} value={c.id}>{c.name}</option>
-                            ) )}
-                          </select>
-                        ) : (
-                          <button
-                            className="text-xs px-1.5 py-0.5 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)]/10 hover:text-[var(--color-accent)] transition-colors"
-                            onClick={() => setInlineEditId( txn.id )}
-                          >
-                            {getCategory( txn.category_id ?? "" )?.name ?? "Uncategorized"}
-                          </button>
-                        )}
-                        <span className="text-xs text-[var(--color-text-muted)]">·</span>
-                        <span className="text-xs text-[var(--color-text-muted)]">
-                          {formatDate( txn.date )}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                        <span className="text-[0.7rem] text-[var(--color-text-muted)] opacity-75">
-                          {getAccount( txn.account_id )?.name}
-                        </span>
-                        {txn.ai_categorized && (
-                          <>
-                            <span className="text-[0.7rem] text-[var(--color-text-muted)] opacity-75">·</span>
-                            <span className="text-[0.7rem] text-[var(--color-accent)] opacity-80">AI</span>
-                          </>
-                        )}
-                        {( txn as Transaction & { loan?: { name: string } } ).loan && (
-                          <>
-                            <span className="text-[0.7rem] text-[var(--color-text-muted)] opacity-75">·</span>
-                            <span className="text-[0.6rem] font-medium px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400">
-                              LOAN: {( txn as Transaction & { loan?: { name: string } } ).loan!.name}
-                            </span>
-                          </>
-                        )}
-                      </div>
+                    {/* Category + date row (mobile: prominent; desktop: merged into details) */}
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <span className="text-xs text-[var(--color-text-muted)]">
+                        {getCategory( txn.category_id ?? "" )?.name ?? "Uncategorized"}
+                      </span>
+                      <span className="text-xs text-[var(--color-text-muted)] sm:hidden">·</span>
+                      <span className="text-xs text-[var(--color-text-muted)] sm:hidden">
+                        {formatDate( txn.date )}
+                      </span>
                     </div>
-
+                    {/* Account + AI + loan — secondary detail row */}
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                      <span className="text-[0.7rem] text-[var(--color-text-muted)] opacity-75">
+                        {getAccount( txn.account_id )?.name}
+                      </span>
+                      {txn.ai_categorized && (
+                        <>
+                          <span className="text-[0.7rem] text-[var(--color-text-muted)] opacity-75">·</span>
+                          <span className="text-[0.7rem] text-[var(--color-accent)] opacity-80">AI</span>
+                        </>
+                      )}
+                      {( txn as Transaction & { loan?: { name: string } } ).loan && (
+                        <>
+                          <span className="text-[0.7rem] text-[var(--color-text-muted)] opacity-75">·</span>
+                          <span className="text-[0.6rem] font-medium px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400">
+                            LOAN: {( txn as Transaction & { loan?: { name: string } } ).loan!.name}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    {txn.flagged_reason && (
+                      <p className="text-xs text-[var(--color-warning)] mt-0.5">{txn.flagged_reason}</p>
+                    )}
                   </div>
 
-                  {/* Amount + date — desktop only */}
-                  <div className="hidden sm:block text-right shrink-0 whitespace-nowrap">
+                  {/* Amount + date */}
+                  <div className="text-right shrink-0">
                     <span
                       className={`text-sm font-medium ${ txn.cr_dr === "credit"
                         ? "text-[var(--color-income)]"
@@ -985,27 +779,28 @@ function TransactionsContent ( {
                       {txn.cr_dr === "credit" ? "+" : ""}
                       {formatCurrency( txn.final_amount )}
                     </span>
-                    <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                    <p className="text-xs text-[var(--color-text-muted)] mt-0.5 hidden sm:block">
                       {formatDate( txn.date )}
                     </p>
                   </div>
 
-                  {/* Actions — desktop only */}
-                  <div className="hidden sm:flex items-center gap-1 shrink-0" onClick={( e ) => e.stopPropagation()}>
+                  {/* Actions */}
+                  <div className="flex items-center gap-1 shrink-0" onClick={( e ) => e.stopPropagation()}>
                     <button
                       className="p-1.5 rounded hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
                       onClick={() => handleEdit( txn )}
                     >
-                      <Edit2 className="h-4 w-4" />
+                      <Edit2 className="h-3.5 w-3.5" />
                     </button>
                     <button
                       className="p-1.5 rounded hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-danger)]"
                       onClick={() => handleDelete( txn.id )}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>
+                </SwipeableRow>
               ) )}
             </Card>
           </div>
@@ -1016,6 +811,7 @@ function TransactionsContent ( {
             icon={<Plus className="h-8 w-8" />}
             title="No transactions found"
             action={{ label: "Add your first transaction", onClick: handleAdd }}
+            illustration={<EmptyTransactions />}
           />
         )}
       </div>
@@ -1061,52 +857,6 @@ function TransactionsContent ( {
         )}
       </div>
 
-      {/* Floating bulk action bar */}
-      {selectedIds.size > 0 && (
-        <div className="fixed bottom-[calc(4rem+1.5rem)] lg:bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-5 py-3 rounded-2xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)] shadow-xl whitespace-nowrap">
-          <span className="text-sm font-medium text-[var(--color-text-primary)]">
-            {selectedIds.size} selected
-          </span>
-          <select
-            className="h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-2 text-xs text-[var(--color-text-secondary)]"
-            value={bulkRecategory}
-            onChange={( e ) => {
-              setBulkRecategory( e.target.value );
-              if ( e.target.value ) handleBulkRecategorize( e.target.value );
-            }}
-          >
-            <option value="">Recategorize…</option>
-            {categories.map( ( c ) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ) )}
-          </select>
-          <button
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--color-danger)]/10 text-[var(--color-danger)] hover:bg-[var(--color-danger)]/20 text-xs font-medium transition-colors"
-            onClick={handleBulkDelete}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Delete
-          </button>
-          <button
-            className="p-1.5 rounded-lg hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
-            onClick={() => setSelectedIds( new Set() )}
-            aria-label="Clear selection"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Mobile FAB — Add transaction */}
-      <button
-        className="lg:hidden fixed right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-accent)] shadow-lg text-white active:scale-95 transition-transform"
-        style={{ bottom: "calc(4rem + 1rem + env(safe-area-inset-bottom))" }}
-        onClick={handleAdd}
-        aria-label="Add transaction"
-      >
-        <Plus className="h-6 w-6" />
-      </button>
-
       {/* Add/Edit Modal */}
       {showModal && (
         <TransactionModal
@@ -1119,6 +869,7 @@ function TransactionsContent ( {
         />
       )}
     </div>
+    </PullToRefresh>
   );
 }
 

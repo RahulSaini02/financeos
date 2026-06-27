@@ -9,6 +9,7 @@ import type { Investment, SavingsGoal } from "@/lib/types";
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
 import { EmptyState } from "@/components/ui/empty-state";
+import { EmptyInvestments } from "@/components/ui/empty-illustrations";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   TrendingUp,
@@ -402,6 +403,7 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
           icon={<TrendingUp className="h-8 w-8" />}
           title="No investments found"
           description="Add your first investment to track portfolio performance."
+          illustration={<EmptyInvestments />}
         />
       ) : (
         <div className="space-y-6">
@@ -565,6 +567,7 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
             icon={<Target className="h-8 w-8" />}
             title="No savings goals yet"
             description="Add a savings goal to track your progress."
+            illustration={<EmptyInvestments />}
           />
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
