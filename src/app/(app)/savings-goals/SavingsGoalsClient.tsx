@@ -257,15 +257,15 @@ function SavingsGoalModal ( {
     try {
       const res = editingGoal
         ? await fetch( "/api/savings-goals", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify( { id: editingGoal.id, ...payload } ),
-          } )
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify( { id: editingGoal.id, ...payload } ),
+        } )
         : await fetch( "/api/savings-goals", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify( payload ),
-          } );
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify( payload ),
+        } );
 
       setSaving( false );
       if ( !res.ok ) {
@@ -591,7 +591,7 @@ export function SavingsGoalsClient ( { initialGoals, accounts }: SavingsGoalsCli
   const handleDelete = async () => {
     if ( !confirmDeleteId ) return;
     setDeleting( true );
-    const res = await fetch( `/api/savings-goals?id=${confirmDeleteId}`, { method: "DELETE" } );
+    const res = await fetch( `/api/savings-goals?id=${ confirmDeleteId }`, { method: "DELETE" } );
     setDeleting( false );
     if ( !res.ok ) {
       setError( "Failed to delete savings goal" );
@@ -746,14 +746,14 @@ export function SavingsGoalsClient ( { initialGoals, accounts }: SavingsGoalsCli
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <div className="flex items-center gap-1 overflow-x-auto border-b border-[var(--color-border)] pb-0 scrollbar-none">
+        <div className="flex items-center gap-1 overflow-x-auto overflow-y-hidden border-b border-[var(--color-border)] pb-0">
           {TABS.map( ( tab ) => (
             <button
               key={tab.key}
               onClick={() => setActiveFilter( tab.key )}
               className={`shrink-0 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${ activeFilter === tab.key
-                  ? "border-[var(--color-accent)] text-[var(--color-accent)]"
-                  : "border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+                ? "border-[var(--color-accent)] text-[var(--color-accent)]"
+                : "border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
                 }`}
             >
               {tab.label}
@@ -863,12 +863,12 @@ export function SavingsGoalsClient ( { initialGoals, accounts }: SavingsGoalsCli
                 <div className="relative h-3 w-full rounded-full bg-[var(--color-bg-tertiary)] overflow-hidden">
                   <div
                     className={`absolute left-0 top-0 h-full rounded-full transition-all ${ isCompleted
+                      ? "bg-[var(--color-success)]"
+                      : progress >= 75
                         ? "bg-[var(--color-success)]"
-                        : progress >= 75
-                          ? "bg-[var(--color-success)]"
-                          : progress >= 50
-                            ? "bg-[var(--color-warning)]"
-                            : "bg-[var(--color-accent)]"
+                        : progress >= 50
+                          ? "bg-[var(--color-warning)]"
+                          : "bg-[var(--color-accent)]"
                       }`}
                     style={{ width: `${ Math.min( progress, 100 ) }%` }}
                   />

@@ -149,3 +149,90 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
+
+export async function PUT(request: NextRequest) {
+  try {
+    const supabase = await createServerSupabaseClient()
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { id, payment_date, emi_paid, interest, principal_paid, closing_balance } = body
+
+    if (!id) {
+      return NextResponse.json({ error: 'id is required' }, { status: 400 })
+    }
+
+    // Verify the payment belongs to this user via loan ownership
+    const { data: payment, error: fetchErr } = await supabase
+      .from('loan_payments')
+      .select('id, loan_id')
+      .eq('id', id)
+      .single()
+
+    if (fetchErr || !payment) {
+      return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
+    }
+
+    const { data: loan, error: loanErr } = await supabase
+      .from('loans')
+      .select('id, account_id')
+      .eq('id', payment.loan_id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (loanErr || !loan) {
+      return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
+    }
+
+    // Build update payload with only provided fields
+    const updates: Record<string, unknown> = {}
+    if (payment_date != null) updates.payment_date = payment_date
+    if (emi_paid != null) updates.emi_paid = emi_paid
+    if (interest != null) updates.interest = interest
+    if (principal_paid != null) updates.principal_paid = principal_paid
+    if (closing_balance != null) updates.closing_balance = closing_balance
+
+    const { error: updateErr } = await supabase
+      .from('loan_payments')
+      .update(updates)
+      .eq('id', id)
+
+    if (updateErr) {
+      console.error('Loan payment update error:', updateErr)
+      return NextResponse.json({ error: 'Failed to update payment' }, { status: 500 })
+    }
+
+    // Sync loan's current_balance to the closing_balance of its most recent payment
+    const { data: latestPayment } = await supabase
+      .from('loan_payments')
+      .select('closing_balance')
+      .eq('loan_id', payment.loan_id)
+      .order('payment_date', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (latestPayment) {
+      await supabase
+        .from('loans')
+        .update({ current_balance: latestPayment.closing_balance })
+        .eq('id', payment.loan_id)
+
+      if (loan.account_id) {
+        await supabase
+          .from('accounts')
+          .update({ current_balance: -latestPayment.closing_balance })
+          .eq('id', loan.account_id)
+          .eq('user_id', user.id)
+      }
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    console.error('Loan payment PUT error:', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
