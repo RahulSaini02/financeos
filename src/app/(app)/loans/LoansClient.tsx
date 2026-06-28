@@ -16,6 +16,7 @@ import {
   Plus,
   X,
   ExternalLink,
+  Pencil,
 } from "lucide-react";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
@@ -79,7 +80,7 @@ function LogPaymentModal({
   onSaved: () => void;
 }) {
   const monthlyInterest = loan.interest_rate > 0
-    ? parseFloat((loan.current_balance * (loan.interest_rate / 365)).toFixed(2))
+    ? parseFloat((loan.current_balance * (loan.interest_rate / 12)).toFixed(2))
     : 0;
   const defaultPrincipal = parseFloat(Math.max(loan.emi - monthlyInterest, 0).toFixed(2));
   const defaultClosing = parseFloat(Math.max(loan.current_balance - defaultPrincipal, 0).toFixed(2));
@@ -219,6 +220,139 @@ function LogPaymentModal({
   );
 }
 
+// ── EditPaymentModal ──────────────────────────────────────────────────────────
+
+function EditPaymentModal({
+  payment,
+  onClose,
+  onSaved,
+}: {
+  payment: LoanPayment;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [paymentDate, setPaymentDate] = useState(payment.payment_date);
+  const [emiPaid, setEmiPaid] = useState(payment.emi_paid.toString());
+  const [interest, setInterest] = useState(payment.interest.toString());
+  const [principalPaid, setPrincipalPaid] = useState(payment.principal_paid.toString());
+  const [closingBalance, setClosingBalance] = useState(payment.closing_balance.toString());
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  function handleEmiChange(val: string) {
+    setEmiPaid(val);
+    const emi = parseFloat(val) || 0;
+    const int = parseFloat(interest) || 0;
+    const principal = Math.max(emi - int, 0);
+    setPrincipalPaid(principal.toFixed(2));
+    setClosingBalance(Math.max(payment.opening_balance - principal, 0).toFixed(2));
+  }
+
+  function handleInterestChange(val: string) {
+    setInterest(val);
+    const emi = parseFloat(emiPaid) || 0;
+    const int = parseFloat(val) || 0;
+    const principal = Math.max(emi - int, 0);
+    setPrincipalPaid(principal.toFixed(2));
+    setClosingBalance(Math.max(payment.opening_balance - principal, 0).toFixed(2));
+  }
+
+  function handleClosingChange(val: string) {
+    setClosingBalance(val);
+    const closing = parseFloat(val) || 0;
+    const principal = Math.max(payment.opening_balance - closing, 0);
+    setPrincipalPaid(principal.toFixed(2));
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const res = await fetch("/api/loans/payments", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: payment.id,
+          payment_date: paymentDate,
+          emi_paid: parseFloat(emiPaid),
+          interest: parseFloat(interest),
+          principal_paid: parseFloat(principalPaid),
+          closing_balance: parseFloat(closingBalance),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Failed to save");
+      onSaved();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputClass = "w-full h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] px-3 text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]";
+  const labelClass = "block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md bg-[var(--color-bg-secondary)] rounded-2xl border border-[var(--color-border)] shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
+          <div>
+            <h2 className="text-base font-semibold text-[var(--color-text-primary)]">Edit Payment</h2>
+            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+              Opening balance: {formatCurrency(payment.opening_balance)}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className={labelClass}>Payment Date</label>
+            <input type="date" className={inputClass} value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>EMI Paid ($)</label>
+              <input type="number" min="0" step="0.01" className={inputClass} value={emiPaid} onChange={(e) => handleEmiChange(e.target.value)} />
+            </div>
+            <div>
+              <label className={labelClass}>Interest ($)</label>
+              <input type="number" min="0" step="0.01" className={inputClass} value={interest} onChange={(e) => handleInterestChange(e.target.value)} />
+            </div>
+            <div>
+              <label className={labelClass}>Principal Paid ($)</label>
+              <input type="number" min="0" step="0.01" className={`${inputClass} opacity-60 cursor-not-allowed`} value={principalPaid} readOnly />
+            </div>
+            <div>
+              <label className={labelClass}>Closing Balance ($)</label>
+              <input type="number" min="0" step="0.01" className={inputClass} value={closingBalance} onChange={(e) => handleClosingChange(e.target.value)} />
+            </div>
+          </div>
+
+          {saveError && (
+            <div className="flex items-center gap-2 text-[var(--color-danger)] text-sm bg-[var(--color-danger)]/10 rounded-lg px-3 py-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>{saveError}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[var(--color-border)]">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving || !paymentDate || !emiPaid}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
+            Save Changes
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main client component ─────────────────────────────────────────────────────
 
 interface LoansClientProps {
@@ -233,6 +367,7 @@ export function LoansClient({ initialLoans, accounts }: LoansClientProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [extraPayments, setExtraPayments] = useState<Record<string, string>>({});
   const [logPaymentLoan, setLogPaymentLoan] = useState<LoanWithPayments | null>(null);
+  const [editingPayment, setEditingPayment] = useState<LoanPayment | null>(null);
 
   const fetchLoans = async () => {
     const [{ data: loanData }, { data: paymentsData }] = await Promise.all([
@@ -481,11 +616,12 @@ export function LoansClient({ initialLoans, accounts }: LoansClientProps) {
                                 <th className="text-right px-3 py-2 text-[var(--color-text-muted)] font-medium">Principal</th>
                                 <th className="text-right px-3 py-2 text-[var(--color-text-muted)] font-medium">Interest</th>
                                 <th className="text-right px-3 py-2 text-[var(--color-text-muted)] font-medium">Balance</th>
+                                <th className="px-3 py-2" />
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-[var(--color-border)]">
                               {loan.payments.slice(0, 6).map((p) => (
-                                <tr key={p.id} className="hover:bg-[var(--color-bg-tertiary)]">
+                                <tr key={p.id} className="hover:bg-[var(--color-bg-tertiary)] group">
                                   <td className="px-3 py-2 text-[var(--color-text-secondary)]">
                                     {parseLocalDate(p.payment_date).toLocaleDateString("en-US", {
                                       month: "short",
@@ -501,6 +637,14 @@ export function LoansClient({ initialLoans, accounts }: LoansClientProps) {
                                   </td>
                                   <td className="px-3 py-2 text-right text-[var(--color-text-muted)]">
                                     {formatCurrency(p.closing_balance)}
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    <button
+                                      onClick={() => setEditingPayment(p)}
+                                      className="opacity-0 group-hover:opacity-100 rounded p-0.5 hover:bg-[var(--color-bg-secondary)] transition-opacity"
+                                    >
+                                      <Pencil className="h-3 w-3 text-[var(--color-text-muted)]" />
+                                    </button>
                                   </td>
                                 </tr>
                               ))}
@@ -535,6 +679,14 @@ export function LoansClient({ initialLoans, accounts }: LoansClientProps) {
           accounts={accounts}
           onClose={() => setLogPaymentLoan(null)}
           onSaved={() => { setLogPaymentLoan(null); fetchLoans(); }}
+        />
+      )}
+
+      {editingPayment && (
+        <EditPaymentModal
+          payment={editingPayment}
+          onClose={() => setEditingPayment(null)}
+          onSaved={() => { setEditingPayment(null); fetchLoans(); }}
         />
       )}
     </div>
