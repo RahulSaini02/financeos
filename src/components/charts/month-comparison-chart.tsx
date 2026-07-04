@@ -15,7 +15,7 @@ import {
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartEmptyState } from "@/components/charts/ChartEmptyState";
 import { BarChart3, X } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { useCurrency } from "@/lib/currency-context";
 
 interface MonthlyDataPoint {
   month: string;
@@ -49,6 +49,7 @@ export function MonthComparisonChart({
   categoryMonthlyData = {},
   onClearCategory,
 }: MonthComparisonChartProps) {
+  const { fmt } = useCurrency();
   const [period, setPeriod] = useState<Period>("3m");
 
   const isEmpty = isNewUser || monthlyData.every((d) => d.income === 0 && d.expenses === 0);
@@ -141,7 +142,7 @@ export function MonthComparisonChart({
                   fontSize: 12,
                 }}
                 labelStyle={{ color: "#f0f0f5", fontWeight: 600 }}
-                formatter={(v: unknown) => [formatCurrency(v as number), selectedCategory]}
+                formatter={(v: unknown) => [fmt(v as number), selectedCategory]}
                 cursor={{ fill: "#222230" }}
               />
               <Bar
@@ -157,7 +158,7 @@ export function MonthComparisonChart({
                   strokeDasharray="5 3"
                   strokeWidth={1.5}
                   label={{
-                    value: `Avg ${formatCurrency(avgSpend)}`,
+                    value: `Avg ${fmt(avgSpend)}`,
                     fill: "#f59e0b",
                     fontSize: 10,
                     position: "insideTopRight",
@@ -234,7 +235,7 @@ export function MonthComparisonChart({
                 fontSize: 12,
               }}
               labelStyle={{ color: "#f0f0f5", fontWeight: 600 }}
-              formatter={(v: unknown, name: unknown) => [formatCurrency(v as number), name as string]}
+              formatter={(v: unknown, name: unknown) => [fmt(v as number), name as string]}
               cursor={{ fill: "#222230" }}
             />
             <Legend wrapperStyle={{ fontSize: 11, color: "#9090a0", paddingTop: 8 }} />
@@ -247,7 +248,7 @@ export function MonthComparisonChart({
                 strokeDasharray="5 3"
                 strokeWidth={1.5}
                 label={{
-                  value: `Avg spend ${formatCurrency(avgExpenses)}`,
+                  value: `Avg spend ${fmt(avgExpenses)}`,
                   fill: "#f59e0b",
                   fontSize: 10,
                   position: "insideTopRight",

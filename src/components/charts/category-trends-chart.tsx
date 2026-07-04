@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { compactCurrency, ChartTooltip } from "@/components/charts/chart-utils";
+import { useCurrency } from "@/lib/currency-context";
 
 interface CategoryTrendsChartProps {
   data: Array<{
@@ -24,6 +25,7 @@ interface CategoryTrendsChartProps {
 const CATEGORY_COLORS = ["#6366f1", "#f59e0b", "#ef4444", "#22c55e", "#06b6d4"];
 
 export function CategoryTrendsChart({ data, categories }: CategoryTrendsChartProps) {
+  const { currency } = useCurrency();
   const chartData = data.map((d) => ({ ...d, name: d.label }));
   const displayCategories = categories.slice(0, 5);
 
@@ -49,7 +51,7 @@ export function CategoryTrendsChart({ data, categories }: CategoryTrendsChartPro
               tick={{ fill: "#606070", fontSize: 10 }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={compactCurrency}
+              tickFormatter={(v: number) => compactCurrency(v, currency)}
               width={48}
             />
             <Tooltip content={<ChartTooltip />} />

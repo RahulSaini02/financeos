@@ -1,8 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency } from "@/lib/utils";
+import { useCurrency } from "@/lib/currency-context";
 
 interface BudgetItem {
   id: string;
@@ -19,6 +21,7 @@ interface BudgetProgressBarsProps {
 }
 
 export function BudgetProgressBars({ budgets, selectedMonth, isCurrentMonth }: BudgetProgressBarsProps) {
+  const { fmt } = useCurrency();
   if (budgets.length === 0) return null;
 
   const [year, month] = selectedMonth.split("-");
@@ -68,8 +71,8 @@ export function BudgetProgressBars({ budgets, selectedMonth, isCurrentMonth }: B
                 />
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-[var(--color-text-muted)]">{formatCurrency(b.spent)}</span>
-                <span className="text-[10px] text-[var(--color-text-muted)]">{formatCurrency(b.limit)}</span>
+                <span className="text-[10px] text-[var(--color-text-muted)]">{fmt(b.spent)}</span>
+                <span className="text-[10px] text-[var(--color-text-muted)]">{fmt(b.limit)}</span>
               </div>
             </div>
           );

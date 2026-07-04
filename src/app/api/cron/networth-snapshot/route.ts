@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getFxRate, convertAmount } from '@/lib/fx'
 
 // Called by Vercel Cron on the last day of each month.
 // Also callable manually: GET /api/cron/networth-snapshot
@@ -23,10 +24,10 @@ export async function GET(req: NextRequest) {
   const now = new Date()
   const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
 
-  // Fetch all active accounts grouped by user
+  // Fetch all active accounts grouped by user (include currency for FX conversion)
   const { data: accounts, error } = await supabase
     .from('accounts')
-    .select('user_id, kind, current_balance')
+    .select('user_id, kind, current_balance, currency')
     .eq('is_active', true)
 
   if (error) {
@@ -34,13 +35,38 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Aggregate per user
+  // Fetch all profiles to get each user's base currency
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, default_currency')
+
+  const profileCurrency: Record<string, string> = {}
+  for (const p of profiles ?? []) {
+    profileCurrency[p.id] = p.default_currency
+  }
+
+  // Pre-fetch USD↔INR rate once (covers all cross-currency pairs with our 2-currency enum)
+  const inrToUsdRate = await getFxRate('INR', 'USD')
+
+  function toUserBase(amount: number, accountCurrency: string, baseCurrency: string): number {
+    if (accountCurrency === baseCurrency) return amount
+    if (accountCurrency === 'INR' && baseCurrency === 'USD') {
+      return convertAmount(amount, inrToUsdRate)
+    }
+    if (accountCurrency === 'USD' && baseCurrency === 'INR') {
+      return convertAmount(amount, inrToUsdRate != null ? 1 / inrToUsdRate : null)
+    }
+    return amount
+  }
+
+  // Aggregate per user, converting each account to the user's base currency
   const byUser: Record<string, { assets: number; liabilities: number }> = {}
   for (const account of accounts ?? []) {
     if (!byUser[account.user_id]) {
       byUser[account.user_id] = { assets: 0, liabilities: 0 }
     }
-    const bal = account.current_balance ?? 0
+    const baseCurrency = profileCurrency[account.user_id] ?? 'USD'
+    const bal = toUserBase(account.current_balance ?? 0, account.currency ?? 'USD', baseCurrency)
     if (account.kind === 'liability') {
       byUser[account.user_id].liabilities += Math.abs(bal)
     } else {

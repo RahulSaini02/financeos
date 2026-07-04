@@ -9,20 +9,26 @@ export default async function AdminAiUsagePage() {
   todayMidnight.setUTCHours(0, 0, 0, 0)
   const weekAgo = new Date(now.getTime() - 7 * 86_400_000).toISOString()
 
-  const [todayRes, weekRes] = await Promise.all([
+  const [todayRes, weekRes, capRes] = await Promise.all([
     supabase
       .from('ai_usage_log')
-      .select('user_id')
+      .select('user_id, cost_usd')
       .gte('created_at', todayMidnight.toISOString()),
     supabase
       .from('ai_usage_log')
       .select('user_id, endpoint')
       .gte('created_at', weekAgo),
+    supabase.from('app_settings').select('value').eq('key', 'ai_daily_cost_cap_usd').maybeSingle(),
   ])
 
+  const parsedCap = Number(capRes.data?.value)
+  const costCap = Number.isFinite(parsedCap) && parsedCap > 0 ? parsedCap : 0.75
+
   const todayCounts: Record<string, number> = {}
+  const todayCosts: Record<string, number> = {}
   for (const row of todayRes.data ?? []) {
     todayCounts[row.user_id] = (todayCounts[row.user_id] ?? 0) + 1
+    todayCosts[row.user_id] = (todayCosts[row.user_id] ?? 0) + Number(row.cost_usd ?? 0)
   }
   const weekCounts: Record<string, number> = {}
   for (const row of weekRes.data ?? []) {
@@ -47,8 +53,9 @@ export default async function AdminAiUsagePage() {
       full_name: p.full_name ?? null,
       today: todayCounts[p.id] ?? 0,
       week: weekCounts[p.id] ?? 0,
+      costToday: todayCosts[p.id] ?? 0,
     }))
-    .sort((a, b) => b.today - a.today)
+    .sort((a, b) => b.costToday - a.costToday || b.today - a.today)
 
   const totalToday = Object.values(todayCounts).reduce((s, n) => s + n, 0)
   const totalWeek = Object.values(weekCounts).reduce((s, n) => s + n, 0)
@@ -59,7 +66,7 @@ export default async function AdminAiUsagePage() {
       <p className="text-sm text-[var(--color-text-muted)] mb-6">
         Monitor AI call volume across all users
       </p>
-      <AiUsagePanel rows={rows} totalToday={totalToday} totalWeek={totalWeek} />
+      <AiUsagePanel rows={rows} totalToday={totalToday} totalWeek={totalWeek} costCap={costCap} />
     </div>
   )
 }

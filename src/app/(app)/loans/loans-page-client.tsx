@@ -3,7 +3,8 @@
 import { useState, useMemo, useCallback } from "react";
 import { Card, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, parseLocalDate } from "@/lib/utils";
+import { parseLocalDate } from "@/lib/utils";
+import { useCurrency } from "@/lib/currency-context";
 import { createClient } from "@/lib/supabase";
 import type { Loan, LoanPayment, Account } from "@/lib/types";
 import {
@@ -84,6 +85,7 @@ export default function LoansPageClient ( {
   userId,
 }: LoansPageClientProps ) {
   const supabase = createClient();
+  const { fmt } = useCurrency();
 
   const [loans, setLoans] = useState<LoanWithPayments[]>( initialLoans );
   const [accounts, setAccounts] = useState<Account[]>( initialAccounts );
@@ -169,21 +171,21 @@ export default function LoansPageClient ( {
         <Card>
           <CardTitle>Total Debt</CardTitle>
           <CardValue className="mt-2 text-[var(--color-danger)]">
-            {formatCurrency( totals.totalDebt )}
+            {fmt( totals.totalDebt )}
           </CardValue>
         </Card>
         <Card>
           <CardTitle>Monthly EMI</CardTitle>
-          <CardValue className="mt-2">{formatCurrency( totals.totalEMI )}</CardValue>
+          <CardValue className="mt-2">{fmt( totals.totalEMI )}</CardValue>
         </Card>
         <Card>
           <CardTitle>Total Principal</CardTitle>
-          <CardValue className="mt-2">{formatCurrency( totals.totalPrincipal )}</CardValue>
+          <CardValue className="mt-2">{fmt( totals.totalPrincipal )}</CardValue>
         </Card>
         <Card>
           <CardTitle>Total Paid</CardTitle>
           <CardValue className="mt-2 text-[var(--color-success)]">
-            {formatCurrency( totals.totalPaid )}
+            {fmt( totals.totalPaid )}
           </CardValue>
         </Card>
       </div>
@@ -239,7 +241,7 @@ export default function LoansPageClient ( {
                   </div>
                   <div className="text-right shrink-0">
                     <p className="font-semibold text-[var(--color-danger)]">
-                      {formatCurrency( loan.current_balance )}
+                      {fmt( loan.current_balance )}
                     </p>
                     <p className="text-xs text-[var(--color-text-muted)]">
                       remaining
@@ -251,7 +253,7 @@ export default function LoansPageClient ( {
                 <div className="mt-4 space-y-1.5">
                   <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)]">
                     <span>{pctPaid.toFixed( 1 )}% paid off</span>
-                    <span>{formatCurrency( paidOff )} of {formatCurrency( loan.principal )}</span>
+                    <span>{fmt( paidOff )} of {fmt( loan.principal )}</span>
                   </div>
                   <div className="h-2 w-full rounded-full bg-[var(--color-bg-tertiary)] overflow-hidden">
                     <div
@@ -267,7 +269,7 @@ export default function LoansPageClient ( {
                     <p className="text-xs text-[var(--color-text-muted)] mb-0.5">
                       Monthly EMI
                     </p>
-                    <p className="font-medium">{formatCurrency( loan.emi )}</p>
+                    <p className="font-medium">{fmt( loan.emi )}</p>
                   </div>
                   <div className="rounded-lg bg-[var(--color-bg-tertiary)] px-3 py-2">
                     <p className="text-xs text-[var(--color-text-muted)] mb-0.5">
@@ -280,7 +282,7 @@ export default function LoansPageClient ( {
                       Monthly Interest
                     </p>
                     <p className="font-medium text-[var(--color-danger)]">
-                      {formatCurrency( monthlyInterest )}
+                      {fmt( monthlyInterest )}
                     </p>
                   </div>
                 </div>
@@ -361,7 +363,7 @@ export default function LoansPageClient ( {
                               Interest saved
                             </p>
                             <p className="font-semibold text-[var(--color-success)]">
-                              {formatCurrency( sim.interestSaved )}
+                              {fmt( sim.interestSaved )}
                             </p>
                             <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
                               Over loan lifetime
@@ -400,10 +402,10 @@ export default function LoansPageClient ( {
                                   <td className="px-3 py-2 text-[var(--color-text-secondary)]">
                                     {parseLocalDate( p.payment_date ).toLocaleDateString( "en-US", { month: "short", year: "numeric" } )}
                                   </td>
-                                  <td className="px-3 py-2 text-right">{formatCurrency( p.emi_paid )}</td>
-                                  <td className="px-3 py-2 text-right text-[var(--color-success)]">{formatCurrency( p.principal_paid )}</td>
-                                  <td className="px-3 py-2 text-right text-[var(--color-danger)]">{formatCurrency( p.interest )}</td>
-                                  <td className="px-3 py-2 text-right text-[var(--color-text-muted)]">{formatCurrency( p.closing_balance )}</td>
+                                  <td className="px-3 py-2 text-right">{fmt( p.emi_paid )}</td>
+                                  <td className="px-3 py-2 text-right text-[var(--color-success)]">{fmt( p.principal_paid )}</td>
+                                  <td className="px-3 py-2 text-right text-[var(--color-danger)]">{fmt( p.interest )}</td>
+                                  <td className="px-3 py-2 text-right text-[var(--color-text-muted)]">{fmt( p.closing_balance )}</td>
                                 </tr>
                               ) )}
                             </tbody>
@@ -473,6 +475,7 @@ function LogPaymentModal ( {
   const [fromAccountId, setFromAccountId] = useState( accounts[0]?.id ?? "" );
   const [saving, setSaving] = useState( false );
   const [saveError, setSaveError] = useState<string | null>( null );
+  const { fmt } = useCurrency();
 
   function handleEmiChange ( val: string ) {
     setEmiPaid( val );
@@ -528,7 +531,7 @@ function LogPaymentModal ( {
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
           <div>
             <h2 className="text-base font-semibold text-[var(--color-text-primary)]">Log Payment</h2>
-            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{loan.name} · Balance: {formatCurrency( loan.current_balance )}</p>
+            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{loan.name} · Balance: {fmt( loan.current_balance )}</p>
           </div>
           <button onClick={onClose} className="text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]">
             <X className="h-5 w-5" />
@@ -547,7 +550,7 @@ function LogPaymentModal ( {
                 <option value="">— skip (no transaction created) —</option>
                 {accounts.map( a => (
                   <option key={a.id} value={a.id}>
-                    {a.name} ({formatCurrency( a.current_balance ?? 0 )})
+                    {a.name} ({fmt( a.current_balance ?? 0 )})
                   </option>
                 ) )}
               </select>

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, ExternalLink, ChevronUp } from "lucide-react";
 import Link from "next/link";
-import { formatCurrency } from "@/lib/utils";
+import { useCurrency } from "@/lib/currency-context";
 
 interface CategoryDrillDownProps {
   categoryName: string;
@@ -41,6 +41,7 @@ export function CategoryDrillDown({
   onExpand,
   onClose,
 }: CategoryDrillDownProps) {
+  const { fmt } = useCurrency();
   const [transactions, setTransactions] = useState<TxnRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -104,7 +105,7 @@ export function CategoryDrillDown({
             {categoryName}
           </span>
           <span className="text-sm font-semibold text-[var(--color-text-secondary)] whitespace-nowrap">
-            {loading ? "…" : formatCurrency(total)}
+            {loading ? "…" : fmt(total)}
           </span>
           <button
             onClick={onExpand}
@@ -143,7 +144,7 @@ export function CategoryDrillDown({
               </h2>
               <p className="text-xs text-[var(--color-text-muted)]">
                 {monthLabel}&nbsp;&middot;&nbsp;
-                {loading ? "…" : formatCurrency(total)} total
+                {loading ? "…" : fmt(total)} total
               </p>
             </div>
           </div>
@@ -197,7 +198,7 @@ export function CategoryDrillDown({
                       }`}
                     >
                       {isCredit ? "+" : "-"}
-                      {formatCurrency(Math.abs(txn.final_amount))}
+                      {fmt(Math.abs(txn.final_amount))}
                     </span>
                   </div>
                 );

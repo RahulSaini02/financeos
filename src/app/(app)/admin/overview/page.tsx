@@ -104,7 +104,7 @@ export default async function AdminOverviewPage() {
     svc.from('pending_imports').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
     svc.from('transactions').select('id', { count: 'exact', head: true }).eq('ai_categorized', true),
     svc.from('transactions').select('id', { count: 'exact', head: true }),
-    svc.from('agent_action_log').select('tool_name, status, executed_at, user_id').order('executed_at', { ascending: false }).limit(10),
+    svc.from('agent_action_log').select('tool_name, status, executed_at, created_at, user_id').order('created_at', { ascending: false }).limit(10),
     svc.from('agent_action_log').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
     svc.from('agent_action_log').select('id', { count: 'exact', head: true }).eq('status', 'failed').gte('executed_at', sevenDaysAgo),
     svc.from('user_push_subscriptions').select('id', { count: 'exact', head: true }),
@@ -211,6 +211,7 @@ export default async function AdminOverviewPage() {
     tool_name: a.tool_name,
     status: a.status as 'pending' | 'executed' | 'rejected' | 'failed',
     executed_at: a.executed_at,
+    created_at: a.created_at,
     user_email: actionUserEmails[a.user_id] ?? 'Unknown',
   }))
 

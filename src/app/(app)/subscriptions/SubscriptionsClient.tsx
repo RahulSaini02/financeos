@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import { Card, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, formatDate, parseLocalDate } from "@/lib/utils";
+import { parseLocalDate } from "@/lib/utils";
+import { useCurrency } from "@/lib/currency-context";
 import { createClient } from "@/lib/supabase";
-import type { Subscription, BillingStatus, Account } from "@/lib/types";
+import type { Subscription, BillingStatus, Account, Category } from "@/lib/types";
 import {
   Plus,
   X,
@@ -19,6 +20,8 @@ import {
   DollarSign,
   CheckCircle2,
   PackageOpen,
+  Sparkles,
+  Tag,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
@@ -381,6 +384,7 @@ function SubscriptionModal({
 interface SubscriptionsClientProps {
   initialSubscriptions: Subscription[];
   accounts: Account[];
+  categories: Category[];
 }
 
 type TimeGroup = { key: string; label: string; labelColor: string; subs: Subscription[] };
@@ -403,11 +407,15 @@ function buildTimelineGroups(subs: Subscription[]): TimeGroup[] {
     .filter((g) => g.subs.length > 0);
 }
 
-export function SubscriptionsClient({ initialSubscriptions, accounts }: SubscriptionsClientProps) {
+export function SubscriptionsClient({ initialSubscriptions, accounts, categories }: SubscriptionsClientProps) {
   const supabase = createClient();
   const { success: toastSuccess, error: toastError } = useToast();
+  const { fmt } = useCurrency();
 
   const [subscriptions, setSubscriptions] = useState<Subscription[]>(initialSubscriptions);
+  // Subscription ids with an AI categorization call in flight ("Categorizing…" badge)
+  const [categorizingIds, setCategorizingIds] = useState<Set<string>>(new Set());
+  const [savingCategoryId, setSavingCategoryId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterTab>("active");
   const [modalOpen, setModalOpen] = useState(false);
@@ -429,6 +437,73 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
       })
       .catch(() => {/* silently ignore */});
   }, []);
+
+  // ── AI auto-categorization ──
+  // On first render, kick off AI categorization for any uncategorized
+  // subscription. The result is persisted server-side, so this runs at most
+  // once per subscription — never again on subsequent page loads.
+  useEffect(() => {
+    const uncategorized = initialSubscriptions.filter((s) => !s.category_id);
+    if (uncategorized.length === 0) return;
+
+    setCategorizingIds(new Set(uncategorized.map((s) => s.id)));
+
+    let cancelled = false;
+    (async () => {
+      for (const sub of uncategorized) {
+        try {
+          const res = await fetch("/api/subscriptions/categorize", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ subscription_id: sub.id }),
+          });
+          if (!cancelled && res.ok) {
+            const data = await res.json() as { category_id: string | null };
+            if (data.category_id) {
+              setSubscriptions((prev) =>
+                prev.map((s) => (s.id === sub.id ? { ...s, category_id: data.category_id } : s))
+              );
+            }
+          }
+        } catch { /* best-effort — stays "Uncategorized" */ }
+        if (cancelled) break;
+        setCategorizingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(sub.id);
+          return next;
+        });
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // Intentionally keyed to the server-rendered list only — reruns are
+    // prevented by the persisted category_id, not by this dependency array
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Manual category override — a user's choice always wins over AI
+  const handleCategoryChange = async (subId: string, categoryId: string) => {
+    setSavingCategoryId(subId);
+    const newCategoryId = categoryId || null;
+    try {
+      const res = await fetch("/api/subscriptions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: subId, category_id: newCategoryId }),
+      });
+      if (res.ok) {
+        setSubscriptions((prev) =>
+          prev.map((s) => (s.id === subId ? { ...s, category_id: newCategoryId } : s))
+        );
+      } else {
+        toastError("Failed to update category");
+      }
+    } catch {
+      toastError("Failed to update category");
+    } finally {
+      setSavingCategoryId(null);
+    }
+  };
 
   async function handleAddToCalendar(sub: Subscription) {
     if (!sub.next_billing_date) {
@@ -607,7 +682,7 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
         <Card>
           <CardTitle>Monthly Cost</CardTitle>
           <CardValue className="mt-2 text-[var(--color-text-primary)]">
-            {formatCurrency(monthlyCost)}
+            {fmt(monthlyCost)}
           </CardValue>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
             active subscriptions
@@ -616,7 +691,7 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
         <Card>
           <CardTitle>Annual Cost</CardTitle>
           <CardValue className="mt-2 text-[var(--color-text-primary)]">
-            {formatCurrency(annualCost)}
+            {fmt(annualCost)}
           </CardValue>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
             projected yearly spend
@@ -648,7 +723,7 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
         </Card>
       </div>
 
-      <div className="flex items-center gap-1 border-b border-[var(--color-border)] pb-0 overflow-x-auto">
+      <div className="flex items-center gap-1 border-b border-[var(--color-border)] pb-0 overflow-x-auto overflow-y-hidden">
         {TABS.map((tab) => (
           <button
             key={tab.key}
@@ -695,7 +770,7 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
                   {subs.length}
                 </span>
                 <span className="text-xs text-[var(--color-text-muted)] ml-auto font-medium">
-                  {formatCurrency(subs.reduce((s, sub) => s + sub.billing_cost, 0))} total
+                  {fmt(subs.reduce((s, sub) => s + sub.billing_cost, 0))} total
                 </span>
               </div>
               <div className="rounded-xl border border-[var(--color-border)] overflow-hidden divide-y divide-[var(--color-border)]">
@@ -715,7 +790,7 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
                         </p>
                         <p className="text-xs text-[var(--color-text-muted)]">
                           {getBillingCycleLabel(sub.billing_cycle_months)}
-                          {sub.billing_cycle_months !== 1 && ` · ${formatCurrency(monthlyCostSub)}/mo`}
+                          {sub.billing_cycle_months !== 1 && ` · ${fmt(monthlyCostSub)}/mo`}
                         </p>
                       </div>
                       <div className="shrink-0 text-right hidden sm:block">
@@ -738,7 +813,7 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
                         </p>
                       </div>
                       <div className="shrink-0 text-sm font-semibold text-[var(--color-text-primary)]">
-                        {formatCurrency(sub.billing_cost)}
+                        {fmt(sub.billing_cost)}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         {sub.status === "active" && days !== null && days <= 3 && (
@@ -831,7 +906,7 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
                 <div className="flex items-baseline justify-between">
                   <div>
                     <span className="text-lg font-semibold text-[var(--color-text-primary)]">
-                      {formatCurrency(monthlyCostSub)}
+                      {fmt(monthlyCostSub)}
                     </span>
                     <span className="text-xs text-[var(--color-text-muted)] ml-1">
                       /mo
@@ -845,9 +920,38 @@ export function SubscriptionsClient({ initialSubscriptions, accounts }: Subscrip
                 {sub.billing_cycle_months !== 1 && (
                   <div className="flex items-center gap-1 text-xs text-[var(--color-text-muted)]">
                     <DollarSign className="h-3 w-3" />
-                    <span>{formatCurrency(sub.billing_cost)} billed {getBillingCycleLabel(sub.billing_cycle_months).toLowerCase()}</span>
+                    <span>{fmt(sub.billing_cost)} billed {getBillingCycleLabel(sub.billing_cycle_months).toLowerCase()}</span>
                   </div>
                 )}
+
+                {/* Category — AI-inferred with manual override */}
+                <div className="flex items-center gap-1.5">
+                  {categorizingIds.has(sub.id) ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-accent)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-accent)] animate-pulse">
+                      <Sparkles className="h-3 w-3" />
+                      Categorizing…
+                    </span>
+                  ) : (
+                    <>
+                      <Tag className="h-3 w-3 shrink-0 text-[var(--color-text-muted)]" />
+                      <select
+                        value={sub.category_id ?? ""}
+                        onChange={(e) => handleCategoryChange(sub.id, e.target.value)}
+                        disabled={savingCategoryId === sub.id}
+                        title="Category — pick one to correct the AI's choice"
+                        className="max-w-[160px] truncate rounded-md border border-transparent bg-transparent px-1 py-0.5 text-xs text-[var(--color-text-secondary)] hover:border-[var(--color-border)] hover:bg-[var(--color-bg-tertiary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] disabled:opacity-60 transition-colors cursor-pointer"
+                      >
+                        <option value="">Uncategorized</option>
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                      {savingCategoryId === sub.id && (
+                        <Loader2 className="h-3 w-3 animate-spin text-[var(--color-text-muted)]" />
+                      )}
+                    </>
+                  )}
+                </div>
 
                 <div className="flex items-center justify-between pt-1 border-t border-[var(--color-border)]">
                   <div className="flex items-center gap-1 text-xs text-[var(--color-text-muted)]">

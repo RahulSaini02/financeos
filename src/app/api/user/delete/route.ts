@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
-import { createClient } from "@supabase/supabase-js";
 
+const RECOVERY_WINDOW_DAYS = 30;
+
+// Soft-delete: mark the account for deletion and keep all data for 30 days.
+// The user is signed out client-side after this returns; on re-login within
+// the window they choose Restore or Fresh Start (see /api/user/restore).
+// Hard deletion happens only via the purge cron or an explicit fresh start.
 export async function DELETE() {
-  // Verify the requesting user is authenticated
   const supabase = await createServerSupabaseClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
 
@@ -11,18 +15,28 @@ export async function DELETE() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Use service role client to delete from auth.users (requires admin privileges)
-  const adminClient = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
+  const deletedAt = new Date();
+  const purgeAt = new Date(deletedAt.getTime() + RECOVERY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
-  const { error: deleteError } = await adminClient.auth.admin.deleteUser(user.id);
+  const { error: updateError } = await supabase
+    .from("profiles")
+    .update({
+      deleted_at: deletedAt.toISOString(),
+      deletion_scheduled: purgeAt.toISOString(),
+    })
+    .eq("id", user.id);
 
-  if (deleteError) {
-    return NextResponse.json({ error: deleteError.message }, { status: 500 });
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true });
+  // Revoke every session server-side so retained tokens can't keep hitting the
+  // API until natural expiry; the client's local signOut only clears this device.
+  await supabase.auth.signOut({ scope: "global" });
+
+  return NextResponse.json({
+    success: true,
+    deletion_scheduled: purgeAt.toISOString(),
+    recovery_window_days: RECOVERY_WINDOW_DAYS,
+  });
 }

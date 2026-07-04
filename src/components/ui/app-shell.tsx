@@ -33,6 +33,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase";
 import dynamic from "next/dynamic";
 const FloatingAiChat = dynamic(
   () => import("@/components/ui/floating-ai-chat").then((m) => m.FloatingAiChat),
@@ -45,6 +46,8 @@ const AppTour = dynamic(
 import { KeyboardShortcuts } from "@/components/ui/keyboard-shortcuts";
 import { GlobalSearch } from "@/components/ui/global-search";
 import { useAuth } from "@/components/auth-provider";
+import { getStoredPersona, personaNavLabel, PERSONA_PREF_KEY } from "@/lib/persona-nav";
+import type { Persona } from "@/lib/types";
 
 export const ALL_NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -309,6 +312,9 @@ export function AppShell({ children }: AppShellProps) {
   });
   const [navPrefs, setNavPrefs] = useState<NavPref[]>(() => getNavPrefs());
   const [isAdmin, setIsAdmin] = useState(false);
+  // Persona drives display-only tab relabels (e.g. Paychecks → Income); set after
+  // mount (localStorage, then DB) to avoid SSR hydration mismatches.
+  const [persona, setPersona] = useState<Persona | null>(() => getStoredPersona());
   // tourDismissed tracks whether the user has seen (or skipped) the tour.
   // Initialised from localStorage so it persists across page refreshes.
   const [tourDismissed, setTourDismissed] = useState(() => {
@@ -354,6 +360,31 @@ export function AppShell({ children }: AppShellProps) {
       .catch(() => { /* ignore */ });
   }, [user]);
 
+  // One-shot region/persona sync: mirror profiles.region → localStorage.pref_region
+  // (used by getUserRegion/formatDate) and profiles.persona → pref_persona (used for
+  // persona tab relabeling) so both stay correct on every device.
+  useEffect(() => {
+    if (!user) return;
+    const supabase = createClient();
+    async function syncRegionAndPersona() {
+      try {
+        const { data } = await supabase
+          .from("profiles")
+          .select("region, persona")
+          .eq("id", user!.id)
+          .single();
+        if (data?.region && (data.region === "US" || data.region === "IN" || data.region === "other")) {
+          localStorage.setItem("pref_region", data.region as string);
+        }
+        if (data?.persona && typeof data.persona === "string") {
+          localStorage.setItem(PERSONA_PREF_KEY, data.persona);
+          setPersona(data.persona as Persona);
+        }
+      } catch { /* silently ignore */ }
+    }
+    syncRegionAndPersona();
+  }, [user]);
+
   const toggleCollapsed = () => {
     setSidebarCollapsed((prev) => {
       const next = !prev;
@@ -391,11 +422,13 @@ export function AppShell({ children }: AppShellProps) {
 
   // Build ordered, filtered nav items from prefs
   // Admin item only shows for admin users
-  const visibleNavItems = navPrefs
+  const visibleNavItems = (navPrefs
     .filter((p) => p.visible)
     .filter((p) => p.href !== "/admin" || isAdmin)
     .map((p) => ALL_NAV_ITEMS.find((n) => n.href === p.href))
-    .filter(Boolean) as typeof ALL_NAV_ITEMS;
+    .filter(Boolean) as typeof ALL_NAV_ITEMS)
+    // Persona relabeling is display-only (e.g. Paychecks → Income for freelancers/traders)
+    .map((n) => ({ ...n, label: personaNavLabel(n.href, persona) ?? n.label }));
 
   // Mobile sidebar — always fully expanded
   const mobileSidebar = (

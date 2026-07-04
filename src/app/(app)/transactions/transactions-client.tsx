@@ -5,7 +5,8 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/components/auth-provider";
 import type { Transaction, Account, Category, Loan } from "@/lib/types";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
+import { useCurrency } from "@/lib/currency-context";
 import {
   Search,
   Filter,
@@ -32,6 +33,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { EmptyTransactions } from "@/components/ui/empty-illustrations";
 import { PullToRefresh } from "@/components/ui/pull-to-refresh";
 import { TransactionModal } from "@/components/transactions/transaction-modal";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 
 const PAGE_SIZE = 50;
 
@@ -296,8 +299,11 @@ function TransactionsContent ( {
   const [exporting, setExporting] = useState( false );
   // Swipe-to-delete: tracks which txn card is open (swiped left to reveal delete btn)
   const [swipeOpenId, setSwipeOpenId] = useState<string | null>( null );
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>( null );
   // Desktop alert tooltip
   const [alertTooltipId, setAlertTooltipId] = useState<string | null>( null );
+  const { error: toastError } = useToast();
+  const { fmt } = useCurrency();
 
   useEffect( () => {
     if ( !alertTooltipId ) return;
@@ -411,8 +417,12 @@ function TransactionsContent ( {
   function handleAdd () { setEditingTxn( null ); setShowModal( true ); }
 
   async function handleDelete ( id: string ) {
+    setDeleteConfirmId( null );
     const res = await fetch( `/api/transactions/${ id }`, { method: "DELETE" } );
-    if ( !res.ok ) return;
+    if ( !res.ok ) {
+      toastError( 'Failed to delete transaction' );
+      return;
+    }
     fetchPage( page );
   }
 
@@ -518,7 +528,7 @@ function TransactionsContent ( {
         subtitle={
           loading
             ? "Loading…"
-            : `${ totalCount } total · +${ formatCurrency( pageIncome ) } · -${ formatCurrency( pageExpenses ) } this page`
+            : `${ totalCount } total · +${ fmt( pageIncome ) } · -${ fmt( pageExpenses ) } this page`
         }
         tooltip={
           <HelpModal
@@ -708,7 +718,7 @@ function TransactionsContent ( {
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-xs font-medium text-[var(--color-text-muted)] uppercase tracking-wide">{group}</h3>
               <span className="text-xs text-[var(--color-text-muted)]">
-                {txns.length} · {formatCurrency( txns.reduce( ( s, t ) => s + t.final_amount, 0 ) )}
+                {txns.length} · {fmt( txns.reduce( ( s, t ) => s + t.final_amount, 0 ) )}
               </span>
             </div>
             <Card className="divide-y divide-[var(--color-border)] overflow-hidden">
@@ -719,7 +729,7 @@ function TransactionsContent ( {
                   isOpen={swipeOpenId === txn.id}
                   onOpen={( id ) => setSwipeOpenId( id )}
                   onClose={() => setSwipeOpenId( null )}
-                  onDelete={() => handleDelete( txn.id )}
+                  onDelete={() => setDeleteConfirmId( txn.id )}
                 >
                 <div
                   className="flex items-start gap-3 px-3 py-3 hover:bg-[var(--color-bg-tertiary)] transition-colors cursor-pointer sm:items-center sm:px-4"
@@ -759,10 +769,17 @@ function TransactionsContent ( {
                       {txn.flagged && (
                         <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-[var(--color-warning)]" />
                       )}
-                      <span
-                        className={`text-sm font-medium whitespace-nowrap shrink-0 ${ txn.cr_dr === "credit" ? "text-[var(--color-income)]" : "text-[var(--color-text-primary)]" }`}
-                      >
-                        {txn.cr_dr === "credit" ? "+" : ""}{formatCurrency( txn.final_amount )}
+                      <span className="flex items-center gap-1 shrink-0">
+                        <span
+                          className={`text-sm font-medium whitespace-nowrap ${ txn.cr_dr === "credit" ? "text-[var(--color-income)]" : "text-[var(--color-text-primary)]" }`}
+                        >
+                          {txn.cr_dr === "credit" ? "+" : ""}{fmt( txn.final_amount )}
+                        </span>
+                        {txn.original_currency && txn.original_currency !== "USD" && (
+                          <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)]">
+                            {txn.original_currency}
+                          </span>
+                        )}
                       </span>
                     </div>
                     {/* Category */}
@@ -841,11 +858,18 @@ function TransactionsContent ( {
 
                   {/* Amount + date — desktop only */}
                   <div className="hidden sm:block text-right shrink-0 whitespace-nowrap">
-                    <span
-                      className={`text-sm font-medium ${ txn.cr_dr === "credit" ? "text-[var(--color-income)]" : "text-[var(--color-text-primary)]" }`}
-                    >
-                      {txn.cr_dr === "credit" ? "+" : ""}{formatCurrency( txn.final_amount )}
-                    </span>
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span
+                        className={`text-sm font-medium ${ txn.cr_dr === "credit" ? "text-[var(--color-income)]" : "text-[var(--color-text-primary)]" }`}
+                      >
+                        {txn.cr_dr === "credit" ? "+" : ""}{fmt( txn.final_amount )}
+                      </span>
+                      {txn.original_currency && txn.original_currency !== "USD" && (
+                        <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)]">
+                          {txn.original_currency}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{formatDate( txn.date )}</p>
                   </div>
 
@@ -859,7 +883,7 @@ function TransactionsContent ( {
                     </button>
                     <button
                       className="p-1.5 rounded hover:bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] hover:text-[var(--color-danger)]"
-                      onClick={() => handleDelete( txn.id )}
+                      onClick={() => setDeleteConfirmId( txn.id )}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -933,6 +957,16 @@ function TransactionsContent ( {
           onClose={() => setShowModal( false )}
         />
       )}
+
+      <ConfirmDialog
+        open={deleteConfirmId !== null}
+        title="Delete transaction?"
+        description="This will permanently remove the transaction and reverse the account balance update. This cannot be undone."
+        confirmLabel="Delete"
+        dangerous
+        onConfirm={() => { if ( deleteConfirmId ) handleDelete( deleteConfirmId ); }}
+        onClose={() => setDeleteConfirmId( null )}
+      />
     </div>
     </PullToRefresh>
   );

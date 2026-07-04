@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { inferSubscriptionCategory } from '@/lib/subscription-categorize'
+import { getFxRate, convertAmount } from '@/lib/fx'
+import type { CurrencyCode } from '@/lib/types'
 
 /**
  * POST /api/subscriptions/log-payment
@@ -59,43 +62,70 @@ export async function POST(request: NextRequest) {
   if (sub.account_id) {
     const signedAmt = -Math.abs(sub.billing_cost)
 
-    // Find or create a "Subscriptions" category
-    let categoryId: string | null = null
-    const { data: cat } = await supabase
-      .from('categories')
-      .select('id')
-      .eq('user_id', user.id)
-      .ilike('name', 'subscriptions')
-      .limit(1)
-      .maybeSingle()
-
-    if (cat) {
-      categoryId = cat.id
-    } else {
-      const { data: newCat } = await supabase
-        .from('categories')
-        .insert({ user_id: user.id, name: 'Subscriptions', color: '#6366f1', icon: 'repeat' })
-        .select('id')
-        .single()
-      if (newCat) categoryId = newCat.id
+    // Category priority: (1) the subscription's own category, (2) AI
+    // inference from the merchant name — persisted onto the subscription
+    // so it never re-runs, (3) generic "Subscriptions" fallback
+    let categoryId: string | null = sub.category_id ?? null
+    let aiCategorized = false
+    if (!categoryId) {
+      categoryId = await inferSubscriptionCategory(supabase, user.id, sub.name)
+      if (categoryId) {
+        aiCategorized = true
+        await supabase
+          .from('subscriptions')
+          .update({ category_id: categoryId })
+          .eq('id', sub.id)
+          .eq('user_id', user.id)
+      }
     }
+    if (!categoryId) {
+      const { data: cat } = await supabase
+        .from('categories')
+        .select('id')
+        .eq('user_id', user.id)
+        .ilike('name', 'subscriptions')
+        .limit(1)
+        .maybeSingle()
+
+      if (cat) {
+        categoryId = cat.id
+      } else {
+        const { data: newCat } = await supabase
+          .from('categories')
+          .insert({ user_id: user.id, name: 'Subscriptions', color: '#6366f1', icon: 'repeat' })
+          .select('id')
+          .single()
+        if (newCat) categoryId = newCat.id
+      }
+    }
+
+    // Fetch account currency for multi-currency transaction recording
+    const { data: acct } = await supabase
+      .from('accounts')
+      .select('current_balance, currency')
+      .eq('id', sub.account_id)
+      .eq('user_id', user.id)
+      .single()
+    const acctCurrency: CurrencyCode = ( acct?.currency as CurrencyCode | null ) ?? 'USD'
+    const fxRate = acctCurrency !== 'USD' ? await getFxRate( acctCurrency, 'USD' ) : 1
+    const usdNormalized = convertAmount( sub.billing_cost, fxRate )
 
     const { error: txnErr } = await supabase.from('transactions').insert({
       user_id: user.id,
       account_id: sub.account_id,
       category_id: categoryId,
       description: sub.name,
-      amount_usd: signedAmt,
-      final_amount: signedAmt,
+      amount_usd: -usdNormalized,
+      final_amount: -usdNormalized,
       amount_original: sub.billing_cost,
-      original_currency: 'USD',
+      original_currency: acctCurrency,
       cr_dr: 'debit',
       date: today,
       source: 'manual',
       import_status: 'confirmed',
       flagged: false,
       is_recurring: true,
-      ai_categorized: false,
+      ai_categorized: aiCategorized,
       is_internal_transfer: false,
       notes: `Manual payment — ${sub.billing_cycle_months === 1 ? 'Monthly' : `Every ${sub.billing_cycle_months} months`}`,
     })
@@ -104,13 +134,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: txnErr.message }, { status: 500 })
     }
 
-    // Deduct from account balance
-    const { data: acct } = await supabase
-      .from('accounts')
-      .select('current_balance')
-      .eq('id', sub.account_id)
-      .eq('user_id', user.id)
-      .single()
+    // Deduct from account balance (use raw signedAmt in account's native currency)
 
     if (acct) {
       await supabase

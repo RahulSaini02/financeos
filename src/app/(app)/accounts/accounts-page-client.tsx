@@ -125,9 +125,13 @@ function SortIcon({ option }: { option: SortOption }) {
 export default function AccountsClient({
   initialAccounts,
   userId,
+  baseCurrency = "USD",
+  fxRates = {},
 }: {
   initialAccounts: Account[];
   userId: string;
+  baseCurrency?: CurrencyCode;
+  fxRates?: Partial<Record<CurrencyCode, number>>;
 }) {
   const supabase = createClient();
   const { success: toastSuccess, error: toastError } = useToast();
@@ -197,10 +201,17 @@ export default function AccountsClient({
     (a, b) => kindOrder[a as AccountKind] - kindOrder[b as AccountKind]
   ) as AccountKind[];
 
-  const totalAssets = activeAccounts.filter((a) => a.kind === "asset").reduce((s, a) => s + a.current_balance, 0);
-  const totalLiabilities = activeAccounts.filter((a) => a.kind === "liability").reduce((s, a) => s + Math.abs(a.current_balance), 0);
-  const totalInvestments = activeAccounts.filter((a) => a.kind === "investment").reduce((s, a) => s + a.current_balance, 0);
+  // Convert each account's balance to baseCurrency before summing.
+  // fxRates[currency] is the rate from that currency into baseCurrency (e.g. INR→USD ≈ 0.012).
+  const toBase = (account: Account) => account.current_balance * (fxRates[account.currency] ?? 1);
+
+  const totalAssets = activeAccounts.filter((a) => a.kind === "asset").reduce((s, a) => s + toBase(a), 0);
+  const totalLiabilities = activeAccounts.filter((a) => a.kind === "liability").reduce((s, a) => s + Math.abs(toBase(a)), 0);
+  const totalInvestments = activeAccounts.filter((a) => a.kind === "investment").reduce((s, a) => s + toBase(a), 0);
   const netWorth = totalAssets + totalInvestments - totalLiabilities;
+
+  // Show a "Converted to X" note only when at least one account uses a different currency.
+  const hasMixedCurrencies = accounts.some((a) => a.currency !== baseCurrency);
 
   const kindLabels: Record<AccountKind, string> = { asset: "Assets", liability: "Liabilities", investment: "Investments" };
   const kindTotals: Record<AccountKind, number> = { asset: totalAssets, liability: totalLiabilities, investment: totalInvestments };
@@ -505,21 +516,24 @@ export default function AccountsClient({
           <div>
             <CardTitle>Net Worth</CardTitle>
             <CardValue className={cn("mt-2 text-3xl", getAccountColor(netWorth, "asset"))}>
-              {formatCurrency(netWorth)}
+              {formatCurrency(netWorth, baseCurrency)}
             </CardValue>
+            {hasMixedCurrencies && (
+              <p className="mt-1 text-xs text-[var(--color-text-muted)]">Converted to {baseCurrency}</p>
+            )}
           </div>
           <div className="grid grid-cols-3 gap-4 sm:flex sm:gap-8 sm:text-right">
             <div>
               <p className="text-xs text-[var(--color-text-muted)] uppercase tracking-wide">Assets</p>
-              <p className="text-base sm:text-lg font-semibold text-[var(--color-income)] mt-1">{formatCurrency(totalAssets)}</p>
+              <p className="text-base sm:text-lg font-semibold text-[var(--color-income)] mt-1">{formatCurrency(totalAssets, baseCurrency)}</p>
             </div>
             <div>
               <p className="text-xs text-[var(--color-text-muted)] uppercase tracking-wide">Liabilities</p>
-              <p className="text-base sm:text-lg font-semibold text-[var(--color-danger)] mt-1">{formatCurrency(totalLiabilities)}</p>
+              <p className="text-base sm:text-lg font-semibold text-[var(--color-danger)] mt-1">{formatCurrency(totalLiabilities, baseCurrency)}</p>
             </div>
             <div>
               <p className="text-xs text-[var(--color-text-muted)] uppercase tracking-wide">Investments</p>
-              <p className="text-base sm:text-lg font-semibold text-[var(--color-income)] mt-1">{formatCurrency(totalInvestments)}</p>
+              <p className="text-base sm:text-lg font-semibold text-[var(--color-income)] mt-1">{formatCurrency(totalInvestments, baseCurrency)}</p>
             </div>
           </div>
         </div>
@@ -542,7 +556,7 @@ export default function AccountsClient({
                 "text-sm font-medium",
                 kind === "liability" ? "text-[var(--color-danger)]" : "text-[var(--color-income)]"
               )}>
-                {formatCurrency(kindTotals[kind], kind === "asset" && accounts.some(a => a.kind === kind && a.currency === "INR") ? "INR" : "USD")}
+                {formatCurrency(kindTotals[kind], baseCurrency)}
               </span>
             </div>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

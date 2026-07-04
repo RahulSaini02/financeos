@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Card, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency } from "@/lib/utils";
+import { useCurrency } from "@/lib/currency-context";
 import { createClient } from "@/lib/supabase";
 import type { SavingsGoal, GoalStatus } from "@/lib/types";
 import {
@@ -237,6 +237,7 @@ function SavingsGoalModal ( {
   } );
   const [saving, setSaving] = useState( false );
   const [error, setError] = useState<string | null>( null );
+  const { fmt } = useCurrency();
 
   const handleSubmit = async ( e: React.FormEvent ) => {
     e.preventDefault();
@@ -430,7 +431,7 @@ function SavingsGoalModal ( {
               )}
               {accounts.map( ( a ) => (
                 <option key={a.id} value={a.id}>
-                  {a.name} ({formatCurrency( a.current_balance )})
+                  {a.name} ({fmt( a.current_balance )})
                 </option>
               ) )}
             </select>
@@ -555,6 +556,7 @@ interface SavingsGoalsClientProps {
 
 export function SavingsGoalsClient ( { initialGoals, accounts }: SavingsGoalsClientProps ) {
   const supabase = createClient();
+  const { fmt } = useCurrency();
 
   const [goals, setGoals] = useState<SavingsGoal[]>( initialGoals );
   const [error, setError] = useState<string | null>( null );
@@ -710,7 +712,7 @@ export function SavingsGoalsClient ( { initialGoals, accounts }: SavingsGoalsCli
         <Card>
           <CardTitle>Total Target</CardTitle>
           <CardValue className="mt-2 text-[var(--color-text-primary)]">
-            {formatCurrency( totalTarget )}
+            {fmt( totalTarget )}
           </CardValue>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
             across active goals
@@ -719,7 +721,7 @@ export function SavingsGoalsClient ( { initialGoals, accounts }: SavingsGoalsCli
         <Card>
           <CardTitle>Total Saved</CardTitle>
           <CardValue className="mt-2 text-[var(--color-success)]">
-            {formatCurrency( totalCurrent )}
+            {fmt( totalCurrent )}
           </CardValue>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
             {overallProgress.toFixed( 1 )}% of target
@@ -728,7 +730,7 @@ export function SavingsGoalsClient ( { initialGoals, accounts }: SavingsGoalsCli
         <Card>
           <CardTitle>Monthly Contribution</CardTitle>
           <CardValue className="mt-2 text-[var(--color-accent)]">
-            {formatCurrency( totalMonthlyContribution )}
+            {fmt( totalMonthlyContribution )}
           </CardValue>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
             auto-savings
@@ -845,10 +847,10 @@ export function SavingsGoalsClient ( { initialGoals, accounts }: SavingsGoalsCli
                 <div className="flex items-baseline justify-between">
                   <div>
                     <span className="text-xl md:text-2xl font-semibold text-[var(--color-text-primary)]">
-                      {formatCurrency( effectiveCurrent )}
+                      {fmt( effectiveCurrent )}
                     </span>
                     <span className="text-xs text-[var(--color-text-muted)] ml-1">
-                      of {formatCurrency( goal.target_amount )}
+                      of {fmt( goal.target_amount )}
                     </span>
                   </div>
                   {linkedAccount && (
@@ -883,7 +885,7 @@ export function SavingsGoalsClient ( { initialGoals, accounts }: SavingsGoalsCli
                     </span>
                   ) : (
                     <span className="text-[var(--color-text-muted)]">
-                      {formatCurrency( remaining )} remaining
+                      {fmt( remaining )} remaining
                     </span>
                   )}
                 </div>
@@ -892,7 +894,7 @@ export function SavingsGoalsClient ( { initialGoals, accounts }: SavingsGoalsCli
                   <div className="flex items-center gap-2 pt-3 border-t border-[var(--color-border)]">
                     <div className="flex items-center gap-1 text-xs text-[var(--color-text-muted)]">
                       <TrendingUp className="h-3 w-3" />
-                      <span>{formatCurrency( goal.monthly_contribution )}/mo</span>
+                      <span>{fmt( goal.monthly_contribution )}/mo</span>
                     </div>
                     {monthsToGoal && monthsToGoal > 0 && (
                       <span className="text-xs text-[var(--color-text-muted)]">

@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { Card, CardHeader, CardTitle, CardValue } from "@/components/ui/card";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, getUserRegion } from "@/lib/utils";
+import { TAX_CATEGORY_LABELS, RETIREMENT_LABELS } from "@/lib/region-labels";
 import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/components/auth-provider";
 import type { Paycheck } from "@/lib/types";
@@ -159,6 +160,10 @@ export default function TaxEstimatorPage () {
   } );
 
   const [prefilled, setPrefilled] = useState( false );
+
+  const region = getUserRegion();
+  const taxLabels = TAX_CATEGORY_LABELS[region];
+  const retirementLabels = RETIREMENT_LABELS[region];
 
   useEffect( () => {
     if ( !user ) return;
@@ -321,7 +326,7 @@ export default function TaxEstimatorPage () {
           </div>
 
           <div>
-            <label className={labelClass}>Pre-tax 401K Contribution (%)</label>
+            <label className={labelClass}>Pre-tax {retirementLabels.singular} Contribution (%)</label>
             <input
               type="number"
               className={inputClass}
@@ -369,19 +374,19 @@ export default function TaxEstimatorPage () {
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <Card>
           <CardHeader>
-            <CardTitle>Federal Tax (Annual)</CardTitle>
+            <CardTitle>{taxLabels.federal} Tax (Annual)</CardTitle>
           </CardHeader>
           <CardValue className="text-[var(--color-danger)]">{fmt( results.federalTax )}</CardValue>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>State Tax CA (Annual)</CardTitle>
+            <CardTitle>{taxLabels.state} Tax (Annual)</CardTitle>
           </CardHeader>
           <CardValue className="text-[var(--color-warning)]">{fmt( results.stateTax )}</CardValue>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Effective Federal Rate</CardTitle>
+            <CardTitle>Effective {taxLabels.federal} Rate</CardTitle>
           </CardHeader>
           <CardValue className="text-[var(--color-text-primary)]">
             {pct( results.effectiveFederalRate )}
@@ -389,7 +394,7 @@ export default function TaxEstimatorPage () {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Effective State Rate</CardTitle>
+            <CardTitle>Effective {taxLabels.state} Rate</CardTitle>
           </CardHeader>
           <CardValue className="text-[var(--color-text-primary)]">
             {pct( results.effectiveStateRate )}
@@ -419,13 +424,13 @@ export default function TaxEstimatorPage () {
             <tbody className="divide-y divide-[var(--color-border)]">
               {[
                 { label: "Gross Pay", value: results.grossPay, color: "text-[var(--color-text-primary)]" },
-                { label: "401K Contribution", value: -results.contribution401k, color: "text-[var(--color-warning)]" },
+                { label: `${retirementLabels.singular} Contribution`, value: -results.contribution401k, color: "text-[var(--color-warning)]" },
                 { label: "Other Pre-tax Deductions", value: -results.otherPreTax, color: "text-[var(--color-text-muted)]" },
                 { label: "Standard Deduction", value: -( inputs.standardDeductionOverride != null && inputs.standardDeductionOverride > 0 ? inputs.standardDeductionOverride : inputs.filingStatus === "mfj" ? FEDERAL_STANDARD_DEDUCTION_MFJ : FEDERAL_STANDARD_DEDUCTION_SINGLE ), color: "text-[var(--color-text-muted)]" },
-                { label: "Taxable Income (Federal)", value: results.federalTaxableIncome, color: "text-[var(--color-text-secondary)]" },
-                { label: "Federal Tax", value: -results.federalTax, color: "text-[var(--color-danger)]" },
-                { label: "State Tax (CA)", value: -results.stateTax, color: "text-[var(--color-warning)]" },
-                { label: "SDI (1.1%)", value: -results.sdi, color: "text-[var(--color-text-muted)]" },
+                { label: `Taxable Income (${taxLabels.federal})`, value: results.federalTaxableIncome, color: "text-[var(--color-text-secondary)]" },
+                { label: `${taxLabels.federal} Tax`, value: -results.federalTax, color: "text-[var(--color-danger)]" },
+                { label: `${taxLabels.state} Tax`, value: -results.stateTax, color: "text-[var(--color-warning)]" },
+                { label: `${taxLabels.fica} (1.1%)`, value: -results.sdi, color: "text-[var(--color-text-muted)]" },
                 { label: "Net Pay", value: results.netPay, color: "text-[var(--color-success)]", bold: true },
               ].map( ( row ) => (
                 <tr key={row.label}>
@@ -509,15 +514,15 @@ export default function TaxEstimatorPage () {
           </CardHeader>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div className="space-y-1">
-              <p className="text-xs text-[var(--color-text-secondary)]">YTD Federal Withheld</p>
+              <p className="text-xs text-[var(--color-text-secondary)]">YTD {taxLabels.federal} Withheld</p>
               <p className="text-lg font-semibold text-[var(--color-text-primary)]">{fmt( ytdFederal )}</p>
             </div>
             <div className="space-y-1">
-              <p className="text-xs text-[var(--color-text-secondary)]">YTD State Withheld</p>
+              <p className="text-xs text-[var(--color-text-secondary)]">YTD {taxLabels.state} Withheld</p>
               <p className="text-lg font-semibold text-[var(--color-text-primary)]">{fmt( ytdState )}</p>
             </div>
             <div className="space-y-1">
-              <p className="text-xs text-[var(--color-text-secondary)]">YTD SDI</p>
+              <p className="text-xs text-[var(--color-text-secondary)]">YTD {taxLabels.fica}</p>
               <p className="text-lg font-semibold text-[var(--color-text-primary)]">{fmt( ytdSdi )}</p>
             </div>
           </div>

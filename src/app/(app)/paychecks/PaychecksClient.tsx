@@ -3,7 +3,9 @@
 import { useState, useMemo } from "react";
 import { Card, CardHeader, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, formatDate, parseLocalDate } from "@/lib/utils";
+import { formatDate, parseLocalDate, getUserRegion } from "@/lib/utils";
+import { useCurrency } from "@/lib/currency-context";
+import { PAYCHECK_FIELD_LABELS, RETIREMENT_LABELS } from "@/lib/region-labels";
 import { createClient } from "@/lib/supabase";
 import type { Paycheck, Employer, Account } from "@/lib/types";
 import {
@@ -91,6 +93,11 @@ interface PaychecksClientProps {
 
 export function PaychecksClient({ initialPaychecks, employers: initialEmployers }: PaychecksClientProps) {
   const supabase = createClient();
+  const { fmt } = useCurrency();
+
+  const region = getUserRegion();
+  const labels = PAYCHECK_FIELD_LABELS[region];
+  const retirementLabels = RETIREMENT_LABELS[region];
 
   const [paychecks, setPaychecks] = useState<Paycheck[]>(initialPaychecks);
   const [error, setError] = useState<string | null>(null);
@@ -423,31 +430,31 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
             <CardTitle>YTD Gross Pay</CardTitle>
             <DollarSign className="h-4 w-4 text-[var(--color-text-muted)]" />
           </CardHeader>
-          <CardValue className="text-[var(--color-income)]">{formatCurrency(ytdGross)}</CardValue>
+          <CardValue className="text-[var(--color-income)]">{fmt(ytdGross)}</CardValue>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle>YTD Net Pay</CardTitle>
             <TrendingUp className="h-4 w-4 text-[var(--color-text-muted)]" />
           </CardHeader>
-          <CardValue className="text-[var(--color-success)]">{formatCurrency(ytdNet)}</CardValue>
+          <CardValue className="text-[var(--color-success)]">{fmt(ytdNet)}</CardValue>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle>YTD Taxes</CardTitle>
             <Landmark className="h-4 w-4 text-[var(--color-text-muted)]" />
           </CardHeader>
-          <CardValue className="text-[var(--color-danger)]">{formatCurrency(ytdTaxes)}</CardValue>
+          <CardValue className="text-[var(--color-danger)]">{fmt(ytdTaxes)}</CardValue>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>YTD 401K</CardTitle>
+            <CardTitle>YTD {retirementLabels.singular}</CardTitle>
             <Briefcase className="h-4 w-4 text-[var(--color-text-muted)]" />
           </CardHeader>
-          <CardValue className="text-[var(--color-accent)]">{formatCurrency(ytd401k + ytdEmployerMatch)}</CardValue>
+          <CardValue className="text-[var(--color-accent)]">{fmt(ytd401k + ytdEmployerMatch)}</CardValue>
           {ytdEmployerMatch > 0 && (
             <p className="text-xs text-[var(--color-text-muted)] mt-1">
-              +{formatCurrency(ytdEmployerMatch)} employer match
+              +{fmt(ytdEmployerMatch)} {labels.employer_401k_match}
             </p>
           )}
         </Card>
@@ -471,7 +478,7 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
-                  {["Date", "Employer", "Gross", "Federal Tax", "State Tax", "SDI", "401K (Emp+Match)", "Other", "Net Pay", ""].map((h) => (
+                  {["Date", "Employer", labels.gross_pay, labels.federal_tax, labels.state_tax, labels.sdi, `${retirementLabels.singular} (Emp+Match)`, labels.other_deductions, labels.net_pay, ""].map((h) => (
                     <th
                       key={h}
                       className="px-4 py-3 text-left text-xs font-medium text-[var(--color-text-muted)] whitespace-nowrap"
@@ -495,20 +502,20 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
                       {formatDate(p.date)}
                     </td>
                     <td className="px-4 py-3 text-[var(--color-text-secondary)] whitespace-nowrap">{p.employer}</td>
-                    <td className="px-4 py-3 text-[var(--color-text-primary)]">{formatCurrency(p.gross_pay)}</td>
-                    <td className="px-4 py-3 text-[var(--color-danger)]">{formatCurrency(p.federal_tax)}</td>
-                    <td className="px-4 py-3 text-[var(--color-warning)]">{formatCurrency(p.state_tax)}</td>
-                    <td className="px-4 py-3 text-[var(--color-text-secondary)]">{formatCurrency(p.sdi)}</td>
+                    <td className="px-4 py-3 text-[var(--color-text-primary)]">{fmt(p.gross_pay)}</td>
+                    <td className="px-4 py-3 text-[var(--color-danger)]">{fmt(p.federal_tax)}</td>
+                    <td className="px-4 py-3 text-[var(--color-warning)]">{fmt(p.state_tax)}</td>
+                    <td className="px-4 py-3 text-[var(--color-text-secondary)]">{fmt(p.sdi)}</td>
                     <td className="px-4 py-3 text-[var(--color-accent)]">
-                      {formatCurrency(p.retirement_401k + (p.employer_401k_match ?? 0))}
+                      {fmt(p.retirement_401k + (p.employer_401k_match ?? 0))}
                       {(p.employer_401k_match ?? 0) > 0 && (
                         <span className="ml-1 text-[10px] text-[var(--color-text-muted)]">
-                          (+{formatCurrency(p.employer_401k_match ?? 0)})
+                          (+{fmt(p.employer_401k_match ?? 0)})
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-[var(--color-text-muted)]">{formatCurrency(p.other_deductions)}</td>
-                    <td className="px-4 py-3 text-[var(--color-success)] font-medium">{formatCurrency(p.net_pay)}</td>
+                    <td className="px-4 py-3 text-[var(--color-text-muted)]">{fmt(p.other_deductions)}</td>
+                    <td className="px-4 py-3 text-[var(--color-success)] font-medium">{fmt(p.net_pay)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         <button
@@ -537,21 +544,21 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
                 <tr className="border-t border-[var(--color-border)] bg-[var(--color-bg-tertiary)]">
                   <td className="px-4 py-3 text-xs font-medium text-[var(--color-text-muted)]">YTD Total</td>
                   <td className="px-4 py-3" />
-                  <td className="px-4 py-3 text-xs font-semibold text-[var(--color-text-primary)]">{formatCurrency(ytdGross)}</td>
+                  <td className="px-4 py-3 text-xs font-semibold text-[var(--color-text-primary)]">{fmt(ytdGross)}</td>
                   <td className="px-4 py-3 text-xs font-semibold text-[var(--color-danger)]">
-                    {formatCurrency(yearPaychecks.reduce((s, p) => s + p.federal_tax, 0))}
+                    {fmt(yearPaychecks.reduce((s, p) => s + p.federal_tax, 0))}
                   </td>
                   <td className="px-4 py-3 text-xs font-semibold text-[var(--color-warning)]">
-                    {formatCurrency(yearPaychecks.reduce((s, p) => s + p.state_tax, 0))}
+                    {fmt(yearPaychecks.reduce((s, p) => s + p.state_tax, 0))}
                   </td>
                   <td className="px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)]">
-                    {formatCurrency(yearPaychecks.reduce((s, p) => s + p.sdi, 0))}
+                    {fmt(yearPaychecks.reduce((s, p) => s + p.sdi, 0))}
                   </td>
-                  <td className="px-4 py-3 text-xs font-semibold text-[var(--color-accent)]">{formatCurrency(ytd401k + ytdEmployerMatch)}</td>
+                  <td className="px-4 py-3 text-xs font-semibold text-[var(--color-accent)]">{fmt(ytd401k + ytdEmployerMatch)}</td>
                   <td className="px-4 py-3 text-xs font-semibold text-[var(--color-text-muted)]">
-                    {formatCurrency(yearPaychecks.reduce((s, p) => s + p.other_deductions, 0))}
+                    {fmt(yearPaychecks.reduce((s, p) => s + p.other_deductions, 0))}
                   </td>
-                  <td className="px-4 py-3 text-xs font-semibold text-[var(--color-success)]">{formatCurrency(ytdNet)}</td>
+                  <td className="px-4 py-3 text-xs font-semibold text-[var(--color-success)]">{fmt(ytdNet)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -672,11 +679,11 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
 
                 {(
                   [
-                    { field: "gross_pay", label: "Gross Pay" },
-                    { field: "federal_tax", label: "Federal Tax" },
-                    { field: "state_tax", label: "State Tax" },
-                    { field: "sdi", label: "SDI" },
-                    { field: "other_deductions", label: "Other Deductions" },
+                    { field: "gross_pay", label: labels.gross_pay },
+                    { field: "federal_tax", label: labels.federal_tax },
+                    { field: "state_tax", label: labels.state_tax },
+                    { field: "sdi", label: labels.sdi },
+                    { field: "other_deductions", label: labels.other_deductions },
                   ] as { field: keyof PaycheckFormData; label: string }[]
                 ).map(({ field, label }) => (
                   <div key={field}>
@@ -695,10 +702,10 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
                   </div>
                 ))}
 
-                {/* 401K section */}
+                {/* Retirement contribution section */}
                 <div>
                   <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-                    401K Employee Contribution (%)
+                    {retirementLabels.singular} Employee Contribution (%)
                   </label>
                   <input
                     type="number"
@@ -714,7 +721,7 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
 
                 <div>
                   <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1.5">
-                    401K Employee Amount (auto)
+                    {retirementLabels.singular} Employee Amount (auto)
                   </label>
                   <input
                     type="number"
@@ -736,12 +743,12 @@ export function PaychecksClient({ initialPaychecks, employers: initialEmployers 
                     return gross > 0 ? (
                       <div className="rounded-lg bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] px-3 py-2 text-xs space-y-1">
                         <div className="flex justify-between">
-                          <span className="text-[var(--color-text-muted)]">Employer match (100% of first 3%, 50% above)</span>
-                          <span className="font-medium text-[var(--color-accent)]">+{formatCurrency(match)}</span>
+                          <span className="text-[var(--color-text-muted)]">{labels.employer_401k_match} (100% of first 3%, 50% above)</span>
+                          <span className="font-medium text-[var(--color-accent)]">+{fmt(match)}</span>
                         </div>
                         <div className="flex justify-between border-t border-[var(--color-border)] pt-1">
-                          <span className="text-[var(--color-text-secondary)] font-medium">Total 401K (employee + employer)</span>
-                          <span className="font-semibold text-[var(--color-success)]">{formatCurrency(total)}</span>
+                          <span className="text-[var(--color-text-secondary)] font-medium">Total {retirementLabels.singular} (employee + employer)</span>
+                          <span className="font-semibold text-[var(--color-success)]">{fmt(total)}</span>
                         </div>
                       </div>
                     ) : null;

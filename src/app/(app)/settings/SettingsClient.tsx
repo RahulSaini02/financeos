@@ -14,6 +14,7 @@ import { ALL_NAV_ITEMS, NAV_PREFS_KEY, getNavPrefs, type NavPref } from "@/compo
 import PromptsManager from "./PromptsManager";
 import { PushNotificationToggle } from "@/components/ui/push-notification-toggle";
 import type { UserFinancialPreferences, UserMemory } from "@/lib/types";
+import { getUserRegion, type UserRegion } from "@/lib/utils";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -196,6 +197,14 @@ export default function SettingsClient({
   const [timezone, setTimezone] = useState<string>(() =>
     (typeof window !== "undefined" && localStorage.getItem("pref_timezone")) || "America/Los_Angeles"
   );
+  const [region, setRegion] = useState<UserRegion>(() => getUserRegion());
+  const [defaultCurrency, setDefaultCurrency] = useState<'USD' | 'INR'>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('pref_default_currency');
+      if (stored === 'USD' || stored === 'INR') return stored;
+    }
+    return 'USD';
+  });
 
   // ── AI preferences ──
   const [prefsLoading, setPrefsLoading] = useState(true);
@@ -277,6 +286,53 @@ export default function SettingsClient({
     setNavPrefs(next);
     saveNavPrefs(next);
   }
+
+  // ── region sync from profiles ─────────────────────────────────────────────
+
+  useEffect(() => {
+    async function fetchRegion() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data } = await supabase
+          .from("profiles")
+          .select("region")
+          .eq("id", user.id)
+          .single();
+        if (data?.region && (data.region === "US" || data.region === "IN" || data.region === "other")) {
+          const r = data.region as UserRegion;
+          setRegion(r);
+          localStorage.setItem("pref_region", r);
+        }
+      } catch {
+        // silently ignore — column may not exist pre-migration or network error
+      }
+    }
+    fetchRegion();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── default currency sync from profiles ──────────────────────────────────
+
+  useEffect(() => {
+    async function fetchCurrency() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data } = await supabase
+          .from('profiles')
+          .select('default_currency')
+          .eq('id', user.id)
+          .single();
+        if (data?.default_currency === 'USD' || data?.default_currency === 'INR') {
+          setDefaultCurrency(data.default_currency);
+          localStorage.setItem('pref_default_currency', data.default_currency);
+        }
+      } catch {
+        // silently ignore
+      }
+    }
+    fetchCurrency();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── AI preferences + memory effects ──────────────────────────────────────
 
@@ -535,6 +591,34 @@ export default function SettingsClient({
     localStorage.setItem("pref_timezone", value);
   }
 
+  async function handleRegionChange(value: string) {
+    const r = value as UserRegion;
+    setRegion(r);
+    localStorage.setItem("pref_region", r);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      await supabase.from("profiles").update({ region: r }).eq("id", user.id);
+    } catch {
+      // silently ignore — RLS may reject or column not yet migrated
+    }
+  }
+
+  async function handleCurrencyChange(value: string) {
+    const c = value as 'USD' | 'INR';
+    setDefaultCurrency(c);
+    localStorage.setItem('pref_default_currency', c);
+    window.dispatchEvent(new CustomEvent("currency-changed", { detail: c }));
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      await supabase.from('profiles').update({ default_currency: c }).eq('id', user.id);
+      toastSuccess('Currency updated');
+    } catch {
+      toastError('Failed to save currency');
+    }
+  }
+
   const initials = getInitials(displayName || initialName, email);
   const emailDisplay = email || "—";
 
@@ -749,7 +833,8 @@ export default function SettingsClient({
                     Delete account
                   </p>
                   <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
-                    Permanently delete your account and all associated data. This cannot be undone.
+                    Your data is kept for 30 days — log back in within that window to restore
+                    everything, or it&apos;s permanently deleted.
                   </p>
                 </div>
                 <Button
@@ -834,6 +919,33 @@ export default function SettingsClient({
                 />
                 <p className="text-xs -mt-2" style={{ color: "var(--color-text-muted)" }}>
                   Used for displaying transaction and date fields across the app.
+                </p>
+
+                <SelectField
+                  label="Region"
+                  value={region}
+                  onChange={handleRegionChange}
+                  options={[
+                    { value: "US", label: "United States" },
+                    { value: "IN", label: "India" },
+                    { value: "other", label: "Other" },
+                  ]}
+                />
+                <p className="text-xs -mt-2" style={{ color: "var(--color-text-muted)" }}>
+                  Changes labels and date format only — your data is never restructured. NRI users can switch anytime.
+                </p>
+
+                <SelectField
+                  label="Base currency"
+                  value={defaultCurrency}
+                  onChange={handleCurrencyChange}
+                  options={[
+                    { value: "USD", label: "US Dollar (USD)" },
+                    { value: "INR", label: "Indian Rupee (INR)" },
+                  ]}
+                />
+                <p className="text-xs -mt-2" style={{ color: "var(--color-text-muted)" }}>
+                  Used for displaying net worth, account summaries, and cross-currency conversions.
                 </p>
               </div>
             </Card>
@@ -1294,7 +1406,7 @@ export default function SettingsClient({
           onClose={() => setDeleteConfirmOpen(false)}
           onConfirm={handleDeleteAccount}
           title="Delete your account?"
-          description={`This will permanently delete your account and all associated data for ${emailDisplay} — transactions, budgets, categories, and everything else. This cannot be undone.`}
+          description={`This deletes the account for ${emailDisplay} and signs you out. All your data — transactions, budgets, categories, everything — is kept for 30 days: sign back in within that window to fully restore it. After 30 days it is permanently deleted.`}
           confirmLabel="Permanently Delete"
           dangerous
           loading={deleting}

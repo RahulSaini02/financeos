@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { getFxRate, convertAmount } from '@/lib/fx'
+import type { CurrencyCode } from '@/lib/types'
 
 export async function POST(request: NextRequest) {
   try {
@@ -100,17 +102,29 @@ export async function POST(request: NextRequest) {
           if (newCat) loansCategoryId = newCat.id
         }
 
-        const signedAmt = -Math.abs(emi_paid) // debit = negative
+        const signedAmt = -Math.abs(emi_paid) // debit = negative (in account's native currency)
+
+        // Fetch account currency to normalize amount_usd to USD for storage
+        const { data: fromAcct } = await supabase
+          .from('accounts')
+          .select('current_balance, currency')
+          .eq('id', from_account_id)
+          .eq('user_id', user.id)
+          .single()
+        const fromCurrency: CurrencyCode = ( fromAcct?.currency as CurrencyCode | null ) ?? 'USD'
+        const fxRate = fromCurrency !== 'USD' ? await getFxRate( fromCurrency, 'USD' ) : 1
+        const usdNormalized = convertAmount( Math.abs( emi_paid ), fxRate )
+
         const { error: txnInsertErr } = await supabase.from('transactions').insert({
           user_id: user.id,
           account_id: from_account_id,
           loan_id: loan_id,
           category_id: loansCategoryId,
           description: `Loan Payment — ${loan.name}`,
-          amount_usd: signedAmt,
-          final_amount: signedAmt,
+          amount_usd: -usdNormalized,
+          final_amount: -usdNormalized,
           amount_original: Math.abs(emi_paid),
-          original_currency: 'USD',
+          original_currency: fromCurrency,
           cr_dr: 'debit',
           date: payment_date,
           source: 'manual',
@@ -124,17 +138,11 @@ export async function POST(request: NextRequest) {
           console.error('Loan payment transaction insert error:', txnInsertErr)
         }
 
-        // Reduce the paying account's balance
-        const { data: acct } = await supabase
-          .from('accounts')
-          .select('current_balance')
-          .eq('id', from_account_id)
-          .eq('user_id', user.id) // verify account belongs to user
-          .single()
-        if (acct) {
+        // Reduce the paying account's balance (use raw signedAmt in account's native currency)
+        if (fromAcct) {
           await supabase
             .from('accounts')
-            .update({ current_balance: (acct.current_balance ?? 0) + signedAmt })
+            .update({ current_balance: (fromAcct.current_balance ?? 0) + signedAmt })
             .eq('id', from_account_id)
             .eq('user_id', user.id)
         }

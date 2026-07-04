@@ -5,7 +5,8 @@ import { StatusBadge } from "@/components/ui/status-badge";
 interface AgentActionRow {
   tool_name: string;
   status: "pending" | "executed" | "rejected" | "failed";
-  executed_at: string;
+  executed_at: string | null;
+  created_at: string;
   user_email: string;
 }
 
@@ -20,8 +21,11 @@ const statusVariant: Record<AgentActionRow["status"], "success" | "warning" | "d
   rejected: "muted",
 };
 
-function formatTimeAgo(dateStr: string): string {
+function formatTimeAgo(executedAt: string | null, createdAt: string): string {
+  const dateStr = executedAt ?? createdAt;
+  if (!dateStr) return "unknown";
   const diff = Date.now() - new Date(dateStr).getTime();
+  if (diff < 0 || diff > 365 * 86_400_000 * 10) return "unknown";
   const mins = Math.floor(diff / 60_000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
@@ -56,7 +60,7 @@ export default function AdminRecentAgentActions({ actions }: AdminRecentAgentAct
                 </div>
                 <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)]">
                   <span className="truncate mr-2">{a.user_email}</span>
-                  <span className="shrink-0">{formatTimeAgo(a.executed_at)}</span>
+                  <span className="shrink-0">{formatTimeAgo(a.executed_at, a.created_at)}</span>
                 </div>
               </div>
             ))}
@@ -86,7 +90,7 @@ export default function AdminRecentAgentActions({ actions }: AdminRecentAgentAct
                     {a.user_email}
                   </td>
                   <td className="px-4 py-3 text-right text-[var(--color-text-muted)]">
-                    {formatTimeAgo(a.executed_at)}
+                    {formatTimeAgo(a.executed_at, a.created_at)}
                   </td>
                 </tr>
               ))}

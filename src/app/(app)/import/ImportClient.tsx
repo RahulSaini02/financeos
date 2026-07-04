@@ -16,6 +16,8 @@ import {
   CheckCheck,
 } from "lucide-react";
 import { TablePageSkeleton } from "@/components/ui/skeleton";
+import { parseStatementCsv } from "@/lib/csv-import";
+import type { ParseStatementResult } from "@/lib/csv-import";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
@@ -61,6 +63,8 @@ export default function ImportClient({
   const [confirmAllLoading, setConfirmAllLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [csvLoading, setCsvLoading] = useState(false);
+  const [pendingResult, setPendingResult] = useState<ParseStatementResult | null>(null);
+  const [currencyDialogOpen, setCurrencyDialogOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -197,7 +201,7 @@ export default function ImportClient({
               category_id: item.suggested_category_id ?? null,
               description: item.parsed_merchant ?? "Import",
               amount_usd: item.parsed_amount ?? 0,
-              cr_dr: "debit",
+              cr_dr: item.raw_data?.is_credit === "true" ? "credit" : "debit",
               date: item.parsed_date ?? now.split("T")[0],
               notes: null,
             }),
@@ -237,20 +241,44 @@ export default function ImportClient({
     if (!user || !e.target.files?.[0]) return;
     const file = e.target.files[0];
     setCsvLoading(true);
+    if (fileInputRef.current) fileInputRef.current.value = "";
 
     const text = await file.text();
-    const lines = text
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
-    if (lines.length < 2) {
-      showToast("CSV must have a header row and at least one data row.");
+    const result = parseStatementCsv(text);
+
+    if (result.format === "unknown") {
+      showToast(
+        "Unsupported CSV format. Supported: generic (date/description/amount), HDFC, ICICI, and SBI exports."
+      );
       setCsvLoading(false);
       return;
     }
 
-    // Skip header row
-    const dataLines = lines.slice(1);
+    if (result.rows.length === 0) {
+      showToast("No valid rows found in the CSV file.");
+      setCsvLoading(false);
+      return;
+    }
+
+    if (result.currency === null) {
+      // Currency could not be auto-detected — ask the user before continuing
+      setPendingResult(result);
+      setCurrencyDialogOpen(true);
+      setCsvLoading(false);
+      return;
+    }
+
+    await processParseResult(result, result.currency);
+  }
+
+  // Process a fully-resolved parse result once currency is known
+  async function processParseResult(result: ParseStatementResult, currency: "USD" | "INR") {
+    setCurrencyDialogOpen(false);
+    setPendingResult(null);
+    setCsvLoading(true);
+
+    const { format, rows } = result;
+
     const rawItems: Array<{
       raw_data: Record<string, string | null>;
       parsed_merchant: string;
@@ -258,23 +286,18 @@ export default function ImportClient({
       parsed_date: string;
       parsed_last_four: string | null;
       source: TxnSource;
+      isCredit: boolean;
       suggested_category_id?: string | null;
-    }> = [];
-
-    for (const line of dataLines) {
-      const cols = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
-      const [date, description, amount, last_four] = cols;
-      if (!date || !description || !amount) continue;
-
-      rawItems.push({
-        raw_data: { date, description, amount, last_four: last_four ?? null },
-        parsed_merchant: description,
-        parsed_amount: Math.abs(parseFloat(amount)),
-        parsed_date: date,
-        parsed_last_four: last_four?.slice(-4) ?? null,
-        source: "import" as TxnSource,
-      });
-    }
+    }> = rows.map((row) => ({
+      // is_credit persisted so confirm paths create deposits as credits (BUG-031)
+      raw_data: { ...row.raw, currency, is_credit: String(row.isCredit) },
+      parsed_merchant: row.merchant,
+      parsed_amount: row.amount,
+      parsed_date: row.date,
+      parsed_last_four: row.lastFour,
+      source: "import" as TxnSource,
+      isCredit: row.isCredit,
+    }));
 
     // Auto-categorize all rows in parallel before inserting
     const items = await Promise.all(
@@ -287,12 +310,12 @@ export default function ImportClient({
               description: item.parsed_merchant,
               amount: item.parsed_amount,
               date: item.parsed_date,
-              transaction_type: item.parsed_amount != null && item.parsed_amount >= 0 ? 'credit' : 'debit',
+              transaction_type: item.isCredit ? "credit" : "debit",
               createIfMissing: true,
             }),
           });
           if (res.ok) {
-            const body = await res.json() as { categoryId: string | null };
+            const body = (await res.json()) as { categoryId: string | null };
             return { ...item, suggested_category_id: body.categoryId };
           }
         } catch { /* non-fatal */ }
@@ -300,24 +323,42 @@ export default function ImportClient({
       })
     );
 
+    // Build API payload — exclude the internal isCredit tracking field
+    const apiItems = items.map((item) => ({
+      raw_data: item.raw_data,
+      parsed_merchant: item.parsed_merchant,
+      parsed_amount: item.parsed_amount,
+      parsed_date: item.parsed_date,
+      parsed_last_four: item.parsed_last_four,
+      source: item.source,
+      suggested_category_id: item.suggested_category_id,
+    }));
+
     let successCount = 0;
-    if (items.length > 0) {
+    if (apiItems.length > 0) {
       try {
         const res = await fetch("/api/imports", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ items }),
+          body: JSON.stringify({ items: apiItems }),
         });
         if (res.ok) {
-          const body = await res.json() as { created?: number };
+          const body = (await res.json()) as { created?: number };
           successCount = body.created ?? 0;
         }
       } catch { /* non-fatal */ }
     }
 
-    showToast(`${successCount} row${successCount !== 1 ? "s" : ""} imported with categories suggested.`);
+    const formatLabel =
+      format === "hdfc" ? "HDFC" :
+      format === "icici" ? "ICICI" :
+      format === "sbi" ? "SBI" :
+      "Generic";
+
+    showToast(
+      `${successCount} row${successCount !== 1 ? "s" : ""} imported (${formatLabel} · ${currency}) with categories suggested.`
+    );
     setCsvLoading(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
     fetchData();
   }
 
@@ -407,7 +448,8 @@ export default function ImportClient({
         CSV format:{" "}
         <code className="bg-[var(--color-bg-tertiary)] px-1 rounded">
           date,description,amount,account_last_four
-        </code>
+        </code>{" "}
+        — HDFC, ICICI, and SBI bank exports are also auto-detected.
       </p>
 
       {/* Tabs */}
@@ -507,7 +549,7 @@ export default function ImportClient({
               <div>
                 <h3 className="font-semibold">Confirm all pending imports?</h3>
                 <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                  {tabItems.length} import{tabItems.length !== 1 ? "s" : ""} will be confirmed as debits using suggested categories. Flagged items are skipped.
+                  {tabItems.length} import{tabItems.length !== 1 ? "s" : ""} will be confirmed using suggested categories — deposits detected in the statement become credits, everything else debits. Flagged items are skipped.
                 </p>
               </div>
             </div>
@@ -558,6 +600,50 @@ export default function ImportClient({
                 Reject
               </Button>
             </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Currency Selection Dialog — shown when auto-detection fails for a generic CSV */}
+      {currencyDialogOpen && pendingResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <Card className="w-full max-w-sm">
+            <div className="mb-5">
+              <h3 className="font-semibold">Which currency is this statement in?</h3>
+              <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                Currency could not be detected automatically from the file.
+              </p>
+            </div>
+            <div className="flex gap-2 mb-2">
+              <Button
+                variant="secondary"
+                className="flex-1"
+                onClick={() => {
+                  if (pendingResult) processParseResult(pendingResult, "USD");
+                }}
+              >
+                USD ($)
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={() => {
+                  if (pendingResult) processParseResult(pendingResult, "INR");
+                }}
+              >
+                INR (&#8377;)
+              </Button>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full text-[var(--color-text-muted)]"
+              onClick={() => {
+                setCurrencyDialogOpen(false);
+                setPendingResult(null);
+              }}
+            >
+              Cancel
+            </Button>
           </Card>
         </div>
       )}
@@ -735,7 +821,10 @@ function ConfirmModal({
     item.suggested_account_id ?? accounts[0]?.id ?? ""
   );
   const [categoryId, setCategoryId] = useState(item.suggested_category_id ?? "");
-  const [crDr, setCrDr] = useState<CrDr>("debit");
+  // Deposit rows detected by the CSV parser default to credit (user can still toggle)
+  const [crDr, setCrDr] = useState<CrDr>(
+    item.raw_data?.is_credit === "true" ? "credit" : "debit"
+  );
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 

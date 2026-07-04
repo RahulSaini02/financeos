@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Search, Loader2, X } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { useCurrency } from "@/lib/currency-context";
 
 const PAGES = [
   { label: "Dashboard", href: "/dashboard" },
@@ -52,6 +52,7 @@ type FlatItem =
   | { kind: "page"; data: { label: string; href: string } };
 
 export function GlobalSearch() {
+  const { fmt } = useCurrency();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -241,7 +242,7 @@ export function GlobalSearch() {
                           className={`ml-4 shrink-0 text-sm font-medium tabular-nums ${t.cr_dr === "debit" ? "text-red-400" : "text-emerald-400"}`}
                         >
                           {t.cr_dr === "debit" ? "-" : "+"}
-                          {formatCurrency(t.final_amount)}
+                          {fmt(t.final_amount)}
                         </span>
                       </button>
                     );
@@ -268,7 +269,7 @@ export function GlobalSearch() {
                           <p className="text-xs text-[var(--color-text-muted)] capitalize">{a.type.replace(/_/g, " ")}</p>
                         </div>
                         <span className="ml-4 shrink-0 text-sm font-medium tabular-nums">
-                          {formatCurrency(a.current_balance)}
+                          {fmt(a.current_balance)}
                         </span>
                       </button>
                     );

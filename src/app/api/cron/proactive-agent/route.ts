@@ -87,13 +87,27 @@ export async function GET(request: NextRequest) {
 
   for (const [userId, userSubs] of byUser) {
     try {
-      // Check ai_enabled
-      const { data: profile } = await supabase
+      // Check ai_enabled (+ persona for mismatch nudges; column exists since migration 031)
+      let aiEnabled = false
+      let persona: string | null = null
+      const { data: profile, error: profileErr } = await supabase
         .from('profiles')
-        .select('ai_enabled')
+        .select('ai_enabled, persona')
         .eq('id', userId)
         .maybeSingle()
-      if (!profile?.ai_enabled) continue
+      if (profileErr) {
+        // Pre-031 fallback: persona column may not exist yet
+        const { data: fallback } = await supabase
+          .from('profiles')
+          .select('ai_enabled')
+          .eq('id', userId)
+          .maybeSingle()
+        aiEnabled = fallback?.ai_enabled ?? false
+      } else {
+        aiEnabled = profile?.ai_enabled ?? false
+        persona = (profile?.persona as string | null) ?? null
+      }
+      if (!aiEnabled) continue
 
       // ── 1. Budget trajectory: ≥ 70% spent with ≥ 10 days left ──────────────
       const { data: budgets } = await supabase
@@ -105,21 +119,32 @@ export async function GET(request: NextRequest) {
       type BudgetRow = { amount_usd: number; category: { id: string; name: string } | null }
       const budgetFindings: string[] = []
 
-      if (budgets && daysLeftInMonth >= 10) {
+      if (budgets && budgets.length > 0 && daysLeftInMonth >= 10) {
+        // One query for all budgeted categories, grouped in JS (avoids N+1 per budget)
+        const budgetCatIds = (budgets as unknown as BudgetRow[])
+          .map((b) => b.category?.id)
+          .filter((id): id is string => Boolean(id))
+
+        const { data: budgetTxns } = await supabase
+          .from('transactions')
+          .select('amount_usd, category_id')
+          .eq('user_id', userId)
+          .eq('cr_dr', 'debit')
+          .in('category_id', budgetCatIds)
+          .gte('date', firstDayOfMonth)
+          .lte('date', todayStr)
+
+        const spentByCategory = new Map<string, number>()
+        for (const t of (budgetTxns ?? []) as { amount_usd: number; category_id: string | null }[]) {
+          if (!t.category_id) continue
+          spentByCategory.set(t.category_id, (spentByCategory.get(t.category_id) ?? 0) + Math.abs(t.amount_usd))
+        }
+
         for (const budget of budgets as unknown as BudgetRow[]) {
           const cat = budget.category
           if (!cat) continue
 
-          const { data: txns } = await supabase
-            .from('transactions')
-            .select('amount_usd')
-            .eq('user_id', userId)
-            .eq('category_id', cat.id)
-            .eq('cr_dr', 'debit')
-            .gte('date', firstDayOfMonth)
-            .lte('date', todayStr)
-
-          const spent = (txns ?? []).reduce((s, t) => s + Math.abs(t.amount_usd), 0)
+          const spent = spentByCategory.get(cat.id) ?? 0
           const pct = budget.amount_usd > 0 ? (spent / budget.amount_usd) * 100 : 0
 
           if (pct >= 70 && pct < 100) {
@@ -223,6 +248,28 @@ export async function GET(request: NextRequest) {
         }
       }
 
+      // ── 4. Persona/pattern mismatch nudges ───────────────────────────────────
+      // The persona chosen at onboarding hides some tabs by default. When the data
+      // says otherwise (e.g. a Student with regular paychecks), suggest enabling
+      // the hidden tab — the tab is never locked, just hidden.
+      const personaNudges: string[] = []
+      if (persona === 'student' || persona === 'between_jobs') {
+        const [{ count: paycheckCount }, { count: investmentCount }] = await Promise.all([
+          supabase.from('paychecks').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+          supabase.from('investments').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+        ])
+        if ((paycheckCount ?? 0) >= 2) {
+          personaNudges.push(
+            `User persona is "${persona}" (Paychecks tab hidden by default) but has ${paycheckCount} paycheck records — suggest enabling the Paychecks tab in Settings`
+          )
+        }
+        if ((investmentCount ?? 0) >= 1) {
+          personaNudges.push(
+            `User persona is "${persona}" (Investments tab hidden by default) but has ${investmentCount} investment holdings — suggest enabling the Investments tab in Settings`
+          )
+        }
+      }
+
       // ── Build snapshot for Anthropic ──────────────────────────────────────────
       const snapshot = JSON.stringify({
         date: todayStr,
@@ -230,6 +277,7 @@ export async function GET(request: NextRequest) {
         budget_warnings: budgetFindings,
         savings_goal_alerts: goalFindings,
         spending_anomalies: anomalyFindings,
+        persona_nudges: personaNudges,
       })
 
       // Get prompt template

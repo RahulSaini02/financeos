@@ -1,10 +1,11 @@
 "use client";
 
-import { formatCurrency } from "@/lib/utils";
+import { useCurrency } from "@/lib/currency-context";
 
-export const compactCurrency = (v: number) => {
-  if (Math.abs(v) >= 1000) return `$${(v / 1000).toFixed(0)}k`;
-  return `$${Math.round(v)}`;
+export const compactCurrency = (v: number, currency: "USD" | "INR" = "USD") => {
+  const symbol = currency === "INR" ? "₹" : "$";
+  if (Math.abs(v) >= 1000) return `${symbol}${(Math.abs(v) / 1000).toFixed(0)}k`;
+  return `${symbol}${Math.round(Math.abs(v))}`;
 };
 
 export interface TooltipPayloadItem {
@@ -20,6 +21,7 @@ export interface CustomTooltipProps {
 }
 
 export function ChartTooltip({ active, payload, label }: CustomTooltipProps) {
+  const { fmt } = useCurrency();
   if (!active || !payload || payload.length === 0) return null;
   return (
     <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 shadow-xl text-xs min-w-[140px]">
@@ -28,7 +30,7 @@ export function ChartTooltip({ active, payload, label }: CustomTooltipProps) {
         <div key={entry.name} className="flex items-center justify-between gap-4 mb-0.5">
           <span style={{ color: entry.color }}>{entry.name}</span>
           <span className="font-medium text-[var(--color-text-primary)]">
-            {formatCurrency(entry.value)}
+            {fmt(entry.value)}
           </span>
         </div>
       ))}

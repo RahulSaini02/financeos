@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'crypto'
+import { getFxRate, convertAmount } from '@/lib/fx'
 
 /**
  * GET /api/cron/generate-recurring
@@ -43,6 +44,31 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch rules' }, { status: 500 })
     }
 
+    // Batch-fetch account currencies for all accounts referenced by these rules
+    const accountIds = [
+      ...new Set(
+        (rules ?? []).flatMap((r) => [r.account_id, r.target_account_id].filter(Boolean) as string[])
+      ),
+    ]
+    const accountCurrencyMap: Record<string, string> = {}
+    if (accountIds.length > 0) {
+      const { data: accts } = await supabase
+        .from('accounts')
+        .select('id, currency')
+        .in('id', accountIds)
+      for (const a of accts ?? []) {
+        accountCurrencyMap[a.id] = a.currency ?? 'USD'
+      }
+    }
+
+    // Pre-fetch INR→USD rate once to avoid per-rule round-trips
+    const inrToUsdRate = await getFxRate('INR', 'USD')
+
+    function toUsd(amount: number, currency: string): number {
+      if (currency === 'USD') return amount
+      return convertAmount(amount, inrToUsdRate)
+    }
+
     const results: { ruleId: string; created: boolean; error?: string }[] = []
 
     for (const rule of rules ?? []) {
@@ -74,6 +100,11 @@ export async function GET(request: NextRequest) {
           .single()
         transferCategoryId = transferCat?.id ?? null
 
+        const srcCurrency = accountCurrencyMap[rule.account_id] ?? 'USD'
+        const tgtCurrency = accountCurrencyMap[rule.target_account_id] ?? 'USD'
+        const srcUsdAmt = toUsd(rule.amount_usd, srcCurrency)
+        const tgtUsdAmt = toUsd(rule.amount_usd, tgtCurrency)
+
         const { data: txnA, error: errA } = await supabase
           .from('transactions')
           .insert({
@@ -81,10 +112,10 @@ export async function GET(request: NextRequest) {
             account_id: rule.account_id,
             category_id: transferCategoryId,
             description: rule.description,
-            amount_usd: -rule.amount_usd,
-            final_amount: -rule.amount_usd,
+            amount_usd: -srcUsdAmt,
+            final_amount: -srcUsdAmt,
             amount_original: rule.amount_usd,
-            original_currency: 'USD',
+            original_currency: srcCurrency,
             cr_dr: 'debit',
             date: rule.next_due,
             notes: rule.notes ?? null,
@@ -112,10 +143,10 @@ export async function GET(request: NextRequest) {
             account_id: rule.target_account_id,
             category_id: transferCategoryId,
             description: rule.description,
-            amount_usd: rule.amount_usd,
-            final_amount: rule.amount_usd,
+            amount_usd: tgtUsdAmt,
+            final_amount: tgtUsdAmt,
             amount_original: rule.amount_usd,
-            original_currency: 'USD',
+            original_currency: tgtCurrency,
             cr_dr: 'credit',
             date: rule.next_due,
             notes: rule.notes ?? null,
@@ -154,17 +185,19 @@ export async function GET(request: NextRequest) {
       }
 
       // ── Standard recurring transaction ───────────────────────────────────────
-      const finalAmount = rule.cr_dr === 'credit' ? rule.amount_usd : -rule.amount_usd
+      const ruleCurrency = accountCurrencyMap[rule.account_id] ?? 'USD'
+      const ruleUsdAmt = toUsd(rule.amount_usd, ruleCurrency)
+      const finalAmountUsd = rule.cr_dr === 'credit' ? ruleUsdAmt : -ruleUsdAmt
 
       const { error: insertErr } = await supabase.from('transactions').insert({
         user_id: rule.user_id,
         account_id: rule.account_id,
         category_id: rule.category_id ?? null,
         description: rule.description,
-        amount_usd: finalAmount,
-        final_amount: finalAmount,
+        amount_usd: finalAmountUsd,
+        final_amount: finalAmountUsd,
         amount_original: rule.amount_usd,
-        original_currency: 'USD',
+        original_currency: ruleCurrency,
         cr_dr: rule.cr_dr,
         date: rule.next_due,
         notes: rule.notes ?? null,
