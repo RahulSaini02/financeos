@@ -13,6 +13,17 @@ export type LoanType = 'student' | 'personal' | 'mortgage' | 'auto' | 'other'
 export type GoalStatus = 'active' | 'paused' | 'completed'
 export type InsightType = 'daily' | 'monthly' | 'alert' | 'monthly_review' | 'agent_action'
 
+export type Region = 'US' | 'IN' | 'other'
+export type Persona =
+  | 'student'
+  | 'freelancer'
+  | 'employed'
+  | 'business_owner'
+  | 'trader'
+  | 'between_jobs'
+  | 'other'
+export type TrackingScope = 'spending' | 'spending_savings' | 'full'
+
 export interface Profile {
   id: string
   email: string
@@ -24,6 +35,12 @@ export interface Profile {
   ai_enabled: boolean
   ai_access_requested_at: string | null
   ai_access_requested_reason: string | null
+  region: Region
+  persona: Persona | null
+  tracking_scope: TrackingScope | null
+  onboarding_completed_at: string | null
+  deleted_at: string | null
+  deletion_scheduled: string | null
   created_at: string
   updated_at: string
 }

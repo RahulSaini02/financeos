@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Card, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
+import { useCurrency } from "@/lib/currency-context";
 import { createClient } from "@/lib/supabase";
 import type { RecurringRule, CrDr } from "@/lib/types";
 import {
@@ -474,6 +475,7 @@ export function RecurringClient({
   initialAutoRenewSubs,
 }: RecurringClientProps) {
   const supabase = createClient();
+  const { fmt } = useCurrency();
 
   const [rules, setRules] = useState<RecurringRule[]>(initialRules);
   const [autoRenewSubs] = useState(initialAutoRenewSubs);
@@ -601,7 +603,7 @@ export function RecurringClient({
         <Card>
           <CardTitle>Monthly Total</CardTitle>
           <CardValue className="mt-2 text-[var(--color-text-primary)]">
-            {formatCurrency(totalMonthly)}
+            {fmt(totalMonthly)}
           </CardValue>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">from monthly rules</p>
         </Card>
@@ -691,7 +693,7 @@ export function RecurringClient({
               <div className="flex items-baseline justify-between">
                 <div>
                   <span className="text-xl md:text-2xl font-semibold text-[var(--color-text-primary)]">
-                    {formatCurrency(rule.amount_usd)}
+                    {fmt(rule.amount_usd)}
                   </span>
                   <span
                     className={`text-xs ml-1 ${
@@ -733,12 +735,12 @@ export function RecurringClient({
                   <DollarSign className="h-3 w-3" />
                   <span>
                     {rule.frequency === "monthly"
-                      ? formatCurrency(rule.amount_usd)
+                      ? fmt(rule.amount_usd)
                       : rule.frequency === "weekly"
-                      ? formatCurrency(rule.amount_usd * 4.33)
+                      ? fmt(rule.amount_usd * 4.33)
                       : rule.frequency === "yearly"
-                      ? formatCurrency(rule.amount_usd / 12)
-                      : formatCurrency(rule.amount_usd * 30)}
+                      ? fmt(rule.amount_usd / 12)
+                      : fmt(rule.amount_usd * 30)}
                     /mo est.
                   </span>
                 </div>
@@ -772,7 +774,7 @@ export function RecurringClient({
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">{sub.name}</p>
                     <p className="text-xs text-[var(--color-text-muted)]">
-                      {formatCurrency(sub.billing_cost)} / {sub.billing_cycle_months === 1 ? "month" : `${sub.billing_cycle_months} months`}
+                      {fmt(sub.billing_cost)} / {sub.billing_cycle_months === 1 ? "month" : `${sub.billing_cycle_months} months`}
                     </p>
                   </div>
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--color-warning)]/10 text-[var(--color-warning)] font-medium whitespace-nowrap">

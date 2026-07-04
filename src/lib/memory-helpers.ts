@@ -18,11 +18,15 @@ import type {
 export async function fetchRecentConversationHistory(
   supabase: SupabaseClient,
   userId: string,
+  sessionId: string,
 ): Promise<ConversationMessage[]> {
+  // Scoped to the current session — cross-session recall belongs to
+  // user_memory facts, never raw message history (session isolation).
   const { data } = await supabase
     .from('conversation_messages')
     .select('*')
     .eq('user_id', userId)
+    .eq('session_id', sessionId)
     .order('created_at', { ascending: false })
     .limit(20)
 

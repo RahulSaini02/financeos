@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { inferSubscriptionCategory } from '@/lib/subscription-categorize'
+import { getFxRate, convertAmount } from '@/lib/fx'
 
 /**
  * GET /api/cron/subscription-autopay
@@ -45,6 +47,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch subscriptions' }, { status: 500 })
     }
 
+    // Batch-fetch account currencies for all linked accounts
+    const subAccountIds = [
+      ...new Set((subs ?? []).map((s) => s.account_id).filter(Boolean) as string[]),
+    ]
+    const accountCurrencyMap: Record<string, string> = {}
+    if (subAccountIds.length > 0) {
+      const { data: accts } = await supabase
+        .from('accounts')
+        .select('id, currency')
+        .in('id', subAccountIds)
+      for (const a of accts ?? []) {
+        accountCurrencyMap[a.id] = a.currency ?? 'USD'
+      }
+    }
+
+    // Pre-fetch INR→USD rate once
+    const inrToUsdRate = await getFxRate('INR', 'USD')
+
     const results: { subId: string; name: string; created: boolean; error?: string }[] = []
 
     for (const sub of subs ?? []) {
@@ -64,44 +84,64 @@ export async function GET(request: NextRequest) {
         continue
       }
 
-      // Find or create a "Subscriptions" category for the user
-      let categoryId: string | null = null
-      const { data: existingCat } = await supabase
-        .from('categories')
-        .select('id')
-        .eq('user_id', sub.user_id)
-        .eq('name', 'Subscriptions')
-        .single()
-      if (existingCat) {
-        categoryId = existingCat.id
-      } else {
-        const { data: newCat } = await supabase
+      // Category priority: (1) the subscription's own category, (2) AI
+      // inference from the merchant name — persisted onto the subscription
+      // so it never re-runs, (3) generic "Subscriptions" fallback
+      let categoryId: string | null = sub.category_id ?? null
+      let aiCategorized = false
+      if (!categoryId) {
+        categoryId = await inferSubscriptionCategory(supabase, sub.user_id, sub.name)
+        if (categoryId) {
+          aiCategorized = true
+          await supabase
+            .from('subscriptions')
+            .update({ category_id: categoryId })
+            .eq('id', sub.id)
+            .eq('user_id', sub.user_id)
+        }
+      }
+      if (!categoryId) {
+        const { data: existingCat } = await supabase
           .from('categories')
-          .insert({ user_id: sub.user_id, name: 'Subscriptions' })
           .select('id')
+          .eq('user_id', sub.user_id)
+          .eq('name', 'Subscriptions')
           .single()
-        if (newCat) categoryId = newCat.id
+        if (existingCat) {
+          categoryId = existingCat.id
+        } else {
+          const { data: newCat } = await supabase
+            .from('categories')
+            .insert({ user_id: sub.user_id, name: 'Subscriptions' })
+            .select('id')
+            .single()
+          if (newCat) categoryId = newCat.id
+        }
       }
 
-      const signedAmt = -Math.abs(sub.billing_cost)
+      const subCurrency = accountCurrencyMap[sub.account_id] ?? 'USD'
+      const usdNormalized = subCurrency !== 'USD'
+        ? convertAmount(sub.billing_cost, inrToUsdRate)
+        : sub.billing_cost
+      const signedAmt = -Math.abs(sub.billing_cost) // native signed (for balance update)
 
-      // Create debit transaction
+      // Create debit transaction (amount_usd stores USD-normalized value)
       const { error: txnErr } = await supabase.from('transactions').insert({
         user_id: sub.user_id,
         account_id: sub.account_id,
         category_id: categoryId,
         description: sub.name,
-        amount_usd: signedAmt,
-        final_amount: signedAmt,
+        amount_usd: -usdNormalized,
+        final_amount: -usdNormalized,
         amount_original: sub.billing_cost,
-        original_currency: 'USD',
+        original_currency: subCurrency,
         cr_dr: 'debit',
         date: today,
         source: 'manual',
         import_status: 'confirmed',
         flagged: false,
         is_recurring: true,
-        ai_categorized: false,
+        ai_categorized: aiCategorized,
         is_internal_transfer: false,
         notes: `Auto-charged — ${sub.billing_cycle_months === 1 ? 'Monthly' : `Every ${sub.billing_cycle_months} months`}`,
       })

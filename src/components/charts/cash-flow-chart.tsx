@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { compactCurrency, ChartTooltip } from "@/components/charts/chart-utils";
+import { useCurrency } from "@/lib/currency-context";
 
 interface CashFlowDataPoint {
   month: string;
@@ -39,6 +40,7 @@ const PERIODS: { value: Period; label: string; count: number | null }[] = [
 
 export function CashFlowChart({ data }: CashFlowChartProps) {
   const [period, setPeriod] = useState<Period>("6M");
+  const { currency } = useCurrency();
 
   const selected = PERIODS.find((p) => p.value === period)!;
   const chartData = (selected.count ? data.slice(-selected.count) : data).map((d) => ({
@@ -99,7 +101,7 @@ export function CashFlowChart({ data }: CashFlowChartProps) {
               tick={{ fill: "#606070", fontSize: 10 }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={compactCurrency}
+              tickFormatter={(v: number) => compactCurrency(v, currency)}
               width={48}
             />
             <Tooltip content={<ChartTooltip />} cursor={{ fill: "#222230" }} />

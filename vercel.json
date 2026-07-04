@@ -35,6 +35,14 @@
     {
       "path": "/api/cron/monthly-review",
       "schedule": "0 14 3 * *"
+    },
+    {
+      "path": "/api/cron/cleanup-agent-actions",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/purge-deleted-accounts",
+      "schedule": "0 5 * * *"
     }
   ]
 }

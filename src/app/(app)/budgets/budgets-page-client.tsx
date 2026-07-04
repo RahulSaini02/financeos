@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { GridPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { formatCurrency } from "@/lib/utils";
+import { useCurrency } from "@/lib/currency-context";
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -63,6 +63,7 @@ function OverrideModal({
   saving: boolean;
 }) {
   const [amount, setAmount] = useState(currentBudget > 0 ? currentBudget.toFixed(2) : "");
+  const { fmt } = useCurrency();
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
@@ -71,7 +72,7 @@ function OverrideModal({
           <div>
             <h2 className="text-base font-semibold">{category.icon} {category.name}</h2>
             <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-              {isOverride ? "This month's override" : `Default: ${formatCurrency(category.monthly_budget ?? 0)}/mo`}
+              {isOverride ? "This month's override" : `Default: ${fmt(category.monthly_budget ?? 0)}/mo`}
             </p>
           </div>
           <button onClick={onClose} className="rounded-lg p-1 hover:bg-[var(--color-bg-tertiary)] transition-colors">
@@ -93,7 +94,7 @@ function OverrideModal({
             </div>
             {isOverride && (
               <p className="text-xs text-[var(--color-text-muted)] mt-1.5">
-                Default from category: {formatCurrency(category.monthly_budget ?? 0)}/mo. Clear override to revert.
+                Default from category: {fmt(category.monthly_budget ?? 0)}/mo. Clear override to revert.
               </p>
             )}
           </div>
@@ -122,6 +123,7 @@ function CategoryCard({ row, onEdit, onDrillDown }: {
 }) {
   const status = groupStatus(row);
   const meta = GROUP_META[status];
+  const { fmt } = useCurrency();
   const remaining = row.budget - row.spent;
   const isUnbudgeted = status === "unbudgeted";
 
@@ -155,18 +157,18 @@ function CategoryCard({ row, onEdit, onDrillDown }: {
         {isUnbudgeted ? (
           <div className="flex items-center justify-between">
             <span className="text-xs text-[var(--color-text-muted)]">Spent (no budget)</span>
-            <span className="text-sm font-semibold text-[var(--color-text-primary)]">{formatCurrency(row.spent)}</span>
+            <span className="text-sm font-semibold text-[var(--color-text-primary)]">{fmt(row.spent)}</span>
           </div>
         ) : (
           <>
             <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
-              <span>{formatCurrency(row.spent)} spent</span>
-              <span>{formatCurrency(row.budget)} budget</span>
+              <span>{fmt(row.spent)} spent</span>
+              <span>{fmt(row.budget)} budget</span>
             </div>
             <div className="flex items-center justify-between">
               <span className={`text-xs ${meta.color}`}>{row.pct.toFixed(0)}% used</span>
               <span className={`text-sm font-semibold ${remaining >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}`}>
-                {remaining >= 0 ? `${formatCurrency(remaining)} left` : `${formatCurrency(Math.abs(remaining))} over`}
+                {remaining >= 0 ? `${fmt(remaining)} left` : `${fmt(Math.abs(remaining))} over`}
               </span>
             </div>
           </>
@@ -228,6 +230,7 @@ export default function BudgetsClient({
   userId: string;
 }) {
   const router = useRouter();
+  const { fmt } = useCurrency();
   const [year, setYear] = useState(initialYear);
   const [month, setMonth] = useState(initialMonth);
 
@@ -409,16 +412,16 @@ export default function BudgetsClient({
         <div className="grid grid-cols-3 divide-x divide-[var(--color-border)]">
           <div className="pr-3 sm:pr-6 min-w-0">
             <p className="text-[10px] sm:text-xs text-[var(--color-text-muted)] truncate">Total Budgeted</p>
-            <p className="text-sm sm:text-xl font-bold text-[var(--color-text-primary)] mt-0.5 truncate">{formatCurrency(totalBudgeted)}</p>
+            <p className="text-sm sm:text-xl font-bold text-[var(--color-text-primary)] mt-0.5 truncate">{fmt(totalBudgeted)}</p>
           </div>
           <div className="px-3 sm:px-6 min-w-0">
             <p className="text-[10px] sm:text-xs text-[var(--color-text-muted)] truncate">Spent So Far</p>
-            <p className="text-sm sm:text-xl font-bold text-[var(--color-text-primary)] mt-0.5 truncate">{formatCurrency(totalSpent)}</p>
+            <p className="text-sm sm:text-xl font-bold text-[var(--color-text-primary)] mt-0.5 truncate">{fmt(totalSpent)}</p>
           </div>
           <div className="pl-3 sm:pl-6 min-w-0">
             <p className="text-[10px] sm:text-xs text-[var(--color-text-muted)] truncate">{totalRemaining >= 0 ? "Remaining" : "Over"}</p>
             <p className={`text-sm sm:text-xl font-bold mt-0.5 truncate ${totalRemaining >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}`}>
-              {formatCurrency(Math.abs(totalRemaining))}
+              {fmt(Math.abs(totalRemaining))}
             </p>
           </div>
         </div>

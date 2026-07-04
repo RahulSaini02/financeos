@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Card, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
+import { useCurrency } from "@/lib/currency-context";
 import type { Loan, LoanPayment, Transaction } from "@/lib/types";
 import {
   TrendingDown,
@@ -52,6 +53,7 @@ function EditPaymentModal({
   const [closingBalance, setClosingBalance] = useState(payment.closing_balance.toString());
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const { fmt } = useCurrency();
 
   function handleEmiChange(val: string) {
     setEmiPaid(val);
@@ -114,7 +116,7 @@ function EditPaymentModal({
           <div>
             <h2 className="text-base font-semibold text-[var(--color-text-primary)]">Edit Payment</h2>
             <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-              Opening balance: {formatCurrency(payment.opening_balance)}
+              Opening balance: {fmt(payment.opening_balance)}
             </p>
           </div>
           <button onClick={onClose} className="text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]">
@@ -179,6 +181,7 @@ interface LoanDetailClientProps {
 
 export function LoanDetailClient({ loan }: LoanDetailClientProps) {
   const router = useRouter();
+  const { fmt } = useCurrency();
   const [showAllTransactions, setShowAllTransactions] = useState(false);
   const [editingPayment, setEditingPayment] = useState<LoanPayment | null>(null);
 
@@ -238,19 +241,19 @@ export function LoanDetailClient({ loan }: LoanDetailClientProps) {
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <Card>
           <CardTitle>Original Amount</CardTitle>
-          <CardValue className="mt-2">{formatCurrency(loan.principal)}</CardValue>
+          <CardValue className="mt-2">{fmt(loan.principal)}</CardValue>
         </Card>
         <Card>
           <CardTitle>Remaining Balance</CardTitle>
           <CardValue className="mt-2 text-[var(--color-danger)]">
-            {formatCurrency(loan.current_balance)}
+            {fmt(loan.current_balance)}
           </CardValue>
         </Card>
         <Card>
           <CardTitle>Monthly EMI</CardTitle>
-          <CardValue className="mt-2">{formatCurrency(loan.emi)}</CardValue>
+          <CardValue className="mt-2">{fmt(loan.emi)}</CardValue>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
-            ~{formatCurrency(monthlyInterest)} interest
+            ~{fmt(monthlyInterest)} interest
           </p>
         </Card>
         <Card>
@@ -278,8 +281,8 @@ export function LoanDetailClient({ loan }: LoanDetailClientProps) {
           />
         </div>
         <div className="flex items-center justify-between mt-2 text-xs text-[var(--color-text-muted)]">
-          <span>{formatCurrency(paidOff)} paid</span>
-          <span>{formatCurrency(loan.current_balance)} remaining</span>
+          <span>{fmt(paidOff)} paid</span>
+          <span>{fmt(loan.current_balance)} remaining</span>
         </div>
 
         <div className="mt-4 grid grid-cols-3 gap-3">
@@ -289,11 +292,11 @@ export function LoanDetailClient({ loan }: LoanDetailClientProps) {
           </div>
           <div className="rounded-lg bg-[var(--color-bg-tertiary)] px-3 py-2 text-center flex flex-col items-center justify-center">
             <p className="text-xs text-[var(--color-text-muted)] mb-0.5">Total Paid</p>
-            <p className="font-semibold text-sm text-[var(--color-success)]">{formatCurrency(totalPaid)}</p>
+            <p className="font-semibold text-sm text-[var(--color-success)]">{fmt(totalPaid)}</p>
           </div>
           <div className="rounded-lg bg-[var(--color-bg-tertiary)] px-3 py-2 text-center flex flex-col items-center justify-center">
             <p className="text-xs text-[var(--color-text-muted)] mb-0.5">Interest Paid</p>
-            <p className="font-semibold text-sm text-[var(--color-danger)]">{formatCurrency(totalInterestPaid)}</p>
+            <p className="font-semibold text-sm text-[var(--color-danger)]">{fmt(totalInterestPaid)}</p>
           </div>
         </div>
       </Card>
@@ -344,7 +347,7 @@ export function LoanDetailClient({ loan }: LoanDetailClientProps) {
                   }`}
                 >
                   {txn.cr_dr === "credit" ? "+" : "-"}
-                  {formatCurrency(Math.abs(txn.amount_usd))}
+                  {fmt(Math.abs(txn.amount_usd))}
                 </span>
               </div>
             ))}
@@ -406,15 +409,15 @@ export function LoanDetailClient({ loan }: LoanDetailClientProps) {
                     <td className="px-4 py-3 text-[var(--color-text-secondary)] whitespace-nowrap">
                       {formatDate(p.payment_date)}
                     </td>
-                    <td className="px-4 py-3 font-medium">{formatCurrency(p.emi_paid)}</td>
+                    <td className="px-4 py-3 font-medium">{fmt(p.emi_paid)}</td>
                     <td className="px-4 py-3 text-[var(--color-success)]">
-                      {formatCurrency(p.principal_paid)}
+                      {fmt(p.principal_paid)}
                     </td>
                     <td className="px-4 py-3 text-[var(--color-danger)]">
-                      {formatCurrency(p.interest)}
+                      {fmt(p.interest)}
                     </td>
                     <td className="px-4 py-3 text-[var(--color-text-muted)]">
-                      {formatCurrency(p.closing_balance)}
+                      {fmt(p.closing_balance)}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button
@@ -430,12 +433,12 @@ export function LoanDetailClient({ loan }: LoanDetailClientProps) {
               <tfoot>
                 <tr className="border-t-2 border-[var(--color-border)] bg-[var(--color-bg-tertiary)]">
                   <td className="px-4 py-3 text-xs font-medium text-[var(--color-text-muted)]">Total</td>
-                  <td className="px-4 py-3 text-xs font-semibold">{formatCurrency(totalPaid)}</td>
+                  <td className="px-4 py-3 text-xs font-semibold">{fmt(totalPaid)}</td>
                   <td className="px-4 py-3 text-xs font-semibold text-[var(--color-success)]">
-                    {formatCurrency(loan.payments.reduce((s, p) => s + p.principal_paid, 0))}
+                    {fmt(loan.payments.reduce((s, p) => s + p.principal_paid, 0))}
                   </td>
                   <td className="px-4 py-3 text-xs font-semibold text-[var(--color-danger)]">
-                    {formatCurrency(totalInterestPaid)}
+                    {fmt(totalInterestPaid)}
                   </td>
                   <td className="px-4 py-3 text-xs text-[var(--color-text-muted)]" />
                   <td className="px-4 py-3" />

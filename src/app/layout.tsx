@@ -23,9 +23,12 @@ const geistMono = Geist_Mono( {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
+  minimumScale: 1,
   viewportFit: "cover",
   themeColor: "#6366f1",
   colorScheme: "dark",
+  interactiveWidget: "resizes-visual",
 };
 
 export const metadata: Metadata = {
@@ -59,7 +62,7 @@ export default function RootLayout ( {
   children: React.ReactNode;
 }> ) {
   return (
-    <html lang="en" className="h-full" suppressHydrationWarning>
+    <html lang="en" className="h-full" suppressHydrationWarning data-scroll-behavior="smooth">
       <head />
       <body className={`${ geistSans.variable } ${ geistMono.variable } h-full antialiased`}>
         <ServiceWorkerRegister />

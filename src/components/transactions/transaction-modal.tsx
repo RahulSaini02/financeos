@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { X, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, getUserTimezone } from "@/lib/utils";
+import { getUserTimezone } from "@/lib/utils";
+import { useCurrency } from "@/lib/currency-context";
 import type { Transaction, Account, Category, Loan, TransactionType } from "@/lib/types";
 
 interface TransactionModalProps {
@@ -24,6 +25,7 @@ export function TransactionModal({
   onSave,
   onClose,
 }: TransactionModalProps) {
+  const { fmt } = useCurrency();
   // Always fetch fresh categories from the API so newly added ones appear immediately
   const [categories, setCategories] = useState<Category[]>(categoriesProp);
   useEffect(() => {
@@ -348,7 +350,7 @@ export function TransactionModal({
                 <option value="">— No loan link —</option>
                 {loans.map((l) => (
                   <option key={l.id} value={l.id}>
-                    {l.name} (bal: {formatCurrency(l.current_balance)})
+                    {l.name} (bal: {fmt(l.current_balance)})
                   </option>
                 ))}
               </select>

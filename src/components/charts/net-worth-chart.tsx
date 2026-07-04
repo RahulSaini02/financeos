@@ -3,7 +3,7 @@
 import { useState, useId, useRef, useEffect, useCallback } from "react";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatCurrency } from "@/lib/utils";
+import { useCurrency } from "@/lib/currency-context";
 
 interface NetworthPoint {
   month: string;
@@ -15,6 +15,7 @@ interface NetWorthChartProps {
 }
 
 export function NetWorthChart({ points }: NetWorthChartProps) {
+  const { fmt, currency, fxRate } = useCurrency();
   const [hovered, setHovered] = useState<number | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const uid = useId().replace(/:/g, "");
@@ -141,7 +142,7 @@ export function NetWorthChart({ points }: NetWorthChartProps) {
             </span>
           )}
           <span className="text-xs font-medium text-[var(--color-text-secondary)]">
-            {formatCurrency(last)}
+            {fmt(last)}
           </span>
         </div>
       </CardHeader>
@@ -170,11 +171,11 @@ export function NetWorthChart({ points }: NetWorthChartProps) {
                 {new Date(points[hovered].month + "T00:00:00Z").toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })}
               </p>
               <p className="text-sm font-bold text-[var(--color-text-primary)]">
-                {formatCurrency(val)}
+                {fmt(val)}
               </p>
               {mom !== null && (
                 <p className={`text-xs mt-0.5 ${mom >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}`}>
-                  {mom >= 0 ? "▲" : "▼"} {formatCurrency(Math.abs(mom))} MoM
+                  {mom >= 0 ? "▲" : "▼"} {fmt(Math.abs(mom))} MoM
                 </p>
               )}
             </div>
@@ -215,13 +216,13 @@ export function NetWorthChart({ points }: NetWorthChartProps) {
                 textAnchor="end"
                 suppressHydrationWarning
               >
-                {new Intl.NumberFormat("en-US", {
+                {new Intl.NumberFormat(currency === "INR" ? "en-IN" : "en-US", {
                   style: "currency",
-                  currency: "USD",
+                  currency,
                   notation: "compact",
                   minimumFractionDigits: 0,
                   maximumFractionDigits: 1,
-                }).format(val)}
+                }).format(currency === "INR" ? val * (fxRate || 84) : val)}
               </text>
             </g>
           ))}

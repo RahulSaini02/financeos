@@ -2,6 +2,13 @@
 
 html {
   scroll-behavior: smooth;
+  /* Lock horizontal axis — prevents layout shift when virtual keyboard appears */
+  overflow-x: hidden;
+  /* Disable double-tap zoom; keeps single-tap responsive */
+  touch-action: manipulation;
+  /* Prevent iOS from boosting text size in landscape */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 @theme inline {
@@ -40,6 +47,18 @@ body {
   font-family: var(--font-sans), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/*
+ * iOS Safari zooms in when focusing an input whose font-size < 16px.
+ * Force a 16px floor on all interactive inputs in PWA / Safari.
+ * The `@supports` guard limits this to WebKit so it doesn't affect desktop.
+ */
+@supports (-webkit-touch-callout: none) {
+  input, textarea, select {
+    font-size: max(16px, 1em) !important;
+  }
 }
 
 /* Scrollbar */

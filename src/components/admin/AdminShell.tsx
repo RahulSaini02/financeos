@@ -5,9 +5,7 @@ import AdminMobileHeader from './AdminMobileHeader'
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   return (
-    // AppShell already owns the scroll viewport — do NOT add overflow-auto here.
-    // Using min-h-full (not min-h-screen) keeps us inside AppShell's scroll area.
-    <div className="flex flex-col md:flex-row min-h-full">
+    <div className="flex flex-col md:flex-row min-h-screen">
       <AdminSidebar />
       <main className="flex-1 p-4 md:p-6 bg-[var(--color-bg-primary)]">
         {/* Breadcrumb shown only on mobile since the sidebar covers navigation on desktop */}

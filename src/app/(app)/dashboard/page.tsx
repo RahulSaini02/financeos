@@ -17,6 +17,8 @@ import {
 import Link from "next/link";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { getFxRate, convertAmount } from "@/lib/fx";
+import type { CurrencyCode } from "@/lib/types";
 import { DashboardCharts } from "./DashboardCharts";
 import { PageHeader } from "@/components/ui/page-header";
 import { HelpModal } from "@/components/ui/help-modal";
@@ -182,7 +184,7 @@ async function getDashboardData ( userId: string, monthParam?: string ) {
   const [
     accountsRes, transactionsRes, flaggedRes, networthRes,
     billsRes, overdueBillsRes, twelveMonthTxnsRes, recentTxnsRes,
-    budgetsRes, flaggedTxnsRes,
+    budgetsRes, flaggedTxnsRes, profileRes,
   ] = await Promise.all( [
     supabase.from( 'accounts' ).select( '*' ).eq( 'user_id', userId ).eq( 'is_active', true ),
     supabase.from( 'transactions' ).select( '*, category:categories(name, id)' ).eq( 'user_id', userId ).gte( 'date', firstDay ).lte( 'date', lastDay ),
@@ -196,6 +198,7 @@ async function getDashboardData ( userId: string, monthParam?: string ) {
     supabase.from( 'transactions' ).select( 'id, description, final_amount, date, flagged, categories(name, id), accounts(name)' ).eq( 'user_id', userId ).order( 'date', { ascending: false } ).limit( 5 ),
     supabase.from( 'budgets' ).select( '*, category:categories(id, name)' ).eq( 'user_id', userId ).eq( 'month', firstDay ),
     supabase.from( 'transactions' ).select( 'id, description, amount_usd, date' ).eq( 'user_id', userId ).eq( 'flagged', true ).order( 'date', { ascending: false } ).limit( 5 ),
+    supabase.from( 'profiles' ).select( 'default_currency' ).eq( 'id', userId ).single(),
   ] );
 
   const accounts = accountsRes.data ?? [];
@@ -204,9 +207,27 @@ async function getDashboardData ( userId: string, monthParam?: string ) {
   const snapshots = networthRes.data ?? [];
   const bills = billsRes.data ?? [];
   const overdueBills = overdueBillsRes.data ?? [];
+  const baseCurrency: CurrencyCode = ( profileRes.data?.default_currency as CurrencyCode | null ) ?? 'USD';
 
-  const total_assets = accounts.filter( ( a ) => a.kind === 'asset' || a.kind === 'investment' ).reduce( ( s, a ) => s + ( a.current_balance ?? 0 ), 0 );
-  const total_liabilities = accounts.filter( ( a ) => a.kind === 'liability' ).reduce( ( s, a ) => s + Math.abs( a.current_balance ?? 0 ), 0 );
+  // Pre-fetch FX rates for each foreign currency present in the accounts (fetch each once)
+  const foreignCurrencies = [ ...new Set(
+    accounts.map( ( a ) => a.currency as CurrencyCode ).filter( ( c ) => c !== baseCurrency )
+  ) ];
+  const fxRates: Record<string, number | null> = {};
+  for ( const curr of foreignCurrencies ) {
+    fxRates[curr] = await getFxRate( curr, baseCurrency );
+  }
+  const toBase = ( amount: number, currency: CurrencyCode ) =>
+    currency === baseCurrency ? amount : convertAmount( amount, fxRates[currency] ?? null );
+
+  // Ensure USD→baseCurrency rate is available for transaction amounts (stored as amount_usd)
+  if ( baseCurrency !== 'USD' && fxRates['USD'] == null ) {
+    fxRates['USD'] = await getFxRate( 'USD', baseCurrency );
+  }
+  const usdToBase = baseCurrency === 'USD' ? 1 : ( fxRates['USD'] ?? 84 );
+
+  const total_assets = accounts.filter( ( a ) => a.kind === 'asset' || a.kind === 'investment' ).reduce( ( s, a ) => s + toBase( a.current_balance ?? 0, a.currency as CurrencyCode ), 0 );
+  const total_liabilities = accounts.filter( ( a ) => a.kind === 'liability' ).reduce( ( s, a ) => s + Math.abs( toBase( a.current_balance ?? 0, a.currency as CurrencyCode ) ), 0 );
   const net_worth = total_assets - total_liabilities;
 
   const monthly_income = transactions.filter( ( t ) => t.cr_dr === 'credit' && !t.is_internal_transfer ).reduce( ( s, t ) => s + Math.abs( t.amount_usd ?? 0 ), 0 );
@@ -214,8 +235,8 @@ async function getDashboardData ( userId: string, monthParam?: string ) {
   const savings_rate = monthly_income > 0 ? ( ( monthly_income - monthly_expenses ) / monthly_income ) * 100 : 0;
 
   const upcoming_bills: UpcomingBill[] = [
-    ...overdueBills.map( ( b ) => ( { name: b.name, due_date: b.next_billing_date!, amount: b.billing_cost, paid: false, overdue: true } ) ),
-    ...bills.map( ( b ) => ( { name: b.name, due_date: b.next_billing_date!, amount: b.billing_cost, paid: false, overdue: false } ) ),
+    ...overdueBills.map( ( b ) => ( { name: b.name, due_date: b.next_billing_date!, amount: ( b.billing_cost ?? 0 ) * usdToBase, paid: false, overdue: true } ) ),
+    ...bills.map( ( b ) => ( { name: b.name, due_date: b.next_billing_date!, amount: ( b.billing_cost ?? 0 ) * usdToBase, paid: false, overdue: false } ) ),
   ];
 
   // Category breakdown (keyed by category_id to preserve IDs for drill-down)
@@ -275,9 +296,10 @@ async function getDashboardData ( userId: string, monthParam?: string ) {
 
   // Build trend: existing snapshots (excluding current month) + current month injected fresh
   const historicalSnapshots = snapshots.filter( ( s ) => s.month !== lastDay );
+  // Normalize current month to USD so the chart's useCurrency() hook converts correctly
   const networthTrend = [
     ...historicalSnapshots,
-    { month: lastDay, net_worth },
+    { month: lastDay, net_worth: baseCurrency === 'USD' ? net_worth : net_worth / usdToBase },
   ].sort( ( a, b ) => a.month.localeCompare( b.month ) );
 
   // Build spend-by-category from this month's debit transactions (used for budget alerts + summary)
@@ -320,7 +342,7 @@ async function getDashboardData ( userId: string, monthParam?: string ) {
           id: `budget_100_${ budget.id }`,
           type: 'budget_100',
           title: `Budget Exceeded: ${ catName }`,
-          body: `Spent ${ formatCurrency( spent ) } of ${ formatCurrency( limit ) } budget — ${ pct }% used`,
+          body: `Spent ${ formatCurrency( spent * usdToBase, baseCurrency ) } of ${ formatCurrency( limit * usdToBase, baseCurrency ) } budget — ${ pct }% used`,
           actionUrl,
           actionLabel: 'View Transactions',
         } );
@@ -329,7 +351,7 @@ async function getDashboardData ( userId: string, monthParam?: string ) {
           id: `budget_80_${ budget.id }`,
           type: 'budget_80',
           title: `Budget Alert: ${ catName }`,
-          body: `Spent ${ formatCurrency( spent ) } of ${ formatCurrency( limit ) } budget — ${ pct }% used`,
+          body: `Spent ${ formatCurrency( spent * usdToBase, baseCurrency ) } of ${ formatCurrency( limit * usdToBase, baseCurrency ) } budget — ${ pct }% used`,
           actionUrl,
           actionLabel: 'View Transactions',
         } );
@@ -344,7 +366,7 @@ async function getDashboardData ( userId: string, monthParam?: string ) {
       id: `anomaly_${ txn.id }`,
       type: 'anomaly',
       title: 'Flagged Transaction',
-      body: `Unusual transaction: "${ txn.description }" — ${ formatCurrency( Math.abs( txn.amount_usd ?? 0 ) ) }`,
+      body: `Unusual transaction: "${ txn.description }" — ${ formatCurrency( Math.abs( txn.amount_usd ?? 0 ) * usdToBase, baseCurrency ) }`,
       actionUrl: `/transactions`,
       actionLabel: 'See Transactions',
     } );
@@ -362,7 +384,7 @@ async function getDashboardData ( userId: string, monthParam?: string ) {
       id: `bill_${ bill.name }_${ bill.next_billing_date }`,
       type: 'upcoming_bill',
       title: `Upcoming Bill: ${ bill.name }`,
-      body: `Due in ${ daysUntil } day${ daysUntil !== 1 ? 's' : '' } — ${ formatCurrency( bill.billing_cost ?? 0 ) }`,
+      body: `Due in ${ daysUntil } day${ daysUntil !== 1 ? 's' : '' } — ${ formatCurrency( ( bill.billing_cost ?? 0 ) * usdToBase, baseCurrency ) }`,
       actionUrl: `/subscriptions`,
       actionLabel: 'View Subscriptions',
     } );
@@ -376,7 +398,7 @@ async function getDashboardData ( userId: string, monthParam?: string ) {
       id: `bill_overdue_${ bill.name }_${ bill.next_billing_date }`,
       type: 'upcoming_bill',
       title: `Overdue Bill: ${ bill.name }`,
-      body: `${ daysOverdue } day${ daysOverdue !== 1 ? 's' : '' } past due — ${ formatCurrency( bill.billing_cost ?? 0 ) }`,
+      body: `${ daysOverdue } day${ daysOverdue !== 1 ? 's' : '' } past due — ${ formatCurrency( ( bill.billing_cost ?? 0 ) * usdToBase, baseCurrency ) }`,
       actionUrl: `/subscriptions`,
       actionLabel: 'View Subscriptions',
     } );
@@ -385,7 +407,7 @@ async function getDashboardData ( userId: string, monthParam?: string ) {
   const recentTransactions: Transaction[] = ( recentTxnsRes.data ?? [] ).map( ( t: Record<string, unknown> ) => ( {
     id: t.id as string,
     description: t.description as string,
-    final_amount: t.final_amount as number,
+    final_amount: ( t.final_amount as number ) * usdToBase,
     date: t.date as string,
     flagged: t.flagged as boolean,
     categories: t.categories as { name: string; id: string } | null,
@@ -424,7 +446,10 @@ async function getDashboardData ( userId: string, monthParam?: string ) {
 
   return {
     net_worth, total_assets, total_liabilities,
-    monthly_income, monthly_expenses, savings_rate,
+    baseCurrency,
+    monthly_income: monthly_income * usdToBase,
+    monthly_expenses: monthly_expenses * usdToBase,
+    savings_rate,
     flagged_count, upcoming_bills,
     networth_trend: networthTrend,
     categoryBreakdown, monthlyData, categoryMonthlyData,
@@ -432,7 +457,7 @@ async function getDashboardData ( userId: string, monthParam?: string ) {
     alerts,
     hasAccounts: accounts.length > 0,
     budgetSummary,
-    projectedExpenses,
+    projectedExpenses: projectedExpenses * usdToBase,
     daysElapsed,
     daysInMonth,
     isCurrentMonth,
@@ -534,25 +559,25 @@ export default async function DashboardPage ( { searchParams }: { searchParams: 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <MetricCard
           label="Net Worth"
-          value={formatCurrency( data.net_worth )}
+          value={formatCurrency( data.net_worth, data.baseCurrency )}
           positive={data.net_worth >= 0}
           href="/accounts"
           sparklineData={networthSparkline}
         />
         <MetricCard
           label="Monthly Income"
-          value={formatCurrency( data.monthly_income )}
+          value={formatCurrency( data.monthly_income, data.baseCurrency )}
           href="/paychecks"
           sparklineData={incomeSparkline}
         />
         <MetricCard
           label="Monthly Expenses"
-          value={formatCurrency( data.monthly_expenses )}
+          value={formatCurrency( data.monthly_expenses, data.baseCurrency )}
           href="/budgets"
           sparklineData={expensesSparkline}
           projectedValue={
             data.isCurrentMonth && data.projectedExpenses !== data.monthly_expenses
-              ? `Projected: ${formatCurrency( data.projectedExpenses )} · ${data.daysElapsed}/${data.daysInMonth} days`
+              ? `Projected: ${formatCurrency( data.projectedExpenses, data.baseCurrency )} · ${data.daysElapsed}/${data.daysInMonth} days`
               : undefined
           }
         />
@@ -642,7 +667,7 @@ export default async function DashboardPage ( { searchParams }: { searchParams: 
                       </div>
                     </div>
                     <span className={`text-sm font-medium shrink-0 ml-2 ${ isCredit ? "text-[var(--color-success)]" : "text-[var(--color-danger)]" }`}>
-                      {isCredit ? "+" : ""}{formatCurrency( txn.final_amount )}
+                      {isCredit ? "+" : ""}{formatCurrency( txn.final_amount, data.baseCurrency )}
                     </span>
                   </div>
                 );
@@ -690,7 +715,7 @@ export default async function DashboardPage ( { searchParams }: { searchParams: 
                   </div>
                 </div>
                 <span className={`text-sm font-medium shrink-0 ml-2 ${ urgency === 'danger' ? 'text-[var(--color-danger)]' : '' }`}>
-                  {formatCurrency( bill.amount )}
+                  {formatCurrency( bill.amount, data.baseCurrency )}
                 </span>
               </div>
             );
@@ -721,7 +746,7 @@ export default async function DashboardPage ( { searchParams }: { searchParams: 
           <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
             <div className="flex items-center justify-between text-sm">
               <span className="text-[var(--color-text-secondary)]">Total (30 days)</span>
-              <span className="font-medium">{formatCurrency( data.upcoming_bills.reduce( ( s, b ) => s + b.amount, 0 ) )}</span>
+              <span className="font-medium">{formatCurrency( data.upcoming_bills.reduce( ( s, b ) => s + b.amount, 0 ), data.baseCurrency )}</span>
             </div>
           </div>
         </Card>
@@ -739,16 +764,16 @@ export default async function DashboardPage ( { searchParams }: { searchParams: 
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-[var(--color-text-secondary)]">Total assets</span>
-                  <span className="font-medium">{formatCurrency( data.total_assets )}</span>
+                  <span className="font-medium">{formatCurrency( data.total_assets, data.baseCurrency )}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-[var(--color-text-secondary)]">Total liabilities</span>
-                  <span className="font-medium text-[var(--color-danger)]">{formatCurrency( data.total_liabilities )}</span>
+                  <span className="font-medium text-[var(--color-danger)]">{formatCurrency( data.total_liabilities, data.baseCurrency )}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-[var(--color-text-secondary)]">Monthly savings</span>
                   <span className={`font-medium ${ ( data.monthly_income - data.monthly_expenses ) >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]" }`}>
-                    {formatCurrency( data.monthly_income - data.monthly_expenses )}
+                    {formatCurrency( data.monthly_income - data.monthly_expenses, data.baseCurrency )}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
@@ -782,7 +807,7 @@ export default async function DashboardPage ( { searchParams }: { searchParams: 
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-[var(--color-text-secondary)]">Total upcoming</span>
-                  <span className="font-medium">{formatCurrency( data.upcoming_bills.reduce( ( s, b ) => s + b.amount, 0 ) )}</span>
+                  <span className="font-medium">{formatCurrency( data.upcoming_bills.reduce( ( s, b ) => s + b.amount, 0 ), data.baseCurrency )}</span>
                 </div>
               </div>
             </div>

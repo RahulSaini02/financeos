@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Check, Zap, TrendingUp, Target, Receipt, Flag } from "lucide-react";
+import { Loader2, Check, Zap, TrendingUp, Target, Receipt, Flag, RefreshCw } from "lucide-react";
 
 interface AgentConfirmCardProps {
   actionId: string;
@@ -14,9 +14,10 @@ interface AgentConfirmCardProps {
 function ToolIcon({ toolName }: { toolName: string }) {
   const cls = "h-3.5 w-3.5 text-[var(--color-warning)]";
   if (toolName === "update_budget") return <TrendingUp className={cls} />;
-  if (toolName === "create_savings_goal") return <Target className={cls} />;
-  if (toolName === "create_transaction") return <Receipt className={cls} />;
+  if (toolName === "create_savings_goal" || toolName === "update_savings_goal") return <Target className={cls} />;
+  if (toolName === "create_transaction" || toolName === "update_transaction") return <Receipt className={cls} />;
   if (toolName === "flag_transaction") return <Flag className={cls} />;
+  if (toolName === "update_subscription") return <RefreshCw className={cls} />;
   return <Zap className={cls} />;
 }
 

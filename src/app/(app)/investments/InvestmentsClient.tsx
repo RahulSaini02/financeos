@@ -3,7 +3,9 @@
 import { useState, useMemo } from "react";
 import { Card, CardTitle, CardValue } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency } from "@/lib/utils";
+import { getUserRegion } from "@/lib/utils";
+import { useCurrency } from "@/lib/currency-context";
+import { RETIREMENT_LABELS } from "@/lib/region-labels";
 import { createClient } from "@/lib/supabase";
 import type { Investment, SavingsGoal } from "@/lib/types";
 import { PageHeader } from "@/components/ui/page-header";
@@ -94,7 +96,12 @@ const emptyForm: InvestmentForm = {
   notes: "",
 };
 
-const COMMON_TYPES = ["ETF", "Stock", "401K", "Roth IRA", "Crypto", "Index Fund", "Bond", "ESPP", "Other"];
+const COMMON_TYPES_US    = ["ETF", "Stock", "401K", "Roth IRA", "Crypto", "Index Fund", "Bond", "ESPP", "Other"];
+const COMMON_TYPES_IN    = ["ETF", "Stock", "EPF", "PPF", "NPS", "Crypto", "Index Fund", "Bond", "Other"];
+function getCommonTypes(): string[] {
+  const region = getUserRegion();
+  return region === "IN" ? COMMON_TYPES_IN : COMMON_TYPES_US;
+}
 
 interface AccountOption { id: string; name: string; }
 
@@ -113,6 +120,9 @@ function InvestmentModal({
   onClose: () => void;
   saving: boolean;
 }) {
+  const commonTypes = getCommonTypes();
+  const retirementLabels = RETIREMENT_LABELS[getUserRegion()];
+
   const [form, setForm] = useState<InvestmentForm>(
     editing
       ? {
@@ -147,12 +157,12 @@ function InvestmentModal({
               <input
                 list="inv-types"
                 className={inputClass}
-                placeholder="ETF, Stock, 401K..."
+                placeholder={`ETF, Stock, ${retirementLabels.singular}...`}
                 value={form.type}
                 onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
               />
               <datalist id="inv-types">
-                {COMMON_TYPES.map((t) => <option key={t} value={t} />)}
+                {commonTypes.map((t) => <option key={t} value={t} />)}
               </datalist>
             </div>
             <div>
@@ -269,6 +279,7 @@ interface InvestmentsClientProps {
 
 export function InvestmentsClient({ initialInvestments, accounts, initialSavingsGoals = [] }: InvestmentsClientProps) {
   const supabase = createClient();
+  const { fmt } = useCurrency();
 
   const [investments, setInvestments] = useState<Investment[]>(initialInvestments);
   const [goals, setGoals] = useState<SavingsGoal[]>(initialSavingsGoals);
@@ -411,11 +422,11 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <Card>
           <CardTitle>Portfolio Value</CardTitle>
-          <CardValue className="mt-2">{formatCurrency(totals.totalValue)}</CardValue>
+          <CardValue className="mt-2">{fmt(totals.totalValue)}</CardValue>
         </Card>
         <Card>
           <CardTitle>Total Invested</CardTitle>
-          <CardValue className="mt-2">{formatCurrency(totals.totalInvested)}</CardValue>
+          <CardValue className="mt-2">{fmt(totals.totalInvested)}</CardValue>
         </Card>
         <Card>
           <CardTitle>Total Gain / Loss</CardTitle>
@@ -427,7 +438,7 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
             }`}
           >
             {totals.totalGain >= 0 ? "+" : ""}
-            {formatCurrency(totals.totalGain)}
+            {fmt(totals.totalGain)}
           </CardValue>
         </Card>
         <Card>
@@ -474,7 +485,7 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
                   <h2 className="text-base font-semibold">{platform}</h2>
                   <div className="flex items-center gap-3 text-sm">
                     <span className="text-[var(--color-text-muted)]">
-                      {formatCurrency(platformValue)}
+                      {fmt(platformValue)}
                     </span>
                     <span
                       className={`flex items-center gap-0.5 font-medium ${
@@ -535,10 +546,10 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
 
                         {/* Value */}
                         <p className="text-xl font-semibold">
-                          {formatCurrency(liveValue)}
+                          {fmt(liveValue)}
                         </p>
                         <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                          Invested: {formatCurrency(inv.total_invested)}
+                          Invested: {fmt(inv.total_invested)}
                         </p>
                         {invWithAcct.account && (
                           <p className="text-[10px] text-[var(--color-accent)] mt-0.5">
@@ -560,7 +571,7 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
                             <ArrowDownRight className="h-3.5 w-3.5" />
                           )}
                           {isGain ? "+" : ""}
-                          {formatCurrency(gain)} ({pct >= 0 ? "+" : ""}
+                          {fmt(gain)} ({pct >= 0 ? "+" : ""}
                           {pct.toFixed(2)}%)
                         </div>
 
@@ -645,7 +656,7 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
                         <p className="font-medium">{goal.name}</p>
                         <p className="text-xs text-[var(--color-text-muted)]">
                           {goal.monthly_contribution > 0
-                            ? `${formatCurrency(goal.monthly_contribution)} / mo`
+                            ? `${fmt(goal.monthly_contribution)} / mo`
                             : "No contribution set"}
                         </p>
                       </div>
@@ -667,14 +678,14 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
                   <div className="flex items-end justify-between mb-2">
                     <div>
                       <p className="text-xl font-semibold">
-                        {formatCurrency(effectiveCurrent)}
+                        {fmt(effectiveCurrent)}
                       </p>
                       {goalWithAcct.account && (
                         <p className="text-[10px] text-[var(--color-accent)]">⟳ {goalWithAcct.account.name}</p>
                       )}
                     </div>
                     <p className="text-sm text-[var(--color-text-muted)]">
-                      / {formatCurrency(goal.target_amount)}
+                      / {fmt(goal.target_amount)}
                     </p>
                   </div>
 
@@ -693,7 +704,7 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
                     <span>{pct.toFixed(0)}% funded</span>
                     {remaining > 0 ? (
                       <span>
-                        {formatCurrency(remaining)} to go
+                        {fmt(remaining)} to go
                         {months > 0 && ` · ~${months}mo`}
                       </span>
                     ) : (

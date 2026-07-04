@@ -5,7 +5,6 @@ import {
 } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/components/auth-provider";
 import type { AiInsight } from "@/lib/types";
 import {
@@ -112,7 +111,6 @@ const SUGGESTED_QUESTIONS = [
 export default function AiChatClient ( { initialInsights, onClose }: { initialInsights: AiInsight[]; onClose?: () => void } ) {
   const { user } = useAuth();
   const router = useRouter();
-  const supabase = createClient();
 
   const [insights, setInsights] = useState<AiInsight[]>( initialInsights );
   const [insightsLoading, setInsightsLoading] = useState( false );
@@ -127,20 +125,31 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
   const [agentHistory, setAgentHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>( [] );
   const [confirmingActionId, setConfirmingActionId] = useState<string | null>( null );
   const [sessionId, setSessionId] = useState<string>( "" );
+  const [aiUsage, setAiUsage] = useState<{ used: number; cap: number } | null>( null );
   const [showSessions, setShowSessions] = useState( false );
   const [sessions, setSessions] = useState<SessionSummary[]>( [] );
   const [sessionsLoading, setSessionsLoading] = useState( false );
 
+  // Restore session id + history together on mount. They live in ONE payload
+  // with ONE TTL so the model's history can never outlive (or predate) the
+  // session id it belongs to — that mismatch was the session-leak bug.
   useEffect( () => {
     if ( !user ) return;
     try {
-      const key = `session_id_${ user.id }`;
-      const stored = localStorage.getItem( key );
-      if ( stored ) { setSessionId( stored ); return; }
-      const newId = crypto.randomUUID();
-      localStorage.setItem( key, newId );
-      setSessionId( newId );
-    } catch { setSessionId( crypto.randomUUID() ); }
+      localStorage.removeItem( `session_id_${ user.id }` ); // legacy un-TTL'd key
+      const raw = localStorage.getItem( `${ SESSION_KEY }_${ user.id }` );
+      if ( raw ) {
+        const stored = JSON.parse( raw ) as { sessionId?: string; history?: Array<{ role: "user" | "assistant"; content: string }>; savedAt?: number };
+        if ( stored.sessionId && Date.now() - ( stored.savedAt ?? 0 ) < SESSION_TTL ) {
+          const history = stored.history ?? [];
+          setSessionId( stored.sessionId );
+          setAgentHistory( history );
+          setMessages( history.map( ( m ) => ( { id: crypto.randomUUID(), role: m.role, content: m.content } ) ) );
+          return;
+        }
+      }
+    } catch { /* ignore */ }
+    setSessionId( crypto.randomUUID() );
   }, [user] );
 
   const chatEndRef = useRef<HTMLDivElement>( null );
@@ -154,32 +163,42 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
     chatEndRef.current?.scrollIntoView( { behavior: "smooth" } );
   }, [messages] );
 
-  // Save agent history to localStorage
+  // Save session id + agent history to localStorage — trimmed so a
+  // long-running session can't grow the stored payload unboundedly
+  // (server caps at 40 per turn)
   useEffect( () => {
-    if ( !user ) return;
+    if ( !user || !sessionId ) return;
     try {
-      localStorage.setItem( `${ SESSION_KEY }_${ user.id }`, JSON.stringify( { history: agentHistory, savedAt: Date.now() } ) );
+      localStorage.setItem( `${ SESSION_KEY }_${ user.id }`, JSON.stringify( { sessionId, history: agentHistory.slice( -60 ), savedAt: Date.now() } ) );
     } catch { /* ignore */ }
-  }, [agentHistory, user] );
-
-  // Restore agent history on mount
-  useEffect( () => {
-    if ( !user ) return;
-    try {
-      const raw = localStorage.getItem( `${ SESSION_KEY }_${ user.id }` );
-      if ( !raw ) return;
-      const session = JSON.parse( raw ) as { history: typeof agentHistory; savedAt: number };
-      if ( Date.now() - session.savedAt < SESSION_TTL ) setAgentHistory( session.history );
-    } catch { /* ignore */ }
-  }, [user] );
+  }, [agentHistory, sessionId, user] );
 
   const fetchInsights = useCallback( async () => {
     if ( !user ) return;
     setInsightsLoading( true );
-    const { data } = await supabase.from( "ai_insights" ).select( "*" ).eq( "user_id", user.id ).order( "created_at", { ascending: false } ).limit( 20 );
-    setInsights( data ?? [] );
+    try {
+      const res = await fetch( "/api/insights" );
+      if ( res.ok ) {
+        const json = await res.json() as { insights: AiInsight[] };
+        setInsights( json.insights );
+      }
+    } catch { /* ignore */ }
     setInsightsLoading( false );
-  }, [user, supabase] );
+  }, [user] );
+
+  // Daily AI budget meter — refreshed on mount; live-updated by the SSE
+  // `usage` event at the end of each agent turn
+  const fetchAiUsage = useCallback( async () => {
+    try {
+      const res = await fetch( "/api/ai-usage" );
+      if ( res.ok ) {
+        const json = await res.json() as { costUsedToday: number; costCap: number };
+        setAiUsage( { used: json.costUsedToday, cap: json.costCap } );
+      }
+    } catch { /* ignore */ }
+  }, [] );
+
+  useEffect( () => { if ( user ) fetchAiUsage(); }, [user, fetchAiUsage] );
 
   const fetchSessions = useCallback( async () => {
     setSessionsLoading( true );
@@ -210,6 +229,9 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
         .map( ( m ) => ( { role: m.role as "user" | "assistant", content: m.content } ) );
       setMessages( restored );
       setAgentHistory( history );
+      // Continue the LOADED session — without this, follow-up turns were
+      // saved under the current session id, cross-contaminating sessions
+      setSessionId( sessionSummary.session_id );
       setShowSessions( false );
     } catch { /* ignore */ }
   }
@@ -235,11 +257,14 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
     setInsights( ( prev ) => prev.map( ( i ) => ( { ...i, is_read: true } ) ) )
   }
 
-  // ── Send (unified agent message) ──────────────────────────────────────────
+  // ── Shared agent turn streaming ───────────────────────────────────────────
+  // Used both for new user messages and for resuming after a write action is
+  // confirmed or cancelled. Appends a tool-steps bubble + streamed assistant
+  // text, and commits the final text to agentHistory.
 
-  async function sendMessage ( question: string ) {
-    if ( !question.trim() || isSending ) return;
-    const userMsgId = crypto.randomUUID();
+  const getTimezone = () => localStorage.getItem( "pref_timezone" ) ?? "America/Los_Angeles";
+
+  async function streamAgentTurn ( payload: Record<string, unknown>, baseHistory: typeof agentHistory ) {
     const toolStepsMsgId = crypto.randomUUID();
     const textMsgId = toolStepsMsgId + "_text";
 
@@ -248,22 +273,20 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
     twShown.current = "";
     if ( twFrame.current !== null ) { cancelAnimationFrame( twFrame.current ); twFrame.current = null; }
 
-    setMessages( ( prev ) => [
-      ...prev,
-      { id: userMsgId, role: "user", content: question, timestamp: Date.now() },
-      { id: toolStepsMsgId, role: "tool_steps", content: "", toolSteps: [] },
-    ] );
-    setInputValue( "" );
+    setMessages( ( prev ) => [...prev, { id: toolStepsMsgId, role: "tool_steps", content: "", toolSteps: [] }] );
     setIsSending( true );
-    const newHistory: typeof agentHistory = [...agentHistory, { role: "user", content: question }];
 
-    // rAF drain loop — 2 chars/frame
+    // rAF drain loop — adaptive rate: at least 2 chars/frame, catching up
+    // faster when the stream outpaces the display so long responses don't
+    // lag many seconds behind the buffer
     const startTypewriter = () => {
       const tick = () => {
         const target = twBuffer.current;
         const shown = twShown.current;
         if ( shown.length < target.length ) {
-          const next = target.slice( 0, shown.length + 2 );
+          const gap = target.length - shown.length;
+          const step = Math.max( 2, Math.ceil( gap / 30 ) );
+          const next = target.slice( 0, shown.length + step );
           twShown.current = next;
           setMessages( ( prev ) => prev.map( ( m ) => m.id === textMsgId ? { ...m, content: next } : m ) );
         }
@@ -285,16 +308,15 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
       const res = await fetch( "/api/ai-agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify( { messages: newHistory, model: selectedModel, timezone: localStorage.getItem( "pref_timezone" ) ?? "America/Los_Angeles", sessionId } ),
+        body: JSON.stringify( payload ),
       } );
       if ( !res.ok ) {
         const errBody = await res.json().catch( () => ({}) ) as { error?: string; code?: string }
-        const msg = res.status === 429
+        const msg = res.status === 429 || res.status === 403
           ? ( errBody.error ?? "You've reached your AI usage limit. Please try again later." )
           : "Sorry, I couldn't process that. Please try again."
         stopTypewriter()
         setMessages( ( prev ) => [...prev, { id: crypto.randomUUID(), role: "assistant", content: msg }] )
-        setIsSending( false )
         return
       }
       if ( !res.body ) throw new Error( "Agent request failed" );
@@ -302,6 +324,7 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
       const decoder = new TextDecoder();
       let sseBuffer = "";
       let textStarted = false;
+      let streamError = false;
       while ( true ) {
         const { done, value } = await reader.read();
         if ( done ) break;
@@ -314,7 +337,8 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
             const event = JSON.parse( line.slice( 6 ) ) as {
               event: string; toolName?: string; toolUseId?: string;
               summary?: string; actionId?: string; preview?: string;
-              text?: string; reason?: string;
+              text?: string; reason?: string; message?: string;
+              costUsed?: number; costCap?: number;
             };
             if ( event.event === "tool_start" && event.toolName && event.toolUseId ) {
               setMessages( ( prev ) => prev.map( ( m ) => m.id === toolStepsMsgId
@@ -340,12 +364,23 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
               }
               twBuffer.current += event.text;
             }
+            if ( event.event === "error" ) {
+              streamError = true;
+            }
+            if ( event.event === "usage" && typeof event.costUsed === "number" && typeof event.costCap === "number" ) {
+              setAiUsage( { used: event.costUsed, cap: event.costCap } );
+            }
           } catch { /* ignore */ }
         }
       }
       stopTypewriter( true );
-      if ( twBuffer.current ) setAgentHistory( [...newHistory, { role: "assistant", content: twBuffer.current }] );
-      if ( res.ok ) fetchInsights();
+      if ( twBuffer.current ) setAgentHistory( [...baseHistory, { role: "assistant", content: twBuffer.current }] );
+      if ( streamError ) {
+        setMessages( ( prev ) => [...prev, {
+          id: crypto.randomUUID(), role: "assistant",
+          content: "Sorry — something went wrong while processing that. Please try again.",
+        }] );
+      }
     } catch {
       stopTypewriter();
       setMessages( ( prev ) => [...prev, { id: crypto.randomUUID(), role: "assistant", content: "Sorry, I couldn't process that. Please try again." }] );
@@ -354,23 +389,62 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
     }
   }
 
+  // ── Send (new user message) ───────────────────────────────────────────────
+
+  async function sendMessage ( question: string ) {
+    if ( !question.trim() || isSending ) return;
+    const newHistory: typeof agentHistory = [...agentHistory, { role: "user", content: question }];
+    setAgentHistory( newHistory );
+    setMessages( ( prev ) => [...prev, { id: crypto.randomUUID(), role: "user", content: question, timestamp: Date.now() }] );
+    setInputValue( "" );
+
+    await streamAgentTurn(
+      {
+        // Cap the history window sent per turn — the server enforces the same cap
+        messages: newHistory.slice( -40 ),
+        model: selectedModel,
+        timezone: getTimezone(),
+        sessionId,
+      },
+      newHistory,
+    );
+    fetchInsights();
+  }
+
   // ── Confirm / Cancel agent actions ────────────────────────────────────────
+  // After the action is executed (or rejected), the agent loop RESUMES: the
+  // model sees the tool result and streams a natural wrap-up response.
 
   async function handleConfirmAction ( actionId: string ) {
+    if ( isSending || confirmingActionId ) return;
     setConfirmingActionId( actionId );
     try {
       const res = await fetch( "/api/ai-agent/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify( { action_id: actionId, confirmed: true } ),
+        body: JSON.stringify( { action_id: actionId, confirmed: true, timezone: getTimezone() } ),
       } );
-      const data = await res.json() as { success: boolean; result?: string };
-      setMessages( ( prev ) => prev.map( ( m ) =>
-        m.role === "pending_action" && m.pendingAction?.actionId === actionId
-          ? { id: m.id, role: "assistant", content: data.result ?? "Action completed successfully." }
-          : m
-      ) );
-      setAgentHistory( ( prev ) => [...prev, { role: "assistant", content: data.result ?? "Action completed." }] );
+      const data = await res.json() as { success: boolean; result?: string; summary?: string };
+      // Swap the confirm card for a compact executed/failed step
+      setMessages( ( prev ) => prev.map( ( m ) => {
+        if ( m.role === "pending_action" && m.pendingAction?.actionId === actionId ) {
+          return {
+            id: m.id, role: "tool_steps" as const, content: "",
+            toolSteps: [{
+              id: actionId, toolName: m.pendingAction.toolName,
+              status: data.success ? ( "done" as const ) : ( "error" as const ),
+              summary: data.summary ?? ( data.success ? "Action completed" : "Action failed" ),
+            }],
+          };
+        }
+        return m;
+      } ) );
+      setConfirmingActionId( null );
+      // Resume the agent loop so the model can summarize the outcome
+      await streamAgentTurn(
+        { resumeActionId: actionId, model: selectedModel, timezone: getTimezone(), sessionId },
+        agentHistory,
+      );
       fetchInsights();
     } catch {
       setMessages( ( prev ) => prev.map( ( m ) =>
@@ -383,17 +457,38 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
     }
   }
 
-  function handleCancelAction ( actionId: string ) {
-    fetch( "/api/ai-agent/confirm", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify( { action_id: actionId, confirmed: false } ),
-    } ).catch( () => { } );
-    setMessages( ( prev ) => prev.map( ( m ) =>
-      m.role === "pending_action" && m.pendingAction?.actionId === actionId
-        ? { id: m.id, role: "assistant", content: "Action cancelled." }
-        : m
-    ) );
+  async function handleCancelAction ( actionId: string ) {
+    if ( isSending || confirmingActionId ) return;
+    setConfirmingActionId( actionId );
+    try {
+      await fetch( "/api/ai-agent/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify( { action_id: actionId, confirmed: false, timezone: getTimezone() } ),
+      } );
+      setMessages( ( prev ) => prev.map( ( m ) =>
+        m.role === "pending_action" && m.pendingAction?.actionId === actionId
+          ? {
+              id: m.id, role: "tool_steps" as const, content: "",
+              toolSteps: [{ id: actionId, toolName: m.pendingAction!.toolName, status: "done" as const, summary: "Cancelled" }],
+            }
+          : m
+      ) );
+      setConfirmingActionId( null );
+      // Resume so the model acknowledges the decline instead of going silent
+      await streamAgentTurn(
+        { resumeActionId: actionId, model: selectedModel, timezone: getTimezone(), sessionId },
+        agentHistory,
+      );
+    } catch {
+      setMessages( ( prev ) => prev.map( ( m ) =>
+        m.role === "pending_action" && m.pendingAction?.actionId === actionId
+          ? { id: m.id, role: "assistant", content: "Action cancelled." }
+          : m
+      ) );
+    } finally {
+      setConfirmingActionId( null );
+    }
   }
 
   function handleSubmit () {
@@ -405,13 +500,10 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
     setMessages( [] );
     setAgentHistory( [] );
     if ( user ) {
-      try {
-        localStorage.removeItem( `${ SESSION_KEY }_${ user.id }` );
-        const newId = crypto.randomUUID();
-        localStorage.setItem( `session_id_${ user.id }`, newId );
-        setSessionId( newId );
-      } catch { /* ignore */ }
+      try { localStorage.removeItem( `${ SESSION_KEY }_${ user.id }` ); } catch { /* ignore */ }
     }
+    // Fresh session id — the save effect persists the new payload
+    setSessionId( crypto.randomUUID() );
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -662,6 +754,35 @@ export default function AiChatClient ( { initialInsights, onClose }: { initialIn
                   try { localStorage.setItem( CHAT_MODEL_KEY, m ); } catch { /* ignore */ }
                 }}
               />
+              {/* Daily AI budget meter — soft warning at 80%, hard stop (429) at 100% */}
+              {aiUsage && ( () => {
+                const ratio = aiUsage.cap > 0 ? aiUsage.used / aiUsage.cap : 0;
+                const atLimit = ratio >= 1;
+                const nearLimit = ratio >= 0.8;
+                return (
+                  <div className="flex items-center justify-end gap-2 mt-1.5 px-1">
+                    {atLimit ? (
+                      <span className="text-[0.65rem] font-medium text-[var(--color-danger)]">
+                        Daily AI budget reached — resets at midnight UTC
+                      </span>
+                    ) : nearLimit ? (
+                      <span className="text-[0.65rem] font-medium text-[var(--color-warning)]">
+                        Nearing your daily AI budget
+                      </span>
+                    ) : null}
+                    <span className={cn(
+                      "text-[0.65rem] font-mono",
+                      atLimit
+                        ? "text-[var(--color-danger)]"
+                        : nearLimit
+                          ? "text-[var(--color-warning)]"
+                          : "text-[var(--color-text-muted)]"
+                    )}>
+                      ${aiUsage.used.toFixed( 2 )} / ${aiUsage.cap.toFixed( 2 )} used today
+                    </span>
+                  </div>
+                );
+              } )()}
             </div>
           </div>
         </div>

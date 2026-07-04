@@ -1,30 +1,32 @@
 "use client";
 
-import { DAILY_LIMIT } from "@/lib/ai-rate-limit";
-
 export interface UserUsageRow {
   id: string;
   email: string;
   full_name: string | null;
   today: number;
   week: number;
+  costToday: number;
 }
 
 interface Props {
   rows: UserUsageRow[];
   totalToday: number;
   totalWeek: number;
+  costCap: number;
 }
 
-export default function AiUsagePanel({ rows, totalToday, totalWeek }: Props) {
+const usd = (n: number) => `$${n.toFixed(2)}`;
+
+export default function AiUsagePanel({ rows, totalToday, totalWeek, costCap }: Props) {
   return (
     <div className="space-y-5 md:space-y-6">
       {/* Summary cards — 2-col on mobile, 3-col on sm+ */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4">
         {[
-          { label: "Calls today",      value: totalToday },
-          { label: "Calls this week",  value: totalWeek },
-          { label: "Daily cap / user", value: DAILY_LIMIT },
+          { label: "Calls today",           value: totalToday },
+          { label: "Calls this week",       value: totalWeek },
+          { label: "Daily cost cap / user", value: usd(costCap) },
         ].map((s) => (
           <div
             key={s.label}
@@ -51,9 +53,9 @@ export default function AiUsagePanel({ rows, totalToday, totalWeek }: Props) {
             {/* ── Mobile: card-per-user (below md) ── */}
             <div className="md:hidden divide-y divide-[var(--color-border)]">
               {rows.map((row) => {
-                const pct = Math.min((row.today / DAILY_LIMIT) * 100, 100);
-                const isNearLimit = row.today >= DAILY_LIMIT * 0.8;
-                const isAtLimit   = row.today >= DAILY_LIMIT;
+                const pct = Math.min((row.costToday / costCap) * 100, 100);
+                const isNearLimit = row.costToday >= costCap * 0.8;
+                const isAtLimit   = row.costToday >= costCap;
                 return (
                   <div key={row.id} className="px-4 py-3">
                     <p className="font-medium text-sm text-[var(--color-text-primary)] truncate">
@@ -65,24 +67,22 @@ export default function AiUsagePanel({ rows, totalToday, totalWeek }: Props) {
                     <div className="flex items-center justify-between text-xs mb-1.5">
                       <span className="text-[var(--color-text-muted)]">
                         Today:{' '}
-                        <span
-                          className={`font-semibold ${
-                            isAtLimit
-                              ? 'text-[var(--color-danger)]'
-                              : isNearLimit
-                              ? 'text-[var(--color-warning)]'
-                              : 'text-[var(--color-text-primary)]'
-                          }`}
-                        >
-                          {row.today}
-                        </span>
+                        <span className="font-semibold text-[var(--color-text-primary)]">{row.today} calls</span>
                       </span>
                       <span className="text-[var(--color-text-muted)]">
                         7 days:{' '}
                         <span className="font-semibold text-[var(--color-text-secondary)]">{row.week}</span>
                       </span>
-                      <span className="text-[var(--color-text-muted)] font-mono text-[11px]">
-                        {row.today}/{DAILY_LIMIT}
+                      <span
+                        className={`font-mono text-[11px] font-semibold ${
+                          isAtLimit
+                            ? 'text-[var(--color-danger)]'
+                            : isNearLimit
+                            ? 'text-[var(--color-warning)]'
+                            : 'text-[var(--color-text-muted)]'
+                        }`}
+                      >
+                        {usd(row.costToday)}/{usd(costCap)}
                       </span>
                     </div>
                     <div className="w-full h-1.5 bg-[var(--color-bg-primary)] rounded-full overflow-hidden">
@@ -107,16 +107,16 @@ export default function AiUsagePanel({ rows, totalToday, totalWeek }: Props) {
               <thead>
                 <tr className="border-b border-[var(--color-border)] text-xs text-[var(--color-text-muted)] uppercase tracking-wide">
                   <th className="px-4 py-2.5 text-left font-medium">User</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Today</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Calls today</th>
                   <th className="px-4 py-2.5 text-right font-medium">7 days</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Daily cap</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Cost today</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => {
-                  const pct = Math.min((row.today / DAILY_LIMIT) * 100, 100);
-                  const isNearLimit = row.today >= DAILY_LIMIT * 0.8;
-                  const isAtLimit   = row.today >= DAILY_LIMIT;
+                  const pct = Math.min((row.costToday / costCap) * 100, 100);
+                  const isNearLimit = row.costToday >= costCap * 0.8;
+                  const isAtLimit   = row.costToday >= costCap;
                   return (
                     <tr
                       key={row.id}
@@ -130,18 +130,8 @@ export default function AiUsagePanel({ rows, totalToday, totalWeek }: Props) {
                           <p className="text-xs text-[var(--color-text-muted)]">{row.email}</p>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        <span
-                          className={`font-semibold ${
-                            isAtLimit
-                              ? "text-[var(--color-danger)]"
-                              : isNearLimit
-                              ? "text-[var(--color-warning)]"
-                              : "text-[var(--color-text-primary)]"
-                          }`}
-                        >
-                          {row.today}
-                        </span>
+                      <td className="px-4 py-3 text-right text-[var(--color-text-primary)] font-semibold">
+                        {row.today}
                       </td>
                       <td className="px-4 py-3 text-right text-[var(--color-text-secondary)]">
                         {row.week}
@@ -160,8 +150,16 @@ export default function AiUsagePanel({ rows, totalToday, totalWeek }: Props) {
                               style={{ width: `${pct}%` }}
                             />
                           </div>
-                          <span className="text-xs text-[var(--color-text-muted)] w-12 text-right">
-                            {row.today}/{DAILY_LIMIT}
+                          <span
+                            className={`text-xs w-24 text-right font-mono ${
+                              isAtLimit
+                                ? 'text-[var(--color-danger)]'
+                                : isNearLimit
+                                ? 'text-[var(--color-warning)]'
+                                : 'text-[var(--color-text-muted)]'
+                            }`}
+                          >
+                            {usd(row.costToday)}/{usd(costCap)}
                           </span>
                         </div>
                       </td>

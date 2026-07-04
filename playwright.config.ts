@@ -18,7 +18,7 @@ export default defineConfig({
     // Unauthenticated tests — no saved session
     {
       name: "unauthenticated",
-      testMatch: "**/auth.spec.ts",
+      testMatch: ["**/auth.spec.ts", "**/agent-api-unauth.spec.ts", "**/csv-import-parser.spec.ts", "**/persona-nav.spec.ts"],
       use: { ...devices["Desktop Chrome"] },
     },
     // Login once and persist the session to playwright/.auth/user.json
@@ -30,7 +30,7 @@ export default defineConfig({
     // Authenticated tests — reuse saved session, no repeated logins
     {
       name: "authenticated",
-      testMatch: "**/authenticated.spec.ts",
+      testMatch: ["**/authenticated.spec.ts", "**/agent-api-auth.spec.ts", "**/agent-live.spec.ts"],
       dependencies: ["setup"],
       use: {
         ...devices["Desktop Chrome"],

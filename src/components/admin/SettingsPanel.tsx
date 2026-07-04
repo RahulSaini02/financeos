@@ -145,6 +145,12 @@ export default function SettingsPanel() {
   const [agentPromptOriginal, setAgentPromptOriginal] = useState('')
   const [agentPromptTab, setAgentPromptTab] = useState<'edit' | 'preview'>('edit')
 
+  // Rate limit / cost cap state
+  const [rateLimitPerMin, setRateLimitPerMin] = useState('15')
+  const [costCapUsd, setCostCapUsd] = useState('0.75')
+  const [limitsOriginal, setLimitsOriginal] = useState({ rate: '15', cap: '0.75' })
+  const [limitsSaving, setLimitsSaving] = useState(false)
+
   // Model registry state
   const [customModels, setCustomModels] = useState<ModelEntry[]>([])
   const [newModelLabel, setNewModelLabel] = useState('')
@@ -168,6 +174,12 @@ export default function SettingsPanel() {
         const agentVal = map['ai_agent_system_prompt'] ?? DEFAULT_PROMPTS.ai_agent.content
         setAgentPrompt(agentVal)
         setAgentPromptOriginal(agentVal)
+
+        const rate = map['ai_rate_limit_per_min'] ?? '15'
+        const cap = map['ai_daily_cost_cap_usd'] ?? '0.75'
+        setRateLimitPerMin(rate)
+        setCostCapUsd(cap)
+        setLimitsOriginal({ rate, cap })
 
         try {
           const registry = map['ai_models_registry']
@@ -235,6 +247,44 @@ export default function SettingsPanel() {
       }
     } finally {
       setModelSaving(null)
+    }
+  }
+
+  async function saveLimits() {
+    const rate = Number(rateLimitPerMin)
+    const cap = Number(costCapUsd)
+    if (!Number.isFinite(rate) || rate <= 0 || !Number.isInteger(rate)) {
+      showAlert('error', 'Rate limit must be a positive whole number of requests/min.')
+      return
+    }
+    if (!Number.isFinite(cap) || cap <= 0) {
+      showAlert('error', 'Daily cost cap must be a positive dollar amount.')
+      return
+    }
+    setLimitsSaving(true)
+    try {
+      const responses = await Promise.all([
+        fetch('/api/admin/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'ai_rate_limit_per_min', value: String(rate) }),
+        }),
+        fetch('/api/admin/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'ai_daily_cost_cap_usd', value: String(cap) }),
+        }),
+      ])
+      if (responses.every((r) => r.ok)) {
+        setLimitsOriginal({ rate: String(rate), cap: String(cap) })
+        showAlert('success', 'Rate limit and cost cap updated — applied immediately, no redeploy needed.')
+      } else {
+        showAlert('error', 'Failed to save limits.')
+      }
+    } catch {
+      showAlert('error', 'Failed to save limits.')
+    } finally {
+      setLimitsSaving(false)
     }
   }
 
@@ -367,6 +417,51 @@ export default function SettingsPanel() {
           >
             {registrySaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
             Add Model
+          </button>
+        </div>
+      </div>
+
+      {/* Rate Limiting & Cost Control */}
+      <div className="mt-8 pt-6 border-t border-[var(--color-border)]">
+        <h3 className="text-sm font-semibold text-[var(--color-text-primary)] mb-1">Rate Limiting &amp; Cost Control</h3>
+        <p className="text-xs text-[var(--color-text-muted)] mb-4">
+          Per-user AI limits, applied live without a redeploy. The rate limit counts user-initiated
+          turns (sliding 60s window); the cost cap counts full turn cost — query, tool calls, and
+          reasoning — and resets each UTC calendar day. Users get a soft warning at 80% and a hard
+          stop at 100% (non-AI features stay usable).
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <label className="flex-1 text-xs text-[var(--color-text-muted)]">
+            Rate limit (requests/min per user)
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={rateLimitPerMin}
+              onChange={(e) => setRateLimitPerMin(e.target.value)}
+              className="mt-1 w-full text-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)] px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
+            />
+          </label>
+          <label className="flex-1 text-xs text-[var(--color-text-muted)]">
+            Daily cost cap ($/day per user)
+            <input
+              type="number"
+              min={0.01}
+              step={0.05}
+              value={costCapUsd}
+              onChange={(e) => setCostCapUsd(e.target.value)}
+              className="mt-1 w-full text-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] text-[var(--color-text-primary)] px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
+            />
+          </label>
+        </div>
+        <div className="flex justify-end mt-3">
+          <button
+            onClick={saveLimits}
+            disabled={limitsSaving || (rateLimitPerMin === limitsOriginal.rate && costCapUsd === limitsOriginal.cap)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] text-white text-xs font-medium px-3 py-1.5 hover:opacity-90 disabled:opacity-50 transition-opacity"
+          >
+            {limitsSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+            Save Limits
           </button>
         </div>
       </div>

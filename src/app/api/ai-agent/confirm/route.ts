@@ -11,12 +11,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json() as { action_id: string; confirmed: boolean }
-    const { action_id, confirmed } = body
+    const body = await request.json().catch(() => null) as {
+      action_id?: unknown
+      confirmed?: unknown
+      timezone?: unknown
+    } | null
 
-    if (!action_id || typeof action_id !== 'string') {
-      return NextResponse.json({ error: 'action_id is required' }, { status: 400 })
+    if (!body || typeof body.action_id !== 'string' || !body.action_id || typeof body.confirmed !== 'boolean') {
+      return NextResponse.json(
+        { error: 'action_id (string) and confirmed (boolean) are required' },
+        { status: 400 },
+      )
     }
+    const { action_id, confirmed } = body
+    const tz = typeof body.timezone === 'string' && body.timezone ? body.timezone : 'America/Los_Angeles'
 
     // Fetch the pending action — must belong to this user
     const { data: actionRow, error: fetchError } = await supabase
@@ -38,14 +46,35 @@ export async function POST(request: NextRequest) {
     }
 
     if (!confirmed) {
-      // Rejected — mark as rejected
-      await supabase
+      // Atomic pending → rejected: the status predicate makes concurrent
+      // confirms/cancels race-safe — only one request wins the transition
+      const { data: claimed } = await supabase
         .from('agent_action_log')
         .update({ status: 'rejected' })
         .eq('id', action_id)
         .eq('user_id', user.id)
+        .eq('status', 'pending')
+        .select('id')
 
+      if (!claimed?.length) {
+        return NextResponse.json({ error: 'Action was already processed' }, { status: 400 })
+      }
       return NextResponse.json({ success: true, result: 'Action cancelled.' })
+    }
+
+    // Atomically claim pending → executed BEFORE running the tool, so a
+    // concurrent duplicate confirm cannot execute the write twice. A tool
+    // failure downgrades the status to 'failed' afterwards.
+    const { data: claimed } = await supabase
+      .from('agent_action_log')
+      .update({ status: 'executed', executed_at: new Date().toISOString() })
+      .eq('id', action_id)
+      .eq('user_id', user.id)
+      .eq('status', 'pending')
+      .select('id')
+
+    if (!claimed?.length) {
+      return NextResponse.json({ error: 'Action was already processed' }, { status: 400 })
     }
 
     // Execute the write tool
@@ -54,9 +83,10 @@ export async function POST(request: NextRequest) {
       actionRow.input_json as Record<string, unknown>,
       user.id,
       supabase,
+      tz,
     )
 
-    // Determine final status based on whether the result indicates failure
+    // Record the result; downgrade status if the executor reported failure
     const finalStatus = result.summary.startsWith('Failed:') ? 'failed' : 'executed'
 
     await supabase
@@ -64,7 +94,6 @@ export async function POST(request: NextRequest) {
       .update({
         status: finalStatus,
         result_json: { text: result.text, summary: result.summary },
-        executed_at: new Date().toISOString(),
       })
       .eq('id', action_id)
       .eq('user_id', user.id)

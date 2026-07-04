@@ -4,6 +4,8 @@ import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { createServerClient } from '@supabase/ssr'
 import { getAppSetting } from '@/lib/get-app-setting'
 import { randomUUID } from 'crypto'
+import { getFxRate, convertAmount } from '@/lib/fx'
+import type { CurrencyCode } from '@/lib/types'
 
 // Service-role client — bypasses RLS for balance updates that must succeed
 // regardless of how the request arrived (direct UI call or internal server fetch).
@@ -130,7 +132,6 @@ export async function POST(request: NextRequest) {
       cr_dr,
       date,
       notes,
-      original_currency,
       loan_id,
       // Inter-account transfer fields
       target_account_id,
@@ -148,7 +149,7 @@ export async function POST(request: NextRequest) {
     if (target_account_id && target_account_id !== account_id) {
       const { data: targetAcct, error: targetAcctErr } = await supabase
         .from('accounts')
-        .select('id')
+        .select('id, currency')
         .eq('id', target_account_id)
         .eq('user_id', user.id)
         .single()
@@ -156,6 +157,23 @@ export async function POST(request: NextRequest) {
       if (targetAcctErr || !targetAcct) {
         return NextResponse.json({ error: 'Target account not found' }, { status: 404 })
       }
+
+      // Fetch source account currency for multi-currency transaction recording
+      const { data: sourceAcctMeta } = await supabase
+        .from('accounts')
+        .select('currency')
+        .eq('id', account_id)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      const sourceCurrency: CurrencyCode = ( sourceAcctMeta?.currency as CurrencyCode | null ) ?? 'USD'
+      const targetCurrency: CurrencyCode = ( targetAcct.currency as CurrencyCode | null ) ?? 'USD'
+
+      const sourceFxRate = sourceCurrency !== 'USD' ? await getFxRate( sourceCurrency, 'USD' ) : 1
+      const targetFxRate = targetCurrency !== 'USD' ? await getFxRate( targetCurrency, 'USD' ) : 1
+      // The input amount is in the SOURCE account's currency. sourceUsdAmt is its USD value;
+      // targetNativeAmt is that same value expressed in the TARGET account's currency.
+      const sourceUsdAmt = convertAmount( amount_usd, sourceFxRate )
+      const targetNativeAmt = targetFxRate ? sourceUsdAmt / targetFxRate : sourceUsdAmt
 
       const transferGroupId = randomUUID()
 
@@ -169,7 +187,7 @@ export async function POST(request: NextRequest) {
         .single()
       transferCategoryId = transferCat?.id ?? null
 
-      // Transaction A: debit from source account
+      // Transaction A: debit from source account (amount_usd stores USD-normalized value)
       const { data: txnA, error: errA } = await supabase
         .from('transactions')
         .insert({
@@ -177,10 +195,10 @@ export async function POST(request: NextRequest) {
           account_id,
           category_id: transferCategoryId,
           description: description || `Transfer to account`,
-          amount_usd: -amount_usd,
-          final_amount: -amount_usd,
+          amount_usd: -sourceUsdAmt,
+          final_amount: -sourceUsdAmt,
           amount_original,
-          original_currency: original_currency ?? 'USD',
+          original_currency: sourceCurrency,
           cr_dr: 'debit',
           date,
           notes: notes ?? null,
@@ -200,7 +218,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Failed to create transfer (source)' }, { status: 500 })
       }
 
-      // Transaction B: credit into target account
+      // Transaction B: credit into target account (amount_usd stores USD-normalized value)
       const { data: txnB, error: errB } = await supabase
         .from('transactions')
         .insert({
@@ -208,10 +226,10 @@ export async function POST(request: NextRequest) {
           account_id: target_account_id,
           category_id: transferCategoryId,
           description: description || `Transfer from account`,
-          amount_usd,
-          final_amount: amount_usd,
-          amount_original,
-          original_currency: original_currency ?? 'USD',
+          amount_usd: sourceUsdAmt,
+          final_amount: sourceUsdAmt,
+          amount_original: targetNativeAmt,
+          original_currency: targetCurrency,
           cr_dr: 'credit',
           date,
           notes: notes ?? null,
@@ -264,7 +282,7 @@ export async function POST(request: NextRequest) {
             .from('accounts').select('current_balance').eq('id', target_account_id).single()
           if (acct) {
             const { error: be } = await adminClient.from('accounts')
-              .update({ current_balance: (acct.current_balance ?? 0) + amount_usd })
+              .update({ current_balance: (acct.current_balance ?? 0) + targetNativeAmt })
               .eq('id', target_account_id)
             if (be) console.error('Transfer target balance update error:', be)
           }
@@ -275,6 +293,18 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Standard transaction flow ─────────────────────────────────────────────
+
+    // Look up the account's currency for multi-currency transaction recording
+    const { data: acctForCurrency } = await supabase
+      .from('accounts')
+      .select('currency')
+      .eq('id', account_id)
+      .eq('user_id', user.id)
+      .maybeSingle()
+    const accountCurrency: CurrencyCode = ( acctForCurrency?.currency as CurrencyCode | null ) ?? 'USD'
+    const fxRate = accountCurrency !== 'USD' ? await getFxRate( accountCurrency, 'USD' ) : 1
+    const usdNormalized = convertAmount( Math.abs( amount_usd ), fxRate )
+    const final_amount_usd = cr_dr === 'credit' ? usdNormalized : -usdNormalized
 
     // ── Smart auto-categorization (if no category provided) ──────────────────
     let resolvedCategoryId = category_id ?? null
@@ -319,10 +349,10 @@ export async function POST(request: NextRequest) {
         account_id,
         category_id: resolvedCategoryId,
         description,
-        amount_usd: final_amount,
-        final_amount,
+        amount_usd: final_amount_usd,
+        final_amount: final_amount_usd,
         amount_original,
-        original_currency: original_currency ?? 'USD',
+        original_currency: accountCurrency,
         cr_dr,
         date,
         notes: notes ?? null,
@@ -353,7 +383,7 @@ export async function POST(request: NextRequest) {
       .select('id')
       .eq('user_id', user.id)
       .eq('description', description)
-      .eq('amount_usd', final_amount)
+      .eq('amount_usd', final_amount_usd)
       .gte('date', oneDayAgo)
       .neq('id', data.id)
       .limit(1)
@@ -398,6 +428,8 @@ export async function POST(request: NextRequest) {
 
     // Sync account balance using service-role client to guarantee the update
     // succeeds regardless of how this route was invoked (direct UI or internal fetch).
+    // Use the raw signed amount in the account's currency — NOT the USD-normalized value
+    // stored in amount_usd — so INR account balances stay in INR.
     if (account_id) {
       const adminClient = createAdminClient()
       const { data: acct, error: acctErr } = await adminClient
@@ -405,19 +437,17 @@ export async function POST(request: NextRequest) {
         .select('current_balance')
         .eq('id', account_id)
         .single()
-      console.log('[balance] account_id:', account_id, 'acct:', acct, 'acctErr:', acctErr)
       if (acctErr) {
         console.error('Balance read error:', acctErr)
       } else if (acct) {
         const oldBalance = Number(acct.current_balance ?? 0)
-        const delta = Number(data.amount_usd ?? 0)
+        const delta = Number(final_amount) // raw signed in account's currency
         const newBalance = oldBalance + delta
-        console.log('[balance] oldBalance:', oldBalance, 'delta:', delta, 'newBalance:', newBalance)
         const { error: balErr } = await adminClient
           .from('accounts')
           .update({ current_balance: newBalance })
           .eq('id', account_id)
-        console.log('[balance] update error:', balErr)
+        if (balErr) console.error('Balance update error:', balErr)
       }
     }
 

@@ -10,7 +10,7 @@ import {
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartEmptyState } from "@/components/charts/ChartEmptyState";
 import { PieChart as PieChartIcon } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { useCurrency } from "@/lib/currency-context";
 
 interface CategoryPieChartProps {
   data: Array<{ name: string; value: number; color: string }>;
@@ -19,6 +19,7 @@ interface CategoryPieChartProps {
 }
 
 export function CategoryPieChart({ data, selectedCategory, onCategorySelect }: CategoryPieChartProps) {
+  const { fmt } = useCurrency();
   if (data.length === 0) {
     return (
       <Card>
@@ -61,7 +62,7 @@ export function CategoryPieChart({ data, selectedCategory, onCategorySelect }: C
               {selectedCategory} · click to deselect
             </span>
           ) : (
-            `This month · ${formatCurrency(total)}`
+            `This month · ${fmt(total)}`
           )}
         </span>
       </CardHeader>
@@ -100,7 +101,7 @@ export function CategoryPieChart({ data, selectedCategory, onCategorySelect }: C
               }}
               separator=""
               formatter={(v: unknown) => [
-                `${formatCurrency(v as number)} (${(
+                `${fmt(v as number)} (${(
                   ((v as number) / total) *
                   100
                 ).toFixed(1)}%)`,
@@ -135,7 +136,7 @@ export function CategoryPieChart({ data, selectedCategory, onCategorySelect }: C
                   {cat.name}
                 </span>
                 <span className="text-xs font-medium text-[var(--color-text-primary)] shrink-0">
-                  {formatCurrency(cat.value)}
+                  {fmt(cat.value)}
                 </span>
               </button>
             );
