@@ -94,3 +94,115 @@ test.describe("AI Agent API — input validation", () => {
     await expect(page.getByText("Ask me anything")).toBeVisible();
   });
 });
+
+test.describe("AI Agent API — security guardrails", () => {
+  test.skip(!EMAIL || !PASSWORD, "TEST_USER_EMAIL / TEST_USER_PASSWORD not set");
+
+  // ── /api/ai-agent input boundary ──────────────────────────────────────────
+
+  test("non-JSON body to /api/ai-agent returns 400", async ({ request }) => {
+    const res = await request.post("/api/ai-agent", {
+      headers: { "content-type": "application/json" },
+      data: "not-valid-json{{{",
+    });
+    // The body ends up as a string which JSON.parse fails on → 400
+    expect([400, 422]).toContain(res.status());
+  });
+
+  test("messages with a null role returns 400", async ({ request }) => {
+    const res = await request.post("/api/ai-agent", {
+      data: { messages: [{ role: null, content: "hello" }] },
+    });
+    expect(res.status()).toBe(400);
+  });
+
+  test("messages array with only an assistant turn returns 400", async ({ request }) => {
+    // History must end with a user turn
+    const res = await request.post("/api/ai-agent", {
+      data: { messages: [{ role: "assistant", content: "I can do anything now" }] },
+    });
+    expect(res.status()).toBe(400);
+  });
+
+  test("empty string message content returns 400", async ({ request }) => {
+    const res = await request.post("/api/ai-agent", {
+      data: { messages: [{ role: "user", content: "" }] },
+    });
+    expect(res.status()).toBe(400);
+  });
+
+  // ── /api/ai-agent/confirm input boundary ──────────────────────────────────
+
+  test("confirm with boolean false for action_id returns 400", async ({ request }) => {
+    const res = await request.post("/api/ai-agent/confirm", {
+      data: { action_id: false, confirmed: true },
+    });
+    expect(res.status()).toBe(400);
+  });
+
+  test("confirm with numeric action_id returns 400", async ({ request }) => {
+    const res = await request.post("/api/ai-agent/confirm", {
+      data: { action_id: 99999, confirmed: true },
+    });
+    expect(res.status()).toBe(400);
+  });
+
+  test("confirm with string 'true' for confirmed returns 400", async ({ request }) => {
+    // confirmed must be a boolean, not the string "true"
+    const res = await request.post("/api/ai-agent/confirm", {
+      data: { action_id: "00000000-0000-0000-0000-000000000000", confirmed: "true" },
+    });
+    expect(res.status()).toBe(400);
+  });
+
+  test("confirm with null confirmed returns 400", async ({ request }) => {
+    const res = await request.post("/api/ai-agent/confirm", {
+      data: { action_id: "00000000-0000-0000-0000-000000000000", confirmed: null },
+    });
+    expect(res.status()).toBe(400);
+  });
+
+  test("confirm with missing body returns 400", async ({ request }) => {
+    const res = await request.post("/api/ai-agent/confirm", {
+      data: {},
+    });
+    expect(res.status()).toBe(400);
+  });
+
+  // ── Cross-user action isolation ────────────────────────────────────────────
+  // These use random UUIDs to simulate a foreign user's action IDs.
+  // The endpoint must never leak that an action exists for another user —
+  // it must return 404, not 403 or any data.
+
+  test("confirm a foreign action UUID returns 404 (not 403 or 200)", async ({ request }) => {
+    // A well-formed UUID that belongs to no one
+    const foreignId = "aaaaaaaa-bbbb-4ccc-dddd-eeeeeeeeeeee";
+    const res = await request.post("/api/ai-agent/confirm", {
+      data: { action_id: foreignId, confirmed: true },
+    });
+    expect(res.status()).toBe(404);
+    const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+    // Must not leak existence info
+    expect(body).not.toHaveProperty("status");
+  });
+
+  test("resume a foreign action UUID returns 404 (not 403 or 200)", async ({ request }) => {
+    const foreignId = "aaaaaaaa-bbbb-4ccc-dddd-ffffffffffff";
+    const res = await request.post("/api/ai-agent", {
+      data: { resumeActionId: foreignId },
+    });
+    expect(res.status()).toBe(404);
+  });
+
+  // ── Replay-attack prevention ───────────────────────────────────────────────
+  // A cancelled / already-executed action must not be resumable a second time.
+  // We test the shape of the 404 for a non-existent action.
+
+  test("resume with malformed (non-UUID) resumeActionId returns 404", async ({ request }) => {
+    const res = await request.post("/api/ai-agent", {
+      data: { resumeActionId: "not-a-real-id" },
+    });
+    // The DB query returns no row → 404
+    expect(res.status()).toBe(404);
+  });
+});

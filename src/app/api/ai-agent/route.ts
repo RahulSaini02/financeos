@@ -7,9 +7,8 @@ import {
   READ_TOOLS,
   WRITE_TOOLS,
   WRITE_TOOL_NAMES,
-  executeReadTool,
-  resolveWriteAction,
 } from '@/lib/agent-tools'
+import { createMcpContext, tryParsePending } from '@/lib/mcp/server'
 import { buildSafetyPrefix } from '@/lib/agent/safety'
 import { checkAndLogAiUsage, recordAiUsageCost, estimateCostUsd } from '@/lib/ai-rate-limit'
 import { getCalendarEvents, createCalendarEvent, refreshAccessToken } from '@/lib/google-oauth'
@@ -399,7 +398,14 @@ export async function POST(request: NextRequest) {
       // reasoning) accumulates here and is billed against the daily cost cap
       const turnUsage = { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 }
 
+      // Noop default so the finally block is always safe to call even if
+      // createMcpContext never runs (e.g. auth failed earlier in the handler)
+      let mcpCleanup: () => Promise<void> = async () => {}
+
       try {
+        const { client: mcpClient, cleanup } = await createMcpContext(user.id, supabase, tz)
+        mcpCleanup = cleanup
+
         let currentMessages: Anthropic.MessageParam[] = resumeMessages ?? [...clientMessages]
         let continueLoop = true
         let iterationCount = 0
@@ -593,56 +599,49 @@ export async function POST(request: NextRequest) {
                 continue
               }
 
-              const isWrite = WRITE_TOOL_NAMES.includes(toolUse.name)
-              if (isWrite) {
-                // Only one action can await confirmation at a time — extra
-                // writes in the same turn are deferred back to the model
-                if (pendingWrite) {
-                  toolResults.push({
-                    type: 'tool_result',
-                    tool_use_id: toolUse.id,
-                    content: 'Another action is already awaiting user confirmation. Only one action can be pending at a time — propose this again after the current one is resolved.',
-                  })
-                  continue
-                }
-
-                // Resolve fuzzy names to concrete records BEFORE asking the
-                // user to confirm. Ambiguity goes back to the model so it can
-                // ask the user instead of the app guessing.
-                emit({ event: 'tool_start', toolName: toolUse.name, toolUseId: toolUse.id })
-                const resolution = await resolveWriteAction(
-                  toolUse.name,
-                  toolUse.input as Record<string, unknown>,
-                  user.id,
-                  supabase,
-                  tz,
-                )
-                if (!resolution.ok) {
-                  log(`    tool  ${toolUse.name}  WRITE — needs clarification: ${resolution.message.slice(0, 100)}`)
-                  emit({ event: 'tool_result', toolName: toolUse.name, toolUseId: toolUse.id, summary: 'Needs clarification' })
-                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resolution.message })
-                  continue
-                }
-                log(`    tool  ${toolUse.name}  WRITE — resolved, awaiting user confirmation`)
-                emit({ event: 'tool_result', toolName: toolUse.name, toolUseId: toolUse.id, summary: 'Awaiting your confirmation' })
-                pendingWrite = { toolUse, resolvedInput: resolution.resolvedInput, preview: resolution.preview }
+              // One pending write at a time — guard before the MCP call
+              if (WRITE_TOOL_NAMES.includes(toolUse.name) && pendingWrite) {
+                toolResults.push({
+                  type: 'tool_result',
+                  tool_use_id: toolUse.id,
+                  content: 'Another action is already awaiting user confirmation. Only one action can be pending at a time — propose this again after the current one is resolved.',
+                })
                 continue
               }
 
-              // READ tool
               log(`    tool  ${toolUse.name}  input=${JSON.stringify(toolUse.input).slice(0, 120)}`)
               const tTool = Date.now()
               emit({ event: 'tool_start', toolName: toolUse.name, toolUseId: toolUse.id })
-              const result = await executeReadTool(
-                toolUse.name,
-                toolUse.input as Record<string, unknown>,
-                user.id,
-                supabase,
-                tz,
-              )
-              log(`    tool  ${toolUse.name}  done  ${Date.now() - tTool}ms  "${result.summary}"`)
-              emit({ event: 'tool_result', toolName: toolUse.name, toolUseId: toolUse.id, summary: result.summary })
-              toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: result.text })
+
+              const mcpResult = await mcpClient.callTool({
+                name: toolUse.name,
+                arguments: toolUse.input as Record<string, unknown>,
+              })
+
+              type McpContentBlock = { type: 'text'; text: string } | { type: string }
+              const mcpContent = mcpResult.content as McpContentBlock[]
+              let resultText = ''
+              for (const block of mcpContent) {
+                if (block.type === 'text') { resultText = (block as { type: 'text'; text: string }).text; break }
+              }
+
+              const pending = tryParsePending(resultText)
+
+              if (pending !== null) {
+                log(`    tool  ${toolUse.name}  WRITE — resolved, awaiting user confirmation`)
+                emit({ event: 'tool_result', toolName: toolUse.name, toolUseId: toolUse.id, summary: 'Awaiting your confirmation' })
+                pendingWrite = { toolUse, resolvedInput: pending.resolvedInput, preview: pending.preview }
+              } else {
+                const isWriteClarification = WRITE_TOOL_NAMES.includes(toolUse.name)
+                log(`    tool  ${toolUse.name}  done  ${Date.now() - tTool}ms${mcpResult.isError ? '  [error]' : ''}`)
+                emit({
+                  event: 'tool_result',
+                  toolName: toolUse.name,
+                  toolUseId: toolUse.id,
+                  summary: isWriteClarification ? 'Needs clarification' : toolUse.name,
+                })
+                toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: resultText })
+              }
             }
 
             if (pendingWrite) {
@@ -690,6 +689,7 @@ export async function POST(request: NextRequest) {
         console.error('[ai-agent] unhandled error:', err)
         emit({ event: 'error', message: err instanceof Error ? err.message : 'Unknown error' })
       } finally {
+        await mcpCleanup()
         // Persist the turn's cost and surface today's spend for the usage meter
         const turnCost = estimateCostUsd(aiModel, turnUsage)
         emit({
