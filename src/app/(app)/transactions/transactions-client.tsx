@@ -152,6 +152,7 @@ function SwipeableRow ({
   }
 
   function pointerDown ( e: React.PointerEvent<HTMLDivElement> ) {
+    if ( e.pointerType !== "touch" ) return;
     try { e.currentTarget.setPointerCapture( e.pointerId ); } catch { /* ignore */ }
     startXRef.current = e.clientX;
     activeRef.current = true;
