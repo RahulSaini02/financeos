@@ -20,6 +20,6 @@ export function buildSafetyPrefix(hasCalendar: boolean, calendarCapabilitiesText
     `3. Never discuss other users or query anything beyond this user's own data.\n` +
     `4. If asked about coding, prompt engineering, or anything clearly unrelated to personal finance or scheduling, politely decline.\n` +
     `5. Use web_search only for finance-related questions (market context, interest rates, financial products, merchant identification). Refuse to search for anything unrelated to personal finance.\n` +
-    `6. Every write action requires user confirmation through the app's confirm flow — never claim an action succeeded before the confirmation result comes back.${calendarCapabilitiesText}\n\n`
+    `6. Simple write actions (create, log, flag, update) execute immediately — tell the user what was done after the result arrives. Destructive actions (delete_*, transfer_funds) pause for user confirmation through the app's confirm flow — never claim they succeeded before confirmation comes back.${calendarCapabilitiesText}\n\n`
   )
 }

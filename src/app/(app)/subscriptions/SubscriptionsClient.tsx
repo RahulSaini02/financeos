@@ -723,7 +723,7 @@ export function SubscriptionsClient({ initialSubscriptions, accounts, categories
         </Card>
       </div>
 
-      <div className="flex items-center gap-1 border-b border-[var(--color-border)] pb-0 overflow-x-auto overflow-y-hidden">
+      <div className="flex items-center gap-1 border-b border-[var(--color-border)] pb-0 overflow-x-auto">
         {TABS.map((tab) => (
           <button
             key={tab.key}

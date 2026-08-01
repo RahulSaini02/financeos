@@ -117,7 +117,7 @@ export function AnimatedAiInput({
   }, [value, adjustHeight]);
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && e.shiftKey) {
       e.preventDefault();
       if (value.trim() && !disabled && !isSending) onSubmit();
     }
@@ -243,6 +243,9 @@ export function AnimatedAiInput({
           </div>
         </div>
       </div>
+      <p className="mt-1.5 px-1 text-[0.65rem] text-[var(--color-text-muted)] text-right">
+        Press <kbd className="font-mono">Shift+Enter</kbd> to send
+      </p>
     </div>
   );
 }

@@ -165,7 +165,10 @@ export async function POST(request: NextRequest) {
         .eq('id', account_id)
         .eq('user_id', user.id)
         .maybeSingle()
-      const sourceCurrency: CurrencyCode = ( sourceAcctMeta?.currency as CurrencyCode | null ) ?? 'USD'
+      if (!sourceAcctMeta) {
+        return NextResponse.json({ error: 'Source account not found' }, { status: 404 })
+      }
+      const sourceCurrency: CurrencyCode = ( sourceAcctMeta.currency as CurrencyCode | null ) ?? 'USD'
       const targetCurrency: CurrencyCode = ( targetAcct.currency as CurrencyCode | null ) ?? 'USD'
 
       const sourceFxRate = sourceCurrency !== 'USD' ? await getFxRate( sourceCurrency, 'USD' ) : 1
@@ -174,6 +177,19 @@ export async function POST(request: NextRequest) {
       // targetNativeAmt is that same value expressed in the TARGET account's currency.
       const sourceUsdAmt = convertAmount( amount_usd, sourceFxRate )
       const targetNativeAmt = targetFxRate ? sourceUsdAmt / targetFxRate : sourceUsdAmt
+
+      // Snapshot for display — USD→INR rate at the moment this transfer is created.
+      // Null if the fetch fails; callers degrade gracefully to the live rate.
+      let usdToInrSnapshot: number | null = null
+      try {
+        if (sourceCurrency === 'INR' && sourceFxRate && sourceFxRate > 0) {
+          usdToInrSnapshot = 1 / sourceFxRate   // sourceFxRate is INR→USD; invert to get USD→INR
+        } else {
+          usdToInrSnapshot = await getFxRate('USD', 'INR')
+        }
+      } catch {
+        // Non-fatal — proceed without snapshot
+      }
 
       const transferGroupId = randomUUID()
 
@@ -209,6 +225,7 @@ export async function POST(request: NextRequest) {
           ai_categorized: false,
           is_internal_transfer: true,
           transfer_group_id: transferGroupId,
+          fx_rate_snapshot: usdToInrSnapshot,
         })
         .select()
         .single()
@@ -241,6 +258,7 @@ export async function POST(request: NextRequest) {
           is_internal_transfer: true,
           transfer_group_id: transferGroupId,
           linked_transaction_id: txnA.id,
+          fx_rate_snapshot: usdToInrSnapshot,
         })
         .select()
         .single()
@@ -269,21 +287,23 @@ export async function POST(request: NextRequest) {
       await Promise.all([
         (async () => {
           const { data: acct } = await adminClient
-            .from('accounts').select('current_balance').eq('id', account_id).single()
+            .from('accounts').select('current_balance').eq('id', account_id).eq('user_id', user.id).single()
           if (acct) {
             const { error: be } = await adminClient.from('accounts')
               .update({ current_balance: (acct.current_balance ?? 0) - amount_usd })
               .eq('id', account_id)
+              .eq('user_id', user.id)
             if (be) console.error('Transfer source balance update error:', be)
           }
         })(),
         (async () => {
           const { data: acct } = await adminClient
-            .from('accounts').select('current_balance').eq('id', target_account_id).single()
+            .from('accounts').select('current_balance').eq('id', target_account_id).eq('user_id', user.id).single()
           if (acct) {
             const { error: be } = await adminClient.from('accounts')
               .update({ current_balance: (acct.current_balance ?? 0) + targetNativeAmt })
               .eq('id', target_account_id)
+              .eq('user_id', user.id)
             if (be) console.error('Transfer target balance update error:', be)
           }
         })(),
@@ -301,10 +321,26 @@ export async function POST(request: NextRequest) {
       .eq('id', account_id)
       .eq('user_id', user.id)
       .maybeSingle()
-    const accountCurrency: CurrencyCode = ( acctForCurrency?.currency as CurrencyCode | null ) ?? 'USD'
+    if (!acctForCurrency) {
+      return NextResponse.json({ error: 'Account not found' }, { status: 404 })
+    }
+    const accountCurrency: CurrencyCode = ( acctForCurrency.currency as CurrencyCode | null ) ?? 'USD'
     const fxRate = accountCurrency !== 'USD' ? await getFxRate( accountCurrency, 'USD' ) : 1
     const usdNormalized = convertAmount( Math.abs( amount_usd ), fxRate )
     const final_amount_usd = cr_dr === 'credit' ? usdNormalized : -usdNormalized
+
+    // USD→INR rate snapshot — used so historical transactions display the correct INR value
+    // regardless of today's live rate. Null if the fetch fails (callers degrade to live rate).
+    let usdToInrSnapshot: number | null = null
+    try {
+      if (accountCurrency === 'INR' && fxRate && fxRate > 0) {
+        usdToInrSnapshot = 1 / fxRate   // fxRate is INR→USD; invert to get USD→INR
+      } else {
+        usdToInrSnapshot = await getFxRate('USD', 'INR')
+      }
+    } catch {
+      // Non-fatal — proceed without snapshot
+    }
 
     // ── Smart auto-categorization (if no category provided) ──────────────────
     let resolvedCategoryId = category_id ?? null
@@ -364,6 +400,7 @@ export async function POST(request: NextRequest) {
         ai_categorized: aiCategorized,
         ai_confidence: aiConfidence,
         is_internal_transfer: false,
+        fx_rate_snapshot: usdToInrSnapshot,
       })
       .select()
       .single()
@@ -436,6 +473,7 @@ export async function POST(request: NextRequest) {
         .from('accounts')
         .select('current_balance')
         .eq('id', account_id)
+        .eq('user_id', user.id)
         .single()
       if (acctErr) {
         console.error('Balance read error:', acctErr)
@@ -447,6 +485,7 @@ export async function POST(request: NextRequest) {
           .from('accounts')
           .update({ current_balance: newBalance })
           .eq('id', account_id)
+          .eq('user_id', user.id)
         if (balErr) console.error('Balance update error:', balErr)
       }
     }

@@ -3,7 +3,7 @@ export const metadata = {
   description: "How FinanceOS collects, uses, and protects your personal financial data.",
 };
 
-const LAST_UPDATED = "April 28, 2026";
+const LAST_UPDATED = "August 1, 2026";
 const CONTACT_EMAIL = "sainirahul0802+privacy@gmail.com";
 
 export default function PrivacyPage() {
@@ -41,13 +41,35 @@ export default function PrivacyPage() {
               pages visited and features used, collected to improve the product.
             </li>
             <li>
-              <strong className="text-[var(--color-text-primary)]">AI chat messages:</strong> Messages you send to
-              the AI assistant — which may include your financial data — are sent to Anthropic&apos;s
-              Claude API for processing. These messages are governed by{" "}
+              <strong className="text-[var(--color-text-primary)]">AI chat messages and actions:</strong> Messages
+              you send to the AI assistant — which may include your financial data — are sent to
+              Anthropic&apos;s Claude API for processing. When you authorize the AI to take actions
+              (e.g., create or edit transactions, budgets, savings goals), those instructions and
+              relevant account data are also sent to Anthropic for processing. These interactions are
+              governed by{" "}
               <a href="https://www.anthropic.com/privacy" target="_blank" rel="noopener noreferrer"
                 className="text-[var(--color-accent)] hover:underline">
                 Anthropic&apos;s Privacy Policy
               </a>.
+            </li>
+            <li>
+              <strong className="text-[var(--color-text-primary)]">Automated AI processing:</strong> Background
+              services (daily financial insights, bill reminders, proactive spending alerts, monthly
+              reviews) automatically analyze your financial data using Anthropic&apos;s Claude API on a
+              scheduled basis, even without an active chat session.
+            </li>
+            <li>
+              <strong className="text-[var(--color-text-primary)]">Push notification subscription:</strong> If you
+              enable push notifications, we store your browser&apos;s push endpoint and encryption keys to
+              deliver alerts (daily insights, bill reminders, proactive financial alerts) to your
+              device.
+            </li>
+            <li>
+              <strong className="text-[var(--color-text-primary)]">Google Calendar data:</strong> If you connect
+              Google Calendar (optional), we receive OAuth tokens and read your calendar event
+              titles and times to surface payment reminders. We may also create calendar events on
+              your behalf when requested. Access requires your explicit authorization and can be
+              revoked at any time from Settings.
             </li>
           </ul>
         </section>
@@ -57,8 +79,10 @@ export default function PrivacyPage() {
           <ul className="list-disc pl-5 space-y-2">
             <li>To provide, operate, and improve the FinanceOS service.</li>
             <li>To authenticate your identity and secure your account.</li>
-            <li>To process your queries via the AI assistant (Claude by Anthropic).</li>
-            <li>To send essential service communications (e.g., budget alerts, security notices).</li>
+            <li>To process your queries via the AI assistant (Claude by Anthropic) and to execute AI-authorized write actions (create, edit, or delete financial records) that you approve.</li>
+            <li>To run automated background analysis of your financial data for proactive insights, bill reminders, and monthly summaries delivered via push notification or in-app.</li>
+            <li>To sync with Google Calendar (if connected) to surface payment reminders and create financial events.</li>
+            <li>To send essential service communications (e.g., push notifications for budget alerts, bill reminders, security notices).</li>
             <li>We do <strong className="text-[var(--color-text-primary)]">not</strong> sell your data to third parties.</li>
             <li>We do <strong className="text-[var(--color-text-primary)]">not</strong> use your financial data for advertising.</li>
           </ul>
@@ -90,8 +114,25 @@ export default function PrivacyPage() {
               method. If used, Google shares your name and email with us per Google&apos;s OAuth policy.
             </li>
             <li>
+              <strong className="text-[var(--color-text-primary)]">Google Calendar API</strong> — optional
+              integration for payment reminders and calendar event creation. If connected, we store
+              OAuth access and refresh tokens in our database and call Google&apos;s Calendar API on your
+              behalf. We request read and write access to your calendar scopes. See{" "}
+              <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer"
+                className="text-[var(--color-accent)] hover:underline">
+                Google Privacy Policy
+              </a>.
+            </li>
+            <li>
               <strong className="text-[var(--color-text-primary)]">Vercel</strong> — hosting and deployment
               infrastructure.
+            </li>
+            <li>
+              <strong className="text-[var(--color-text-primary)]">Web Push (browser-native)</strong> — if you
+              enable push notifications, your browser&apos;s push service (e.g., FCM for Chrome, APNs
+              for Safari) delivers notifications. We store only the push endpoint and encryption
+              keys; no personal data is sent to the browser push service beyond the notification
+              payload itself.
             </li>
           </ul>
         </section>

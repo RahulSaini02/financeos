@@ -106,6 +106,7 @@ export interface Transaction {
   flagged_reason: string | null
   ai_categorized: boolean
   ai_confidence: number | null
+  fx_rate_snapshot?: number | null
   loan_id: string | null
   transfer_group_id: string | null
   linked_transaction_id: string | null

@@ -1443,6 +1443,34 @@ async function execDeleteRecurringRule(
   return { text: `Recurring rule "${ruleDisplay}" deleted successfully.`, summary: `Deleted recurring rule: ${ruleDisplay}` }
 }
 
+async function execCreateTransactions(
+  input: Record<string, unknown>,
+  userId: string,
+  supabase: SupabaseClient,
+  tz: string,
+): Promise<ToolResult> {
+  const items = (input.items as Array<Record<string, unknown>>) ?? []
+  if (items.length === 0) {
+    return { text: 'No transactions to create.', summary: 'No transactions' }
+  }
+
+  const lines: string[] = []
+  let successCount = 0
+
+  for (const item of items) {
+    const result = await execCreateTransaction(item, userId, supabase, tz)
+    const failed = result.text.startsWith('Error') || result.text.startsWith('Account')
+    if (!failed) successCount++
+    lines.push(`${failed ? '✗' : '✓'} ${result.summary}`)
+  }
+
+  const text = [
+    `Batch complete: ${successCount} of ${items.length} transaction${items.length > 1 ? 's' : ''} created.`,
+    ...lines,
+  ].join('\n')
+  return { text, summary: `Created ${successCount}/${items.length} transactions` }
+}
+
 export async function executeWriteTool(
   name: string,
   input: Record<string, unknown>,
@@ -1458,6 +1486,8 @@ export async function executeWriteTool(
     switch (name) {
       case 'create_transaction':
         return await execCreateTransaction(input, userId, supabase, tz)
+      case 'create_transactions':
+        return await execCreateTransactions(input, userId, supabase, tz)
       case 'flag_transaction':
         return await execFlagTransaction(input, userId, supabase)
       case 'update_transaction':
