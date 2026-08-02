@@ -7,7 +7,7 @@ import type { CurrencyCode } from "@/lib/types";
 interface CurrencyContextValue {
   currency: CurrencyCode;
   fxRate: number;
-  fmt: (amount: number, fromCurrency?: CurrencyCode) => string;
+  fmt: (amount: number, fromCurrency?: CurrencyCode, snapshotRate?: number | null) => string;
 }
 
 const DEFAULT_FX = 84;
@@ -67,10 +67,12 @@ export function BaseCurrencyProvider({ children }: { children: React.ReactNode }
   }, [fetchFxRate]);
 
   const fmt = useCallback(
-    (amount: number, fromCurrency: CurrencyCode = "USD"): string => {
+    (amount: number, fromCurrency: CurrencyCode = "USD", snapshotRate?: number | null): string => {
       let converted = amount;
       if (fromCurrency !== currency) {
-        const rate = fxRate || DEFAULT_FX;
+        // snapshotRate: per-transaction USD→INR rate captured at creation time.
+        // Use it when available so historical amounts don't drift with today's rate.
+        const rate = snapshotRate ?? fxRate ?? DEFAULT_FX;
         if (fromCurrency === "USD" && currency === "INR") {
           converted = amount * rate;
         } else if (fromCurrency === "INR" && currency === "USD") {

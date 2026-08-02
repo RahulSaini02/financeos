@@ -8,6 +8,8 @@ import {
   WRITE_TOOLS,
   WRITE_TOOL_NAMES,
 } from '@/lib/agent-tools'
+import { AUTO_EXECUTE_TOOL_NAMES } from '@/lib/agent-tools'
+import { executeWriteTool } from '@/lib/agent/write-tools'
 import { createMcpContext, tryParsePending } from '@/lib/mcp/server'
 import { buildSafetyPrefix } from '@/lib/agent/safety'
 import { checkAndLogAiUsage, recordAiUsageCost, estimateCostUsd } from '@/lib/ai-rate-limit'
@@ -628,9 +630,18 @@ export async function POST(request: NextRequest) {
               const pending = tryParsePending(resultText)
 
               if (pending !== null) {
-                log(`    tool  ${toolUse.name}  WRITE — resolved, awaiting user confirmation`)
-                emit({ event: 'tool_result', toolName: toolUse.name, toolUseId: toolUse.id, summary: 'Awaiting your confirmation' })
-                pendingWrite = { toolUse, resolvedInput: pending.resolvedInput, preview: pending.preview }
+                if (AUTO_EXECUTE_TOOL_NAMES.includes(pending.toolName)) {
+                  // Non-destructive: execute immediately without user confirmation
+                  log(`    tool  ${toolUse.name}  WRITE auto-exec`)
+                  const writeResult = await executeWriteTool(pending.toolName, pending.resolvedInput, user.id, supabase, tz)
+                  emit({ event: 'tool_result', toolName: toolUse.name, toolUseId: toolUse.id, summary: pending.preview })
+                  toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: writeResult.text })
+                } else {
+                  // Destructive: pause for user confirmation
+                  log(`    tool  ${toolUse.name}  WRITE — resolved, awaiting user confirmation`)
+                  emit({ event: 'tool_result', toolName: toolUse.name, toolUseId: toolUse.id, summary: 'Awaiting your confirmation' })
+                  pendingWrite = { toolUse, resolvedInput: pending.resolvedInput, preview: pending.preview }
+                }
               } else {
                 const isWriteClarification = WRITE_TOOL_NAMES.includes(toolUse.name)
                 log(`    tool  ${toolUse.name}  done  ${Date.now() - tTool}ms${mcpResult.isError ? '  [error]' : ''}`)

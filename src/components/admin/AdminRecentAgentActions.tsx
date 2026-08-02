@@ -21,18 +21,23 @@ const statusVariant: Record<AgentActionRow["status"], "success" | "warning" | "d
   rejected: "muted",
 };
 
-function formatTimeAgo(executedAt: string | null, createdAt: string): string {
-  const dateStr = executedAt ?? createdAt;
-  if (!dateStr) return "unknown";
-  const diff = Date.now() - new Date(dateStr).getTime();
-  if (diff < 0 || diff > 365 * 86_400_000 * 10) return "unknown";
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+function formatTimeAgo(executedAt: string | null, createdAt: string | null): string {
+  const candidates = [executedAt, createdAt];
+  for (const dateStr of candidates) {
+    if (!dateStr) continue;
+    const time = new Date(dateStr).getTime();
+    if (isNaN(time)) continue;
+    const diff = Date.now() - time;
+    if (diff < 0 || diff > 365 * 86_400_000 * 10) continue;
+    const mins = Math.floor(diff / 60_000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  }
+  return "unknown";
 }
 
 export default function AdminRecentAgentActions({ actions }: AdminRecentAgentActionsProps) {

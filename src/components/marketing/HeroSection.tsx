@@ -102,18 +102,19 @@ export default function HeroSection () {
             }}
           >
             <span className="text-[var(--color-accent)]">✦</span>
-            <span>Powered by Claude AI</span>
+            <span>FinanceOS · Powered by Claude AI</span>
           </div>
 
           {/* Headline */}
           <h1
+            suppressHydrationWarning
             className="text-5xl sm:text-6xl font-bold tracking-tight leading-[1.05] text-[var(--color-text-primary)] hero-fade-in"
             style={{ animationDelay: "100ms" }}
           >
             Your finances,
             <br />
-            <span className="bg-gradient-to-r from-[var(--color-accent)] to-[var(--color-warning)] bg-clip-text text-transparent">
-              {typed}
+            <span suppressHydrationWarning className="bg-gradient-to-r from-[var(--color-accent)] to-[var(--color-warning)] bg-clip-text text-transparent">
+              {typed || HERO_TYPED}
             </span>
             {showCursor && (
               <span

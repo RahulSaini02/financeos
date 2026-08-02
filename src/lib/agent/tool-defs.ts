@@ -220,7 +220,7 @@ export const WRITE_TOOLS: Anthropic.Tool[] = [
   {
     name: 'create_transaction',
     description:
-      'Log a manual transaction to the user\'s account. ALWAYS present the details (account, amount, description, date) and get user confirmation before calling this tool.',
+      'Log a manual transaction to the user\'s account. The action will execute immediately without a confirmation prompt.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -237,6 +237,34 @@ export const WRITE_TOOLS: Anthropic.Tool[] = [
         notes: { type: 'string', description: 'Optional notes' },
       },
       required: ['account_name', 'description', 'amount_usd', 'cr_dr'],
+    },
+  },
+  {
+    name: 'create_transactions',
+    description:
+      'Log multiple transactions at once in a single batch call. Use when the user wants to add several transactions together. Each item follows the same schema as create_transaction. The action executes immediately without a confirmation prompt.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        items: {
+          type: 'array',
+          description: 'Array of transactions to create (max 20)',
+          items: {
+            type: 'object',
+            properties: {
+              account_name: { type: 'string', description: 'Partial account name to look up' },
+              description: { type: 'string', description: 'Transaction description / merchant name' },
+              amount_usd: { type: 'number', description: 'Positive amount in USD' },
+              cr_dr: { type: 'string', enum: ['credit', 'debit'], description: 'credit=income/deposit, debit=expense/payment' },
+              date: { type: 'string', description: 'Transaction date YYYY-MM-DD. Defaults to today.' },
+              category_name: { type: 'string', description: 'Optional category name (partial match)' },
+              notes: { type: 'string', description: 'Optional notes' },
+            },
+            required: ['account_name', 'description', 'amount_usd', 'cr_dr'],
+          },
+        },
+      },
+      required: ['items'],
     },
   },
   {
@@ -275,7 +303,7 @@ export const WRITE_TOOLS: Anthropic.Tool[] = [
   {
     name: 'update_budget',
     description:
-      'Set or update a monthly budget amount for a specific category. ALWAYS present the details and get user confirmation before calling this tool.',
+      'Set or update a monthly budget amount for a specific category.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -289,7 +317,7 @@ export const WRITE_TOOLS: Anthropic.Tool[] = [
   {
     name: 'create_savings_goal',
     description:
-      'Create a new savings goal. ALWAYS present the details and get user confirmation before calling this tool.',
+      'Create a new savings goal.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -607,3 +635,8 @@ export const WRITE_TOOLS: Anthropic.Tool[] = [
 ]
 
 export const WRITE_TOOL_NAMES: string[] = WRITE_TOOLS.map((t) => t.name)
+
+// Tools that auto-execute without user confirmation (reversible, low-risk)
+export const AUTO_EXECUTE_TOOL_NAMES: string[] = WRITE_TOOLS
+  .map((t) => t.name)
+  .filter((n) => !['delete_transaction', 'delete_subscription', 'delete_savings_goal', 'delete_investment', 'delete_recurring_rule', 'transfer_funds'].includes(n))

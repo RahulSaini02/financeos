@@ -186,7 +186,7 @@ export async function DELETE(
     // Fetch before delete to reverse balance effects (include transfer fields)
     const { data: existing, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, amount_usd, account_id, loan_id, is_internal_transfer, linked_transaction_id')
+      .select('id, amount_usd, amount_original, cr_dr, account_id, loan_id, is_internal_transfer, linked_transaction_id')
       .eq('id', id)
       .eq('user_id', user.id)
       .single()
@@ -196,12 +196,12 @@ export async function DELETE(
     }
 
     // ── For transfers: also delete the linked leg and reverse its balance ───
-    let linkedTxn: { id: string; amount_usd: number | null; account_id: string | null } | null = null
+    let linkedTxn: { id: string; amount_usd: number | null; amount_original: number | null; cr_dr: string | null; account_id: string | null } | null = null
 
     if (existing.is_internal_transfer && existing.linked_transaction_id) {
       const { data: linked } = await supabase
         .from('transactions')
-        .select('id, amount_usd, account_id')
+        .select('id, amount_usd, amount_original, cr_dr, account_id')
         .eq('id', existing.linked_transaction_id)
         .eq('user_id', user.id)
         .single()
@@ -228,14 +228,19 @@ export async function DELETE(
       return NextResponse.json({ error: 'Failed to delete transaction' }, { status: 500 })
     }
 
-    // Reverse this transaction's account balance
+    // Reverse this transaction's account balance.
+    // Use amount_original (native currency magnitude) because balances are stored
+    // in the account's native currency — not the USD-normalized amount_usd value.
     if (existing.account_id) {
       try {
-        await adjustAccountBalance(supabase, existing.account_id, -(existing.amount_usd ?? 0))
+        const nativeDelta = existing.cr_dr === 'debit'
+          ? (existing.amount_original ?? Math.abs(existing.amount_usd ?? 0))
+          : -(existing.amount_original ?? Math.abs(existing.amount_usd ?? 0))
+        await adjustAccountBalance(supabase, existing.account_id, nativeDelta)
       } catch { /* non-fatal */ }
     }
 
-    // Reverse loan balance
+    // Reverse loan balance (loans track in USD-normalized amounts, consistent with POST)
     if (existing.loan_id) {
       try {
         await adjustLoanBalance(supabase, existing.loan_id, -(existing.amount_usd ?? 0))
@@ -252,7 +257,10 @@ export async function DELETE(
           .eq('user_id', user.id)
 
         if (linkedTxn.account_id) {
-          await adjustAccountBalance(supabase, linkedTxn.account_id, -(linkedTxn.amount_usd ?? 0))
+          const linkedNativeDelta = linkedTxn.cr_dr === 'debit'
+            ? (linkedTxn.amount_original ?? Math.abs(linkedTxn.amount_usd ?? 0))
+            : -(linkedTxn.amount_original ?? Math.abs(linkedTxn.amount_usd ?? 0))
+          await adjustAccountBalance(supabase, linkedTxn.account_id, linkedNativeDelta)
         }
       } catch (e) {
         console.warn('Linked transfer leg delete failed (non-fatal):', e)

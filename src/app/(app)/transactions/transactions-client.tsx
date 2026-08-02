@@ -774,7 +774,7 @@ function TransactionsContent ( {
                         <span
                           className={`text-sm font-medium whitespace-nowrap ${ txn.cr_dr === "credit" ? "text-[var(--color-income)]" : "text-[var(--color-text-primary)]" }`}
                         >
-                          {txn.cr_dr === "credit" ? "+" : ""}{fmt( txn.final_amount )}
+                          {txn.cr_dr === "credit" ? "+" : ""}{fmt( txn.final_amount, "USD", txn.fx_rate_snapshot )}
                         </span>
                         {txn.original_currency && txn.original_currency !== "USD" && (
                           <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)]">
@@ -863,7 +863,7 @@ function TransactionsContent ( {
                       <span
                         className={`text-sm font-medium ${ txn.cr_dr === "credit" ? "text-[var(--color-income)]" : "text-[var(--color-text-primary)]" }`}
                       >
-                        {txn.cr_dr === "credit" ? "+" : ""}{fmt( txn.final_amount )}
+                        {txn.cr_dr === "credit" ? "+" : ""}{fmt( txn.final_amount, "USD", txn.fx_rate_snapshot )}
                       </span>
                       {txn.original_currency && txn.original_currency !== "USD" && (
                         <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)]">

@@ -162,6 +162,62 @@ export async function resolveWriteAction(
         return { ok: true, resolvedInput: resolved, preview }
       }
 
+      case 'create_transactions': {
+        const rawItems = Array.isArray(input.items) ? (input.items as Array<Record<string, unknown>>) : []
+        if (rawItems.length === 0) return { ok: false, message: 'items must be a non-empty array.' }
+        if (rawItems.length > 20) return { ok: false, message: 'Maximum 20 transactions per batch. Split into smaller batches.' }
+
+        const resolvedItems: Array<Record<string, unknown>> = []
+        const previewLines: string[] = []
+
+        for (let i = 0; i < rawItems.length; i++) {
+          const item = rawItems[i]
+          const accountName = typeof item.account_name === 'string' ? item.account_name.trim() : ''
+          if (!accountName) return { ok: false, message: `Item ${i + 1}: account_name is required.` }
+          if (typeof item.amount_usd !== 'number' || item.amount_usd <= 0) {
+            return { ok: false, message: `Item ${i + 1}: amount_usd must be a positive number.` }
+          }
+          if (!['credit', 'debit'].includes(item.cr_dr as string)) {
+            return { ok: false, message: `Item ${i + 1}: cr_dr must be "credit" or "debit".` }
+          }
+
+          const { data: acctRows } = await supabase
+            .from('accounts')
+            .select('id, name, kind, type')
+            .eq('user_id', userId)
+            .eq('is_active', true)
+            .ilike('name', like(accountName))
+            .limit(6)
+
+          const picked = pickByName(acctRows ?? [], accountName)
+          if ('none' in picked) {
+            return { ok: false, message: `Item ${i + 1}: Account "${accountName}" not found.` }
+          }
+          if ('ambiguous' in picked) {
+            const names = picked.ambiguous.map((a: { name: string }) => `"${a.name}"`).join(', ')
+            return { ok: false, message: `Item ${i + 1}: Multiple accounts match "${accountName}": ${names}. Use the exact name.` }
+          }
+          const account = (picked as { match: { id: string; name: string } }).match
+
+          const resolved: Record<string, unknown> = { ...item, account_id: account.id, account_display: account.name }
+
+          if (typeof item.category_name === 'string' && item.category_name.trim()) {
+            const catRes = await resolveCategoryRef(item.category_name, userId, supabase)
+            if (!catRes.ok) return { ok: false, message: `Item ${i + 1}: ${catRes.message}` }
+            resolved.category_id = catRes.category.id
+            resolved.category_display = catRes.category.name
+          }
+
+          resolvedItems.push(resolved)
+          const sign = item.cr_dr === 'credit' ? '+' : '-'
+          const date = typeof item.date === 'string' ? item.date : todayInTz(tz)
+          previewLines.push(`  ${i + 1}. ${sign}${fmt(item.amount_usd as number)} "${item.description}" on ${account.name} (${date})`)
+        }
+
+        const preview = `Log ${resolvedItems.length} transaction${resolvedItems.length > 1 ? 's' : ''}:\n${previewLines.join('\n')}`
+        return { ok: true, resolvedInput: { items: resolvedItems }, preview }
+      }
+
       case 'flag_transaction': {
         const txnRes = await resolveTransactionRef(input, userId, supabase)
         if (!txnRes.ok) return txnRes
