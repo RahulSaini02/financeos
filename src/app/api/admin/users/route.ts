@@ -74,17 +74,22 @@ export async function GET() {
 
     // Join profiles with email
     const emailMap = new Map(authUsers.map((u) => [u.id, u.email ?? '']))
+    const superAdminEmail = process.env.SUPER_ADMIN_EMAIL ?? ''
 
-    const result = (profiles ?? []).map((p) => ({
-      id: p.id,
-      email: emailMap.get(p.id) ?? '',
-      role: p.role,
-      email_verified: p.email_verified,
-      ai_enabled: p.ai_enabled,
-      ai_access_requested_at: p.ai_access_requested_at,
-      ai_access_requested_reason: p.ai_access_requested_reason,
-      created_at: p.created_at,
-    }))
+    const result = (profiles ?? []).map((p) => {
+      const email = emailMap.get(p.id) ?? ''
+      return {
+        id: p.id,
+        email,
+        role: p.role,
+        email_verified: p.email_verified,
+        ai_enabled: p.ai_enabled,
+        ai_access_requested_at: p.ai_access_requested_at,
+        ai_access_requested_reason: p.ai_access_requested_reason,
+        created_at: p.created_at,
+        is_owner: superAdminEmail !== '' && email === superAdminEmail,
+      }
+    })
 
     return NextResponse.json({ data: result })
   } catch (err) {
@@ -126,7 +131,7 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    const SUPER_ADMIN_EMAIL = 'sainirahul0802@gmail.com'
+    const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL ?? ''
 
     if (action === 'set_user' || action === 'set_admin') {
       const { data: targetAuthUser } = await serviceClient.auth.admin.getUserById(userId)

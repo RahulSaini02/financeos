@@ -25,6 +25,7 @@ export interface AdminUser {
   ai_access_requested_at: string | null
   ai_access_requested_reason: string | null
   created_at: string
+  is_owner?: boolean
 }
 
 type AdminAction = 'approve_ai' | 'revoke_ai' | 'set_admin' | 'set_user' | 'verify_email'
@@ -127,7 +128,7 @@ function UserMobileCard({
           {user.email || '—'}
         </p>
         <div className="shrink-0">
-          {user.role === 'admin' && user.email === 'sainirahul0802@gmail.com' ? (
+          {user.role === 'admin' && user.is_owner ? (
             <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold bg-purple-500/15 text-purple-400">
               <ShieldCheck className="h-3 w-3" />owner
             </span>
@@ -221,7 +222,7 @@ function UserMobileCard({
             Revoke AI
           </button>
         )}
-        {user.role === 'user' && user.email !== 'sainirahul0802@gmail.com' && (
+        {user.role === 'user' && !user.is_owner && (
           <button
             onClick={() => onRequestRoleChange(user.id, user.email, 'set_admin')}
             disabled={isProcessing}
@@ -231,7 +232,7 @@ function UserMobileCard({
             Make Admin
           </button>
         )}
-        {user.role === 'admin' && user.email !== 'sainirahul0802@gmail.com' && (
+        {user.role === 'admin' && !user.is_owner && (
           <button
             onClick={() => onRequestRoleChange(user.id, user.email, 'set_user')}
             disabled={isProcessing}
@@ -296,7 +297,7 @@ function UserRow({
         </td>
 
         <td className="px-4 py-3">
-          {user.role === 'admin' && user.email === 'sainirahul0802@gmail.com' ? (
+          {user.role === 'admin' && user.is_owner ? (
             <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold bg-purple-500/15 text-purple-400">
               <ShieldCheck className="h-3 w-3" />
               owner
@@ -361,7 +362,7 @@ function UserRow({
                 Revoke AI
               </button>
             )}
-            {user.role === 'user' && user.email !== 'sainirahul0802@gmail.com' && (
+            {user.role === 'user' && !user.is_owner && (
               <button
                 onClick={() => onRequestRoleChange(user.id, user.email, 'set_admin')}
                 disabled={isProcessing}
@@ -371,7 +372,7 @@ function UserRow({
                 Make Admin
               </button>
             )}
-            {user.role === 'admin' && user.email !== 'sainirahul0802@gmail.com' && (
+            {user.role === 'admin' && !user.is_owner && (
               <button
                 onClick={() => onRequestRoleChange(user.id, user.email, 'set_user')}
                 disabled={isProcessing}
