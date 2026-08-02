@@ -27,16 +27,22 @@ export default async function AdminUsersPage() {
   const authUsers = authUsersRes.data?.users ?? []
   const emailMap = new Map(authUsers.map((u) => [u.id, u.email ?? '']))
 
-  const users: AdminUser[] = profiles.map((p) => ({
-    id: p.id,
-    email: emailMap.get(p.id) ?? '',
-    role: p.role as 'admin' | 'user',
-    email_verified: p.email_verified,
-    ai_enabled: p.ai_enabled,
-    ai_access_requested_at: p.ai_access_requested_at,
-    ai_access_requested_reason: p.ai_access_requested_reason,
-    created_at: p.created_at,
-  }))
+  const superAdminEmail = process.env.SUPER_ADMIN_EMAIL ?? ''
+
+  const users: AdminUser[] = profiles.map((p) => {
+    const email = emailMap.get(p.id) ?? ''
+    return {
+      id: p.id,
+      email,
+      role: p.role as 'admin' | 'user',
+      email_verified: p.email_verified,
+      ai_enabled: p.ai_enabled,
+      ai_access_requested_at: p.ai_access_requested_at,
+      ai_access_requested_reason: p.ai_access_requested_reason,
+      created_at: p.created_at,
+      is_owner: superAdminEmail !== '' && email === superAdminEmail,
+    }
+  })
 
   return (
     <div>
