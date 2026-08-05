@@ -32,12 +32,12 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "FinanceOS",
+  title: "MyFinOS",
   description: "AI-powered personal finance management",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    title: "FinanceOS",
+    title: "MyFinOS",
     statusBarStyle: "black-translucent",
   },
   icons: {

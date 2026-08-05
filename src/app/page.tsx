@@ -8,25 +8,25 @@ import FinalCTA from "@/components/marketing/FinalCTA";
 import Footer from "@/components/marketing/Footer";
 
 export const metadata = {
-  title: "FinanceOS — Your finances, finally intelligent",
-  applicationName: "FinanceOS",
+  title: "MyFinOS — Your finances, finally intelligent",
+  applicationName: "MyFinOS",
   description:
-    "FinanceOS is a personal finance management app. Connect accounts, track every dollar, set budgets, and let a Claude AI agent act on your behalf.",
+    "MyFinOS is a personal finance management app. Connect accounts, track every dollar, set budgets, and let a Claude AI agent act on your behalf.",
   openGraph: {
-    title: "FinanceOS — Your finances, finally intelligent",
+    title: "MyFinOS — Your finances, finally intelligent",
     description:
-      "FinanceOS is a personal finance management app. Connect accounts, track every dollar, and let a Claude AI agent act on your behalf.",
-    siteName: "FinanceOS",
+      "MyFinOS is a personal finance management app. Connect accounts, track every dollar, and let a Claude AI agent act on your behalf.",
+    siteName: "MyFinOS",
   },
 };
 
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
-  name: "FinanceOS",
+  name: "MyFinOS",
   url: "https://myfinos.app",
   description:
-    "FinanceOS is a personal finance management application. Track transactions, budgets, savings goals, subscriptions, loans, and investments. Powered by a Claude AI agent.",
+    "MyFinOS is a personal finance management application. Track transactions, budgets, savings goals, subscriptions, loans, and investments. Powered by a Claude AI agent.",
   applicationCategory: "FinanceApplication",
   operatingSystem: "Web",
   offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
