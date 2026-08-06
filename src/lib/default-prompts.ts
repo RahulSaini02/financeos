@@ -1,5 +1,5 @@
 // src/lib/default-prompts.ts
-// Default AI prompts used throughout FinanceOS.
+// Default AI prompts used throughout MyFinOS.
 // These use {{variable}} placeholders so they can be stored in the DB and
 // retrieved as plain strings — API routes replace placeholders with real values.
 

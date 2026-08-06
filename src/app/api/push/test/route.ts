@@ -26,7 +26,7 @@ export async function POST() {
       const result = await sendPushNotification(
         { endpoint: p.endpoint, p256dh: p.p256dh, auth: p.auth },
         {
-          title: 'FinanceOS Notifications',
+          title: 'MyFinOS Notifications',
           body: 'Push notifications are working!',
           url: '/settings',
           tag: 'test-notification',

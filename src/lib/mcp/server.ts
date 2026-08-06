@@ -1,4 +1,4 @@
-// In-process MCP server wired to the FinanceOS agent tool executors.
+// In-process MCP server wired to the MyFinOS agent tool executors.
 // Write tools do NOT execute here — they resolve entities and return a
 // PendingActionMarker sentinel, which the route picks up and routes
 // through the existing user-confirmation flow.

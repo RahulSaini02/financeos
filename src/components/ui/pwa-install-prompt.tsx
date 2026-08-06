@@ -43,7 +43,7 @@ export function PWAInstallPrompt() {
   return (
     <div className="fixed bottom-20 lg:bottom-6 left-4 right-4 lg:left-auto lg:right-6 lg:w-80 z-50 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 shadow-lg flex items-center gap-3">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/icon-192.png" alt="FinanceOS" className="h-8 w-8 rounded-lg shrink-0" />
+      <img src="/icon-192.png" alt="MyFinOS" className="h-8 w-8 rounded-lg shrink-0" />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-[var(--color-text-primary)]">Add to Home Screen</p>
         <p className="text-xs text-[var(--color-text-muted)]">Get the full app experience</p>

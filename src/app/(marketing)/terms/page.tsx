@@ -1,8 +1,8 @@
 import Link from "next/link";
 
 export const metadata = {
-  title: "Terms of Service — FinanceOS",
-  description: "Terms and conditions for using FinanceOS.",
+  title: "Terms of Service — MyFinOS",
+  description: "Terms and conditions for using MyFinOS.",
 };
 
 const LAST_UPDATED = "August 1, 2026";
@@ -19,7 +19,7 @@ export default function TermsPage() {
         <section>
           <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-3">1. Acceptance of Terms</h2>
           <p>
-            By accessing or using FinanceOS (&quot;the Service&quot;), you agree to be bound by these Terms of
+            By accessing or using MyFinOS (&quot;the Service&quot;), you agree to be bound by these Terms of
             Service (&quot;Terms&quot;). If you do not agree, do not use the Service. These Terms apply to all
             users of the Service.
           </p>
@@ -28,7 +28,7 @@ export default function TermsPage() {
         <section>
           <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-3">2. Description of Service</h2>
           <p>
-            FinanceOS is a personal finance management web application that allows users to track
+            MyFinOS is a personal finance management web application that allows users to track
             transactions, budgets, savings goals, subscriptions, loans, investments, and receive
             AI-powered financial insights. The Service optionally integrates with Google Calendar
             and supports push notifications for proactive financial alerts. The Service is provided
@@ -63,7 +63,7 @@ export default function TermsPage() {
         <section>
           <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-3">5. AI Features Disclaimer</h2>
           <p className="mb-3">
-            FinanceOS includes AI-powered features (the &quot;AI Agent&quot;) powered by Anthropic&apos;s Claude.
+            MyFinOS includes AI-powered features (the &quot;AI Agent&quot;) powered by Anthropic&apos;s Claude.
             AI-generated insights and recommendations are for informational purposes only and do
             not constitute financial, investment, tax, or legal advice. You should consult a
             qualified professional before making financial decisions. We are not responsible for
@@ -94,7 +94,7 @@ export default function TermsPage() {
           <ul className="list-disc pl-5 space-y-2">
             <li>
               <strong className="text-[var(--color-text-primary)]">Google Calendar:</strong> Connecting Google
-              Calendar grants FinanceOS read and write access to your calendar. We use this access
+              Calendar grants MyFinOS read and write access to your calendar. We use this access
               only to surface payment reminders and create financial events on your behalf. You can
               revoke access at any time from Settings. Your use of this integration is also subject
               to{" "}
@@ -128,7 +128,7 @@ export default function TermsPage() {
           <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-3">8. Intellectual Property</h2>
           <p>
             All content, features, and functionality of the Service — including but not limited to
-            text, graphics, logos, and software — are the exclusive property of FinanceOS and are
+            text, graphics, logos, and software — are the exclusive property of MyFinOS and are
             protected by applicable intellectual property laws. You may not copy, modify, or
             distribute any part of the Service without our written permission.
           </p>

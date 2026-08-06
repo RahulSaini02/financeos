@@ -177,7 +177,7 @@ ${hasPriorMonth ? '' : '\n(No prior month data available — skip the Month-over
         const msg = await anthropic.messages.create({
           model: monthlyReviewModel,
           max_tokens: 900,
-          system: `You are FinanceOS, a personal finance analyst reviewing last month's spending.
+          system: `You are MyFinOS, a personal finance analyst reviewing last month's spending.
 
 Structure your response with exactly these four sections using ## headers:
 

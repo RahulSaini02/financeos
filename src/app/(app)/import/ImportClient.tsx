@@ -389,7 +389,7 @@ export default function ImportClient({
         tooltip={
           <HelpModal
             title="Import"
-            description="Bulk-import transactions from bank CSV exports or other sources. FinanceOS parses the data, suggests categories and accounts using AI, and lets you review before confirming."
+            description="Bulk-import transactions from bank CSV exports or other sources. MyFinOS parses the data, suggests categories and accounts using AI, and lets you review before confirming."
             sections={[
               {
                 heading: "How to use",

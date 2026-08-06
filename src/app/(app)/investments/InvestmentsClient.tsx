@@ -396,7 +396,7 @@ export function InvestmentsClient({ initialInvestments, accounts, initialSavings
                 items: [
                   "Add each investment with its ticker, platform, and current value",
                   "Update the current value periodically to keep your net worth accurate",
-                  "FinanceOS tracks total invested and current value to show gain/loss",
+                  "MyFinOS tracks total invested and current value to show gain/loss",
                   "Link investments to an account for balance tracking",
                 ],
               },

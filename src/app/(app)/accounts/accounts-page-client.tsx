@@ -426,7 +426,7 @@ export default function AccountsClient({
         tooltip={
           <HelpModal
             title="Accounts"
-            description="Manage all your financial accounts — checking, savings, credit cards, loans, and investments. FinanceOS tracks balances and uses accounts to link transactions."
+            description="Manage all your financial accounts — checking, savings, credit cards, loans, and investments. MyFinOS tracks balances and uses accounts to link transactions."
             sections={[
               {
                 heading: "How to use",

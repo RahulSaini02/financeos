@@ -1,5 +1,5 @@
 // src/lib/agent/tool-defs.ts
-// Anthropic tool definitions/schemas for the FinanceOS agent.
+// Anthropic tool definitions/schemas for the MyFinOS agent.
 
 import Anthropic from '@anthropic-ai/sdk'
 
