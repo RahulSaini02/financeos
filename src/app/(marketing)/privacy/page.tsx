@@ -1,6 +1,6 @@
 export const metadata = {
-  title: "Privacy Policy — FinanceOS",
-  description: "How FinanceOS collects, uses, and protects your personal financial data.",
+  title: "Privacy Policy — MyFinOS",
+  description: "How MyFinOS collects, uses, and protects your personal financial data.",
 };
 
 const LAST_UPDATED = "August 1, 2026";
@@ -17,9 +17,9 @@ export default function PrivacyPage() {
         <section>
           <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-3">1. Overview</h2>
           <p>
-            FinanceOS (&quot;we&quot;, &quot;our&quot;, or &quot;us&quot;) is a personal finance management application. This Privacy
+            MyFinOS (&quot;we&quot;, &quot;our&quot;, or &quot;us&quot;) is a personal finance management application. This Privacy
             Policy explains what information we collect, how we use it, and your rights regarding
-            your data. By using FinanceOS, you agree to the practices described here.
+            your data. By using MyFinOS, you agree to the practices described here.
           </p>
         </section>
 
@@ -77,7 +77,7 @@ export default function PrivacyPage() {
         <section>
           <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-3">3. How We Use Your Information</h2>
           <ul className="list-disc pl-5 space-y-2">
-            <li>To provide, operate, and improve the FinanceOS service.</li>
+            <li>To provide, operate, and improve the MyFinOS service.</li>
             <li>To authenticate your identity and secure your account.</li>
             <li>To process your queries via the AI assistant (Claude by Anthropic) and to execute AI-authorized write actions (create, edit, or delete financial records) that you approve.</li>
             <li>To run automated background analysis of your financial data for proactive insights, bill reminders, and monthly summaries delivered via push notification or in-app.</li>
@@ -90,7 +90,7 @@ export default function PrivacyPage() {
 
         <section>
           <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-3">4. Third-Party Services</h2>
-          <p className="mb-3">FinanceOS relies on the following third-party services:</p>
+          <p className="mb-3">MyFinOS relies on the following third-party services:</p>
           <ul className="list-disc pl-5 space-y-2">
             <li>
               <strong className="text-[var(--color-text-primary)]">Supabase</strong> — database and authentication
@@ -169,7 +169,7 @@ export default function PrivacyPage() {
         <section>
           <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-3">8. Children&apos;s Privacy</h2>
           <p>
-            FinanceOS is not directed at children under 13. We do not knowingly collect personal
+            MyFinOS is not directed at children under 13. We do not knowingly collect personal
             information from children under 13. If we learn we have collected such information, we
             will delete it promptly.
           </p>

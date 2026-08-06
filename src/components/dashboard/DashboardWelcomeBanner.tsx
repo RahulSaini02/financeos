@@ -14,7 +14,7 @@ const STEPS = [
     num: "02",
     icon: Upload,
     title: "Import transactions",
-    description: "Import from CSV or paste bank statements — FinanceOS categorizes automatically.",
+    description: "Import from CSV or paste bank statements — MyFinOS categorizes automatically.",
     href: "/import",
     label: "Import now",
   },
@@ -35,7 +35,7 @@ export function DashboardWelcomeBanner() {
       <div className="p-6">
         <div className="mb-5">
           <p className="text-xs font-semibold tracking-widest uppercase text-[var(--color-accent)] mb-1">
-            ✦ Welcome to FinanceOS
+            ✦ Welcome to MyFinOS
           </p>
           <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">
             Get started in 3 steps

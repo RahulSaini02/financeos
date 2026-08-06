@@ -1,5 +1,5 @@
 /**
- * Bank email parsing rules for Gmail → n8n → FinanceOS pipeline.
+ * Bank email parsing rules for Gmail → n8n → MyFinOS pipeline.
  * Each rule matches a bank's transaction notification email body
  * and extracts: merchant, amount, date, last_four, cr_dr.
  *

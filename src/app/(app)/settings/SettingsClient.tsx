@@ -635,7 +635,7 @@ export default function SettingsClient({
           tooltip={
             <HelpModal
               title="Settings"
-              description="Customize your FinanceOS experience — set your default currency, theme preference, and manage your profile. Changes here affect the entire app."
+              description="Customize your MyFinOS experience — set your default currency, theme preference, and manage your profile. Changes here affect the entire app."
               sections={[
                 {
                   heading: "How to use",
@@ -856,7 +856,7 @@ export default function SettingsClient({
                 F
               </div>
               <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
-                FinanceOS &mdash; Version 1.0.0
+                MyFinOS &mdash; Version 1.0.0
               </p>
             </div>
 
@@ -1272,7 +1272,7 @@ export default function SettingsClient({
                 <CardTitle>AI Prompts</CardTitle>
               </CardHeader>
               <p className="text-sm mb-4" style={{ color: "var(--color-text-secondary)" }}>
-                Customize the AI prompts used throughout FinanceOS. Changes apply immediately to new AI generations.
+                Customize the AI prompts used throughout MyFinOS. Changes apply immediately to new AI generations.
               </p>
               <PromptsManager initialPrompts={initialPrompts} />
             </Card>
@@ -1290,7 +1290,7 @@ export default function SettingsClient({
                 <CardTitle>Integrations</CardTitle>
               </CardHeader>
               <p className="text-sm mb-5" style={{ color: "var(--color-text-secondary)" }}>
-                Connect external services to extend FinanceOS with automatic syncing and reminders.
+                Connect external services to extend MyFinOS with automatic syncing and reminders.
               </p>
 
               {/* Google Calendar */}

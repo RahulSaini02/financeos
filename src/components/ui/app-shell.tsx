@@ -437,7 +437,7 @@ export function AppShell({ children }: AppShellProps) {
       style={{ paddingTop: "env(safe-area-inset-top)", paddingLeft: "env(safe-area-inset-left)" }}
     >
       <div className="flex h-14 items-center justify-between border-b border-[var(--color-border)] px-4">
-        <span className="text-lg font-semibold tracking-tight">FinanceOS</span>
+        <span className="text-lg font-semibold tracking-tight">MyFinOS</span>
         <button
           onClick={() => setSidebarOpen(false)}
           className="-mr-1 p-1 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
@@ -500,7 +500,7 @@ export function AppShell({ children }: AppShellProps) {
       {/* Logo / collapse toggle */}
       <div className="flex h-14 shrink-0 items-center border-b border-[var(--color-border)] px-2">
         {!sidebarCollapsed && (
-          <span className="flex-1 truncate pl-1 text-lg font-semibold tracking-tight">FinanceOS</span>
+          <span className="flex-1 truncate pl-1 text-lg font-semibold tracking-tight">MyFinOS</span>
         )}
         <button
           onClick={toggleCollapsed}
@@ -619,7 +619,7 @@ export function AppShell({ children }: AppShellProps) {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <span className="text-base font-semibold tracking-tight">FinanceOS</span>
+          <span className="text-base font-semibold tracking-tight">MyFinOS</span>
           <div className="flex items-center gap-1">
             {IS_DEV && <DevPushMobileButton />}
             <button

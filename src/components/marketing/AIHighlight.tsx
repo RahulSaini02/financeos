@@ -114,7 +114,7 @@ export default function AIHighlight() {
           <div className="bg-[var(--color-bg-tertiary)] px-4 py-3 flex items-center gap-2 border-b border-[var(--color-border)]">
             <BrainCircuit className="h-4 w-4 text-[var(--color-accent)]" />
             <span className="text-sm font-medium text-[var(--color-text-primary)]">
-              FinanceOS AI
+              MyFinOS AI
             </span>
             <span className="ml-auto flex items-center gap-1.5 text-xs text-[var(--color-success)]">
               <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-success)] inline-block" />

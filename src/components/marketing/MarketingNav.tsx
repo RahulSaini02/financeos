@@ -11,7 +11,7 @@ export default function MarketingNav() {
         <Link href="/" className="flex items-center gap-2">
           <BrainCircuit className="h-5 w-5 text-[var(--color-accent)]" />
           <span className="font-bold text-lg text-[var(--color-text-primary)]">
-            FinanceOS
+            MyFinOS
           </span>
         </Link>
 

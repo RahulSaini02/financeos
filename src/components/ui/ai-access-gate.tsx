@@ -98,7 +98,7 @@ export function AiAccessGate({ userProfile, children }: AiAccessGateProps) {
               AI Access Required
             </h2>
             <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
-              FinanceOS AI features are gated. Submit a request to get access and unlock AI-powered
+              MyFinOS AI features are gated. Submit a request to get access and unlock AI-powered
               insights, chat, and analysis.
             </p>
           </div>
@@ -160,7 +160,7 @@ export function AiAccessGate({ userProfile, children }: AiAccessGateProps) {
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Describe how you plan to use AI features in FinanceOS..."
+              placeholder="Describe how you plan to use AI features in MyFinOS..."
               rows={4}
               className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none resize-none transition-colors focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-1 focus:ring-offset-[var(--color-bg-primary)]"
               style={{

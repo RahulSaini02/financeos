@@ -5,7 +5,7 @@ const steps = [
     number: "01",
     icon: Upload,
     title: "Add your accounts",
-    body: "Import from CSV, paste transaction history, or add accounts manually. FinanceOS handles the categorization automatically.",
+    body: "Import from CSV, paste transaction history, or add accounts manually. MyFinOS handles the categorization automatically.",
   },
   {
     number: "02",

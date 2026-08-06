@@ -102,7 +102,7 @@ export default function HeroSection () {
             }}
           >
             <span className="text-[var(--color-accent)]">✦</span>
-            <span>FinanceOS · Powered by Claude AI</span>
+            <span>MyFinOS · Powered by Claude AI</span>
           </div>
 
           {/* Headline */}
@@ -128,7 +128,7 @@ export default function HeroSection () {
             className="text-lg text-[var(--color-text-secondary)] mt-5 hero-fade-in max-w-lg"
             style={{ animationDelay: "200ms" }}
           >
-            Stop guessing where your money goes. FinanceOS tracks every account,
+            Stop guessing where your money goes. MyFinOS tracks every account,
             auto-categorizes every dollar, and lets a Claude AI agent answer
             questions and set budgets on your behalf.
           </p>

@@ -15,7 +15,7 @@ const desktopSteps = [
   {
     element: '[data-tour="nav-dashboard"]',
     popover: {
-      title: "Welcome to FinanceOS 👋",
+      title: "Welcome to MyFinOS 👋",
       description:
         "This is your Dashboard — your financial command center. You'll see net worth, spending trends, budget alerts, and AI-generated insights here once you've added your data.",
     },
@@ -98,7 +98,7 @@ const desktopSteps = [
 const mobileSteps = [
   {
     popover: {
-      title: "Welcome to FinanceOS 👋",
+      title: "Welcome to MyFinOS 👋",
       description:
         "Your financial command center. The Dashboard shows net worth, spending trends, budget alerts, and AI insights — all in one place.",
     },
@@ -114,7 +114,7 @@ const mobileSteps = [
     popover: {
       title: "AI-Powered Insights",
       description:
-        "FinanceOS includes an AI assistant and monthly spending reviews. Request AI access from Settings to unlock these features.",
+        "MyFinOS includes an AI assistant and monthly spending reviews. Request AI access from Settings to unlock these features.",
     },
   },
   {

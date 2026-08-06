@@ -94,7 +94,7 @@ export function LoginForm () {
           <div className="w-12 h-12 rounded-2xl bg-[var(--color-accent)] flex items-center justify-center mb-1 shadow-lg shadow-[var(--color-accent)]/30">
             <span className="text-white font-bold text-xl tracking-tight">F</span>
           </div>
-          <span className="text-lg font-semibold tracking-tight text-[var(--color-text-primary)]">FinanceOS</span>
+          <span className="text-lg font-semibold tracking-tight text-[var(--color-text-primary)]">MyFinOS</span>
         </div>
 
         {/* Progress bar */}
@@ -121,7 +121,7 @@ export function LoginForm () {
     <div className="flex min-h-full items-center justify-center bg-[var(--color-bg-primary)] px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight">FinanceOS</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">MyFinOS</h1>
           <p className="text-sm text-[var(--color-text-secondary)] mt-1">
             {isSignUp ? "Create your account" : "Sign in to your account"}
           </p>

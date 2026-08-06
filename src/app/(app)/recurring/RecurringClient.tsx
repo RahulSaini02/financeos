@@ -562,7 +562,7 @@ export function RecurringClient({
         tooltip={
           <HelpModal
             title="Recurring Rules"
-            description="Automate repeated transactions like rent, subscriptions, or salary deposits. Set a rule once and FinanceOS generates the transaction on the due date."
+            description="Automate repeated transactions like rent, subscriptions, or salary deposits. Set a rule once and MyFinOS generates the transaction on the due date."
             sections={[
               {
                 heading: "How to use",

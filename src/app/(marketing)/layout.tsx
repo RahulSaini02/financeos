@@ -7,7 +7,7 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
       <header className="sticky top-0 z-50 border-b border-[var(--color-border)] bg-[var(--color-bg-primary)]/80 backdrop-blur-md">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <Link href="/" className="text-sm font-semibold hover:opacity-80 transition-opacity">
-            ← FinanceOS
+            ← MyFinOS
           </Link>
           <Link
             href="/login"

@@ -131,7 +131,7 @@ function AIChatMockup() {
       {/* Header */}
       <div className="flex items-center gap-2 px-4 py-2.5 bg-[var(--color-bg-tertiary)] border-b border-[var(--color-border)]">
         <BrainCircuit className="h-3.5 w-3.5 text-[var(--color-accent)]" />
-        <span className="text-[11px] font-semibold text-[var(--color-text-primary)]">FinanceOS AI</span>
+        <span className="text-[11px] font-semibold text-[var(--color-text-primary)]">MyFinOS AI</span>
         <span className="ml-auto flex items-center gap-1 text-[10px] text-[var(--color-success)]">
           <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-success)]" />
           live
@@ -186,7 +186,7 @@ const featureRows = [
   {
     tag: "Dashboard",
     heading: "Your full financial picture",
-    body: "See every account, every dollar, and your net worth trend at a glance. FinanceOS surfaces what matters — flagged transactions, budget warnings, and upcoming bills.",
+    body: "See every account, every dollar, and your net worth trend at a glance. MyFinOS surfaces what matters — flagged transactions, budget warnings, and upcoming bills.",
     bullets: [
       "Net worth tracking across all accounts",
       "Monthly income vs. expense snapshot",

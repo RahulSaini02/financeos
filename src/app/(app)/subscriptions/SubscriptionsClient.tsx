@@ -518,7 +518,7 @@ export function SubscriptionsClient({ initialSubscriptions, accounts, categories
         body: JSON.stringify({
           title: `\u{1F4B3} ${sub.name} payment due`,
           date: sub.next_billing_date,
-          description: `FinanceOS subscription: ${sub.name} - $${sub.billing_cost}`,
+          description: `MyFinOS subscription: ${sub.name} - $${sub.billing_cost}`,
           subscription_id: sub.id,
         }),
       });
